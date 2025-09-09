@@ -1,0 +1,11 @@
+numpy==1.23.5 
+tensorflow==2.9.3
+onnx==1.8.0
+pycddlib
+tqdm
+onnxruntime
+protobuf==3.19.6
+torch
+torchvision
+mpmath
+pillow>=8.1.0

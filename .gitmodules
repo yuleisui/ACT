@@ -1,0 +1,6 @@
+[submodule "modules/abcrown"]
+	path = modules/abcrown
+	url = https://github.com/Verified-Intelligence/alpha-beta-CROWN.git
+[submodule "modules/eran"]
+	path = modules/eran
+	url = https://github.com/eth-sri/eran.git

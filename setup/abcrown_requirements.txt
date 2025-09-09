@@ -1,0 +1,12 @@
+# main env dependencies
+torch>=2.0.0,<2.4.0
+torchvision>=0.12.0,<0.19.0
+numpy>=1.20,<2.0
+
+onnx
+onnxruntime>=1.15
+onnxsim>=0.4.31
+skl2onnx>=1.14
+onnxoptimizer>=0.3
+git+https://github.com/Verified-Intelligence/onnx2pytorch.git
+
