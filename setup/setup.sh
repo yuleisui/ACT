@@ -2,7 +2,7 @@
 set -e
 echo "[ACT] Setting up main ACT + ABCROWN environment..."
 
-# Step 1: Conda 检查
+# Step 1: Conda check
 if ! command -v conda &> /dev/null; then
     echo "[ERROR] Conda not found on this system."
     echo "[INFO] Please install Miniconda or Anaconda first from:"
@@ -11,10 +11,10 @@ if ! command -v conda &> /dev/null; then
     exit 1
 fi
 
-# Step 1: Initialise Conda
+# Step 1: Initialize Conda
 source "$(conda info --base)/etc/profile.d/conda.sh"
 
-# Step 2: 创建并激活主环境（act-main）
+# Step 2: Create and activate main environment (act-main)
 if ! conda env list | grep -q "^act-main "; then
     echo "[ACT] Creating conda env: act-main..."
     conda create -y -n act-main python=3.9
@@ -28,15 +28,15 @@ conda activate act-main
 echo "[ACT] Installing ACT requirements..."
 pip install -r main_requirements.txt
 
-# 安装gurobi, conda全环境安装 - 用于ACT主环境求解
+# Install gurobi via conda for ACT main environment solving
 echo "[ACT] Installing Gurobi for act-main environment..."
 conda config --add channels http://conda.anaconda.org/gurobi
 conda install -y gurobi 
 
-# Step 2: 创建并激活abcrown环境（act-abcrown）
+# Step 2: Create and activate abcrown environment (act-abcrown)
 if ! conda env list | grep -q "^act-abcrown "; then
     echo "[ACT] Creating conda env: act-abcrown..."
-    conda create -y -n act-abcrown python=3.9
+    conda create -y -n act-abcrown python=3.11
 else
     echo "[ACT] Conda env 'act-abcrown' already exists."
 fi
@@ -44,19 +44,30 @@ fi
 echo "[ACT] Activating ACT-ABCROWN environment..."
 conda activate act-abcrown
 
-# Step 3: 安装 ABCROWN 依赖
+# Step 3: Install Gurobi first via conda (following official setup)
+echo "[ACT] Installing Gurobi for act-abcrown environment..."
+conda config --add channels gurobi
+conda install -y gurobi
+
+# Step 4: Install auto_LiRPA first (critical step from official setup)
+echo "[ACT] Installing auto_LiRPA library..."
+pushd ../modules/abcrown > /dev/null
+pip install -e auto_LiRPA/
+popd > /dev/null
+
+# Step 5: Install ABCROWN dependencies
 echo "[ACT] Installing ABCROWN requirements..."
 pip install -r abcrown_requirements.txt
 
-# Step 4: 调用 ERAN 环境的 setup 脚本（注意：不能在这里再 activate 子环境）
+# Step 6: Call ERAN environment setup script (note: cannot activate sub-environment here)
 echo "[ACT] Setting up ERAN sub-environment..."
 bash eran_env_setup.sh
 
-# Step 5: 生成空的 config 文件，供 abcrown CLI 参数模式使用
+# Step 7: Create empty config file for abcrown CLI parameter mode
 echo "[ACT] Creating empty_config.yaml for CLI-only abcrown runs..."
 echo "{}" > ../verifier/empty_config.yaml
 
-# Step 6: Patch the abcrown module __init__.py
+# Step 8: Patch the abcrown module __init__.py
 ABCROWN_SUBMODULE_DIR="../modules/abcrown"
 INIT_RELATIVE_PATH="complete_verifier/__init__.py"
 INIT_FULL_PATH="$ABCROWN_SUBMODULE_DIR/$INIT_RELATIVE_PATH"
