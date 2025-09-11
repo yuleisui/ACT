@@ -306,15 +306,54 @@ class Dataset:
                 print(f"Anchors loading")
                 if anchor_csv_path is None:
                     raise ValueError("For local_vnnlib, must provide anchor_csv_path or x_hat.")
-                anchors = np.genfromtxt(anchor_csv_path, delimiter=',')
-                if anchors.ndim == 1:
-                    anchors = anchors[None, :]
+                
+                # Check if the anchor CSV has header
+                with open(anchor_csv_path, 'r') as f:
+                    first_line = f.readline().strip()
+                has_header = 'label' in first_line.lower() or 'pixel' in first_line.lower()
+                
+                if has_header:
+                    print("Detected CSV header in anchor file, skipping first row")
+                    raw_anchors = np.genfromtxt(anchor_csv_path, delimiter=',', skip_header=1)
+                else:
+                    print("No CSV header detected in anchor file, reading all rows")
+                    raw_anchors = np.genfromtxt(anchor_csv_path, delimiter=',')
+                
+                if raw_anchors.ndim == 1:
+                    raw_anchors = raw_anchors[None, :]
+                
+                # Extract labels from first column and pixel data from remaining columns
+                if raw_anchors.shape[1] > 784:  # Has label column
+                    anchor_labels = raw_anchors[:, 0].astype(int)
+                    anchors = raw_anchors[:, 1:]  # Skip label column
+                    print(f"Extracted labels from anchor CSV: {anchor_labels}")
+                    # Set the labels for clean prediction
+                    self.labels = torch.tensor(anchor_labels, dtype=torch.long).to(self.device)
+                else:
+                    anchors = raw_anchors
+                    print("No label column detected in anchor CSV, using default labels")
+                    # Set default labels if no label column
+                    self.labels = torch.tensor([0] * raw_anchors.shape[0], dtype=torch.long).to(self.device)
+                    
             else:
                 anchors = np.array(x_hat)
                 if anchors.ndim == 1:
                     anchors = anchors[None, :]
+                # Set default labels when x_hat is provided directly
+                self.labels = torch.tensor([0] * anchors.shape[0], dtype=torch.long).to(self.device)
 
             print(f"Anchors shape: {anchors.shape}")
+            print(f"Labels: {self.labels}")
+            
+            # Apply normalization to anchor data if mean and std are provided
+            if self.mean is not None and self.std is not None:
+                print(f"Applying normalization to anchor data: mean={self.mean}, std={self.std}")
+                anchors_tensor = torch.tensor(anchors, dtype=torch.float32).to(self.device)
+                anchors_tensor = self._preprocessing_core(anchors_tensor)
+                anchors = anchors_tensor.cpu().numpy()
+                print(f"Anchor data range after normalization: [{anchors.min():.4f}, {anchors.max():.4f}]")
+            else:
+                print("No normalization applied to anchor data")
 
             if eps_scalar is None and len(eps_dict) == 0:
                 raise ValueError("For local_vnnlib, eps must be provided.")

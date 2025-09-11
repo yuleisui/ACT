@@ -143,6 +143,8 @@ class InputSpec(BaseSpec):
         elif self.spec_type in [SpecType.SET_VNNLIB, SpecType.SET_BOX]:
             self.input_lb = self.dataset.input_lb
             self.input_ub = self.dataset.input_ub
+            # Calculate input_center as the midpoint of bounds
+            self.input_center = (self.input_lb + self.input_ub) / 2.0
 
         else:
             raise ValueError(f"Unsupported spec type: {self.spec_type}")

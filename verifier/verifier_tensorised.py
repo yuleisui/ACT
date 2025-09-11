@@ -93,7 +93,14 @@ class BaseVerifier:
         self.dataset = dataset
         self.spec = spec
         self.device = device
-        self.input_center = self.spec.input_spec.input_center
+        
+        # Get input center, compute if not available
+        if hasattr(self.spec.input_spec, 'input_center') and self.spec.input_spec.input_center is not None:
+            self.input_center = self.spec.input_spec.input_center
+        else:
+            # Calculate input_center from bounds for VNNLIB formats
+            self.input_center = (self.spec.input_spec.input_lb + self.spec.input_spec.input_ub) / 2.0
+            
         self.input_lb = self.spec.input_spec.input_lb
         self.input_ub = self.spec.input_spec.input_ub
         self.model = self.spec.model
@@ -127,42 +134,66 @@ class BaseVerifier:
         self._adapt_input_shape(model_shape)
 
     def _adapt_input_shape(self, model_shape):
-
+        
         if self.input_lb.shape != self.input_ub.shape:
             raise ValueError("Input lower and upper bounds must have the same size.")
 
-        if self.input_lb.shape[1:] == model_shape[2:] and model_shape[1] == 1:
-
-            self.input_lb = self.input_lb.unsqueeze(1)
-            self.input_ub = self.input_ub.unsqueeze(1)
-
-        elif self.input_lb.shape[1:] == model_shape[1:]:
+        # Case 1: Already in correct shape
+        if self.input_lb.shape[1:] == model_shape[1:]:
             return
-
-        elif self.input_lb.shape[1] == int(np.prod(model_shape[1:])):
+        
+        # Case 2: Flat input needs reshaping to multi-dimensional (e.g., [1, 784] -> [1, 1, 28, 28])
+        elif len(self.input_lb.shape) == 2 and self.input_lb.shape[1] == int(np.prod(model_shape[1:])):
             self.input_lb = self.input_lb.view(self.input_lb.shape[0], *model_shape[1:])
             self.input_ub = self.input_ub.view(self.input_ub.shape[0], *model_shape[1:])
+            
+        # Case 3: Missing channel dimension (e.g., [1, 28, 28] -> [1, 1, 28, 28])
+        elif self.input_lb.shape[1:] == model_shape[2:] and model_shape[1] == 1:
+            self.input_lb = self.input_lb.unsqueeze(1)
+            self.input_ub = self.input_ub.unsqueeze(1)
+            
         else:
-            raise RuntimeError("Input shape mismatch.")
+            raise RuntimeError(f"Input shape mismatch: cannot adapt {self.input_lb.shape} to model shape {model_shape}. "
+                             f"Expected total elements: {int(np.prod(model_shape[1:]))}, "
+                             f"got: {int(np.prod(self.input_lb.shape[1:]))}")
 
     def verify(self, proof, public_inputs):
         raise NotImplementedError("Subclasses must implement verify method")
 
     def check_clean_prediction(self, sample_input, true_label, sample_idx=0):
-
+        
         self.clean_prediction_stats['total_samples'] += 1
 
         try:
-
-            if sample_input.ndim == 3:
-                sample_input = sample_input.unsqueeze(0)
-            elif sample_input.ndim == 1:
-
+            # Handle different input shapes
+            if sample_input.ndim == 1:
+                # Flat input (e.g., [784] from CSV) - need to add batch dimension and reshape
                 expected_shape = self.model.get_expected_input_shape()
-                if len(expected_shape) == 4:
+                
+                if len(expected_shape) == 4:  # CNN model expecting [batch, channels, height, width]
                     sample_input = sample_input.view(1, *expected_shape[1:])
                 else:
                     sample_input = sample_input.unsqueeze(0)
+                    
+            elif sample_input.ndim == 2:
+                # [batch, features] format - might need reshaping for CNN
+                if sample_input.shape[0] == 1:  # Already has batch dimension
+                    expected_shape = self.model.get_expected_input_shape()
+                    if len(expected_shape) == 4 and sample_input.shape[1] == int(np.prod(expected_shape[1:])):
+                        # Reshape [1, 784] to [1, 1, 28, 28] for MNIST or [1, 3072] to [1, 3, 32, 32] for CIFAR10
+                        sample_input = sample_input.view(1, *expected_shape[1:])
+                else:
+                    # Multiple samples - take first one
+                    sample_input = sample_input[0:1]
+                    
+            elif sample_input.ndim == 3:
+                # [channels, height, width] format - add batch dimension
+                sample_input = sample_input.unsqueeze(0)
+                
+            elif sample_input.ndim == 4:
+                # Already in [batch, channels, height, width] format
+                if sample_input.shape[0] != 1:
+                    sample_input = sample_input[0:1]  # Take first sample
 
             with torch.no_grad():
                 self.model.pytorch_model.eval()
@@ -177,25 +208,10 @@ class BaseVerifier:
                 self.clean_prediction_stats['clean_correct'] += 1
                 if self.verbose:
                     print(f"✅ Sample {sample_idx+1} Clean Prediction: Correct (pred: {predicted_label}, true: {true_label})")
-
-                    print(f"   📊 Output layer values:")
-                    for i, value in enumerate(final_layer_values):
-                        marker = "👑" if i == predicted_label else "  "
-                        print(f"   {marker} Output_{i}: {value:.6f}")
             else:
                 self.clean_prediction_stats['clean_incorrect'] += 1
                 if self.verbose:
                     print(f"❌ Sample {sample_idx+1} Clean Prediction: Incorrect (pred: {predicted_label}, true: {true_label})")
-
-                    print(f"   📊 Output layer values:")
-                    for i, value in enumerate(final_layer_values):
-                        if i == predicted_label:
-                            marker = "❌"
-                        elif i == true_label:
-                            marker = "✅"
-                        else:
-                            marker = "  "
-                        print(f"   {marker} Output_{i}: {value:.6f}")
                     print(f"   ⚠️  Skipping verification - clean prediction already incorrect")
 
             return is_correct
@@ -2384,6 +2400,10 @@ class HybridZonotopeVerifier(BaseVerifier):
 
         print_memory_usage("HybridZonotopeVerifier Start")
         print("🚀 Starting complete verification process - conforming to theoretical architecture design")
+
+        if self.input_center is None:
+            print("❌ Error: input_center is None. Cannot proceed with verification.")
+            return {"verified": False, "error": "input_center is None"}
 
         num_samples = self.input_center.shape[0] if self.input_center.ndim > 1 else 1
         print(f"Total samples: {num_samples}")

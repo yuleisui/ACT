@@ -5,3 +5,6 @@ data/cifar-10-batches-py/
 data/cifar-10-python.tar.gz
 */.DS_Store
 .DS_Store
+models/cifar10
+models/mnist
+gurobi/
