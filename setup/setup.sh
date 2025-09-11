@@ -11,7 +11,7 @@ if ! command -v conda &> /dev/null; then
     exit 1
 fi
 
-# Step 1: Initialize Conda
+# Step 1: Initialise Conda
 source "$(conda info --base)/etc/profile.d/conda.sh"
 
 # Step 2: Create and activate main environment (act-main)
@@ -36,7 +36,7 @@ conda install -y gurobi
 # Step 2: Create and activate abcrown environment (act-abcrown)
 if ! conda env list | grep -q "^act-abcrown "; then
     echo "[ACT] Creating conda env: act-abcrown..."
-    conda create -y -n act-abcrown python=3.11
+    conda create -y -n act-abcrown python=3.9
 else
     echo "[ACT] Conda env 'act-abcrown' already exists."
 fi
@@ -44,30 +44,19 @@ fi
 echo "[ACT] Activating ACT-ABCROWN environment..."
 conda activate act-abcrown
 
-# Step 3: Install Gurobi first via conda (following official setup)
-echo "[ACT] Installing Gurobi for act-abcrown environment..."
-conda config --add channels gurobi
-conda install -y gurobi
-
-# Step 4: Install auto_LiRPA first (critical step from official setup)
-echo "[ACT] Installing auto_LiRPA library..."
-pushd ../modules/abcrown > /dev/null
-pip install -e auto_LiRPA/
-popd > /dev/null
-
-# Step 5: Install ABCROWN dependencies
+# Step 3: Install ABCROWN dependencies
 echo "[ACT] Installing ABCROWN requirements..."
 pip install -r abcrown_requirements.txt
 
-# Step 6: Call ERAN environment setup script (note: cannot activate sub-environment here)
+# Step 4: Call ERAN environment setup script (note: cannot activate sub-environment here)
 echo "[ACT] Setting up ERAN sub-environment..."
 bash eran_env_setup.sh
 
-# Step 7: Create empty config file for abcrown CLI parameter mode
+# Step 5: Create empty config file for abcrown CLI parameter mode
 echo "[ACT] Creating empty_config.yaml for CLI-only abcrown runs..."
 echo "{}" > ../verifier/empty_config.yaml
 
-# Step 8: Patch the abcrown module __init__.py
+# Step 6: Patch the abcrown module __init__.py
 ABCROWN_SUBMODULE_DIR="../modules/abcrown"
 INIT_RELATIVE_PATH="complete_verifier/__init__.py"
 INIT_FULL_PATH="$ABCROWN_SUBMODULE_DIR/$INIT_RELATIVE_PATH"

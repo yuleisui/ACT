@@ -2,10 +2,10 @@
 set -e
 echo "[ERAN] Setting up ERAN environment..."
 
-# 初始化 conda 环境
+# Initialize conda environment
 source "$(conda info --base)/etc/profile.d/conda.sh"
 
-# 创建 ERAN 环境
+# Create ERAN environment
 if ! conda env list | grep -q "^act-eran "; then
     echo "[ERAN] Creating conda env: act-eran..."
     conda create -y -n act-eran python=3.8 # use Python 3.8 to incorporate the ERAN requirements for onnx (1.8.0)
@@ -16,12 +16,12 @@ fi
 echo "[ERAN] Activating ERAN environment..."
 conda activate act-eran
 
-# 安装系统级依赖（sudo）
+# Install system-level dependencies (sudo)
 echo "[ERAN] Installing system-level dependencies..."
-# 更新包列表
+# Update package list
 sudo apt-get update -y
 
-# 注意：不包含 libgmp-dev 和 libmpfr-dev，因为 ERAN install.sh 会从源码编译特定版本
+# Note: Does not include libgmp-dev and libmpfr-dev, as ERAN install.sh will compile specific versions from source
 REQUIRED_APT_PACKAGES=(m4 build-essential autoconf libtool texlive-latex-base)
 for pkg in "${REQUIRED_APT_PACKAGES[@]}"; do
     if ! dpkg -s "$pkg" &> /dev/null; then
@@ -36,7 +36,7 @@ ERAN_DIR="$(cd ../modules/eran && pwd)"
 echo "[ERAN] Switching to $ERAN_DIR"
 pushd "$ERAN_DIR" > /dev/null
 
-# 安装 CMake（如缺）
+# Install CMake (if missing)
 if ! command -v cmake &> /dev/null; then
     echo "[ERAN] cmake not found. Installing..."
     INSTALL_DIR="$(pwd)/cmake-3.19.7-Linux-x86_64"
@@ -55,7 +55,7 @@ fi
 if [ -f "install.sh" ]; then
     echo "[ERAN] Found install.sh, but using manual installation steps for better control..."
     
-    # 手动执行 ERAN 依赖安装步骤（基于官方文档）
+    # Manually execute ERAN dependency installation steps (based on official documentation)
     echo "[ERAN] Installing GMP..."
     if [ ! -f "gmp-6.1.2.tar.xz" ]; then
         wget -q https://gmplib.org/download/gmp/gmp-6.1.2.tar.xz
@@ -116,7 +116,7 @@ if [ -f "install.sh" ]; then
         cp libgurobi_c++.a ../../lib/
         cd ../../
         sudo cp lib/libgurobi91.so /usr/local/lib
-        # 使用正确的 Python 环境安装 Gurobi Python 接口（不使用 sudo）
+        # Install Gurobi Python interface using the correct Python environment (do not use sudo)
         echo "[ERAN] Installing Gurobi Python interface..."
         python setup.py install --user
         cd ../../
@@ -125,7 +125,7 @@ if [ -f "install.sh" ]; then
         echo "[ERAN] Gurobi directory already exists, skipping"
     fi
     
-    # 设置环境变量
+    # Set environment variables
     export GUROBI_HOME="$(pwd)/gurobi912/linux64"
     export PATH="${PATH}:${GUROBI_HOME}/bin"
     export CPATH="${CPATH}:${GUROBI_HOME}/include"
@@ -157,12 +157,12 @@ if [ -f "install.sh" ]; then
         echo "[ERAN] DeepG directory already exists, skipping"
     fi
     
-    # 更新库路径
+    # Update library path
     sudo ldconfig
     
     echo "[ERAN] Manual installation completed successfully"
     
-    # 设置ELINA Python接口路径（在popd之前）
+    # Set ELINA Python interface path (before popd)
     echo "[ERAN] Configuring ELINA Python interface path..."
     ELINA_PYTHON_PATH="$(pwd)/ELINA/python_interface"
     echo "[ERAN] ELINA Python interface path: $ELINA_PYTHON_PATH"
@@ -174,16 +174,16 @@ fi
 
 popd > /dev/null
 
-# 安装 Python 包
+# Install Python packages
 echo "[ERAN] Installing Python packages for ERAN..."
 pip install -r eran_requirements.txt
 
-# 安装conda版本的Gurobi（提供gurobipy模块）
+# Install conda version of Gurobi (provides gurobipy module)
 echo "[ERAN] Installing Gurobi via conda for Python interface..."
 conda config --add channels http://conda.anaconda.org/gurobi
 conda install -y gurobi
 
-# 添加ELINA Python接口到Python路径
+# Add ELINA Python interface to Python path
 echo "[ERAN] Configuring ELINA Python interface path..."
 SITE_PACKAGES=$(python -c "import site; print(site.getsitepackages()[0])")
 echo "[ERAN] Using ELINA Python interface path: $ELINA_PYTHON_PATH"
