@@ -68,6 +68,10 @@ if [ -f "install.sh" ]; then
         sudo make install
         cd ..
         echo "[ERAN] GMP installed successfully"
+        # Clean up installation files like official install.sh
+        rm -f gmp-6.1.2.tar.xz
+        rm -rf gmp-6.1.2
+        echo "[ERAN] Cleaned up GMP installation files"
     else
         echo "[ERAN] GMP directory already exists, skipping"
     fi
@@ -84,6 +88,10 @@ if [ -f "install.sh" ]; then
         sudo make install
         cd ..
         echo "[ERAN] MPFR installed successfully"
+        # Clean up installation files like official install.sh
+        rm -f mpfr-4.1.0.tar.xz
+        rm -rf mpfr-4.1.0
+        echo "[ERAN] Cleaned up MPFR installation files"
     else
         echo "[ERAN] MPFR directory already exists, skipping"
     fi
@@ -100,6 +108,10 @@ if [ -f "install.sh" ]; then
         sudo make install
         cd ..
         echo "[ERAN] cddlib installed successfully"
+        # Clean up installation files (note: official install.sh doesn't clean cddlib, but we add for consistency)
+        rm -f cddlib-0.94m.tar.gz
+        rm -rf cddlib-0.94m
+        echo "[ERAN] Cleaned up cddlib installation files"
     else
         echo "[ERAN] cddlib directory already exists, skipping"
     fi
@@ -121,6 +133,9 @@ if [ -f "install.sh" ]; then
         python setup.py install --user
         cd ../../
         echo "[ERAN] Gurobi installed successfully"
+        # Clean up installation tarball like official install.sh
+        rm -f gurobi9.1.2_linux64.tar.gz
+        echo "[ERAN] Cleaned up Gurobi installation tarball"
     else
         echo "[ERAN] Gurobi directory already exists, skipping"
     fi
@@ -182,6 +197,11 @@ pip install -r eran_requirements.txt
 echo "[ERAN] Installing Gurobi via conda for Python interface..."
 conda config --add channels http://conda.anaconda.org/gurobi
 conda install -y gurobi
+
+# Improve libstdc++ compatibility with varying conda envs for ELINA libraries
+echo "[ERAN] Installing compatible libstdc++ for ELINA libraries..."
+conda install -y -c conda-forge "libstdcxx-ng>=12.0.0"
+
 
 # Add ELINA Python interface to Python path
 echo "[ERAN] Configuring ELINA Python interface path..."
