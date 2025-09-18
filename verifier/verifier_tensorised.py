@@ -1,3 +1,27 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+#########################################################################
+##   Abstract Constraint Transformer (ACT) - Unified Verification     ##
+##                                                                     ##
+##   Copyright (C) 2024-2025 ACT Development Team                      ##
+##                                                                     ##
+##   This program integrates multiple neural network verification      ##
+##   tools and provides novel hybrid zonotope verification methods.    ##
+##                                                                     ##
+##   External tool compatibility parameters are adapted from:          ##
+##   - α,β-CROWN: https://github.com/Verified-Intelligence/alpha-beta-CROWN ##
+##     Copyright (C) 2021-2025 The α,β-CROWN Team                      ##
+##     Licensed under BSD 3-Clause License                             ##
+##   - ERAN: https://github.com/eth-sri/eran                           ##
+##     Copyright ETH Zurich, Licensed under Apache 2.0 License         ##
+##                                                                     ##
+##   This integration enables unified command-line interface across    ##
+##   different verification backends while maintaining ACT's native    ##
+##   capabilities and novel contributions.                             ##
+##                                                                     ##
+#########################################################################
+
 from enum import Enum
 from typing import Dict, List, Optional, Union, Any, Tuple
 import torch
@@ -2494,96 +2518,128 @@ class HybridZonotopeVerifier(BaseVerifier):
 
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--verifier', type=str, default=None, help='[eran, abcrown]')
-    parser.add_argument('--method', type=str, default=None, help='[alpha, beta, alpha_beta, deepzono, refinezono, deeppoly, refinepoly, hybridz_relaxed_with_bab]')
-    parser.add_argument('--device', type=str, default='cpu', help='Device to run the verification on (e.g., cpu, cuda).')
+    parser = argparse.ArgumentParser(description='Abstract Constraint Transformer (ACT) - Unified Neural Network Verification Framework')
+    
+    # ================================================================================
+    # ACT NATIVE PARAMETERS
+    # ================================================================================
+    
+    # ACT Core Verifier Selection
+    parser.add_argument('--verifier', type=str, default=None, 
+                        choices=['interval', 'eran', 'abcrown', 'hybridz'],
+                        help='Backend verification engine. "interval": ACT native interval analysis, "eran": ERAN external verifier, "abcrown": αβ-CROWN external verifier, "hybridz": ACT novel hybrid zonotope verifier')
+    parser.add_argument('--method', type=str, default=None, 
+                        help='Verification method. ERAN: [deepzono, refinezono, deeppoly, refinepoly], αβ-CROWN: [alpha, beta, alpha_beta], ACT-HybridZ: [hybridz, hybridz_relaxed, hybridz_relaxed_with_bab], ACT-Interval: [interval]')
+    parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda'],
+                        help='Computation device (cpu or cuda)')
 
+    # ACT Hybrid Zonotope Novel Features
     parser.add_argument('--relaxation_ratio', type=float, default=1.0,
-                        help='Relaxation ratio for hybrid strategy (0.0=full precise MILP, 1.0=full relaxed LP). Default 1.0. Only customizable for hybridz_relaxed method - hybridz_relaxed_with_bab always uses 1.0.')
-
+                        help='ACT Hybrid Zonotope relaxation ratio: 0.0=full-precision MILP, 1.0=fully-relaxed LP, 0.0~1.0=partially-relaxed MILP+LP. Only applies to hybridz_relaxed method (hybridz_relaxed_with_bab forces 1.0)')
     parser.add_argument('--enable_generator_merging', action='store_true', default=False,
-                        help='Enable parallel generator merging optimization in the final linear layer (recommended for performance).')
+                        help='ACT innovation: Enable parallel generator merging optimisation in the final linear layer (hybrid zonotope enhancement)')
     parser.add_argument('--cosine_threshold', type=float, default=0.95,
-                        help='Cosine similarity threshold for parallel generator detection (0.0-1.0, higher=stricter).')
+                        help='ACT innovation: Cosine similarity threshold for parallel generator detection (0.0-1.0, higher=stricter)')
 
+    # ACT Specification Refinement (Branch-and-Bound) Framework
     parser.add_argument('--enable_spec_refinement', action='store_true', default=False,
-                        help='Enable specification refinement BaB verification. When initial abstract verification returns UNKNOWN/UNSAT, automatically perform Branch-and-Bound refinement verification.')
+                        help='ACT innovation: Enable specification refinement BaB verification. Automatically triggers when initial abstract verification returns UNKNOWN/UNSAT')
     parser.add_argument('--bab_max_depth', type=int, default=8,
-                        help='BaB maximum search depth (default: 8).')
+                        help='ACT BaB: Maximum search depth')
     parser.add_argument('--bab_max_subproblems', type=int, default=500,
-                        help='BaB maximum number of subproblems (default: 500).')
+                        help='ACT BaB: Maximum number of subproblems')
     parser.add_argument('--bab_time_limit', type=float, default=300.0,
-                        help='BaB time limit in seconds (default: 300.0).')
-
+                        help='ACT BaB: Time limit in seconds')
     parser.add_argument('--bab_split_tolerance', type=float, default=1e-6,
-                        help='BaB split tolerance (default: 1e-6).')
+                        help='ACT BaB: Split tolerance')
     parser.add_argument('--bab_verbose', action='store_true', default=True,
-                        help='BaB verbose output mode.')
+                        help='ACT BaB: Enable verbose output')
 
+    # ================================================================================
+    # EXTERNAL TOOL COMPATIBILITY PARAMETERS
+    # ================================================================================
+    # The following parameters are designed for compatibility with external verification
+    # tools (ERAN and αβ-CROWN) to enable unified interface calls. Parameter names and
+    # descriptions are adapted from:
+    # 
+    # - αβ-CROWN (α,β-CROWN): https://github.com/Verified-Intelligence/alpha-beta-CROWN
+    #   Copyright (C) 2021-2025 The α,β-CROWN Team
+    #   Licensed under BSD 3-Clause License
+    #   Primary authors: Huan Zhang, Zhouxing Shi, Xiangru Zhong
+    #
+    # - ERAN: https://github.com/eth-sri/eran
+    #   Copyright ETH Zurich
+    #   Licensed under Apache 2.0 License
+    #
+    # These parameters enable seamless integration and unified command-line interface
+    # across different verification backends while maintaining ACT's native capabilities.
+    # ================================================================================
+
+    # Input Specification (adapted from αβ-CROWN specification hierarchy)
     parser.add_argument('--input_lb', type=float, nargs='+', default=None,
-                        help='Lower bounds for boxed set-based robustness input specification.')
+                        help='Lower bounds for set-based input specification (box constraints)')
     parser.add_argument('--input_ub', type=float, nargs='+', default=None,
-                        help='Upper bounds for boxed set-based robustness input specification.')
+                        help='Upper bounds for set-based input specification (box constraints)')
 
-    parser.add_argument('--csv_name', type=str, default=None)
-    parser.add_argument('--results_file', type=str, default="out.txt")
-    parser.add_argument('--root_path', type=str, default="")
-    parser.add_argument('--output_file', type=str, default="out.pkl")
+    # File I/O (adapted from αβ-CROWN general hierarchy)
+    parser.add_argument('--csv_name', type=str, default=None,
+                        help='CSV file containing verification instances (ERAN/αβ-CROWN compatible format)')
+    parser.add_argument('--results_file', type=str, default="out.txt",
+                        help='Output file for verification results summary')
+    parser.add_argument('--root_path', type=str, default="",
+                        help='Root path prefix for relative file paths')
+    parser.add_argument('--output_file', type=str, default="out.pkl",
+                        help='Output file for detailed verification results (pickle format)')
 
-    parser.add_argument('--model_path', type=str, default=None)
-    parser.add_argument('--load_model', type=str, default=None, help='Load pretrained model from this specified path.')
+    # Model Configuration (adapted from αβ-CROWN model hierarchy)
+    parser.add_argument('--model_path', type=str, default=None,
+                        help='Path to neural network model file (ONNX format supported)')
+    parser.add_argument('--load_model', type=str, default=None, 
+                        help='Load pretrained model from specified path (αβ-CROWN compatibility)')
 
-    parser.add_argument("--start", type=int, default=0, help='Start from the i-th property in specified dataset.')
-
-    parser.add_argument("--end", type=int, default=10000, help='End with the (i-1)-th property in the dataset.')
+    # Data Configuration (adapted from αβ-CROWN data hierarchy)
+    parser.add_argument("--start", type=int, default=0, 
+                        help='Start from the i-th property in specified dataset')
+    parser.add_argument("--end", type=int, default=10000, 
+                        help='End with the (i-1)-th property in the dataset')
     parser.add_argument("--select_instance", type=int, nargs='+', default=None,
-                        help='Select a list of instances to verify.')
-
+                        help='Select specific instances to verify (list of indices)')
     parser.add_argument('--num_outputs', type=int, default=10,
-                        help="Number of classes for classification problem.")
-
+                        help="Number of output classes for classification problems")
     parser.add_argument("--mean", nargs='+', type=float, default=None,
-                        help='Mean vector used in data preprocessing. Can be a single value or a list of values.')
-
+                        help='Mean values for data preprocessing normalisation (single value or per-channel list)')
     parser.add_argument("--std", nargs='+', type=float, default=None,
-                        help='Std vector used in data preprocessing. Can be a single value or a list of values.')
-
+                        help='Standard deviation values for data preprocessing normalisation (single value or per-channel list)')
     parser.add_argument('--pkl_path', type=str, default=None,
-                        help="Load properties to verify from a .pkl file (only used for oval20 dataset).")
-
+                        help="Load verification properties from pickle file (legacy oval20 dataset support)")
     parser.add_argument("--dataset", type=str, default=None,
-                        help="Dataset name (only if not using specifications from a .csv file). Dataset must be defined in utils.py. For customized data, checkout custom/custom_model_data.py.")
-
+                        help="Dataset name (mnist, cifar10, etc.) or path to CSV file")
     parser.add_argument("--anchor", type=str, default=None,
-                        help="Dataset name (only if not using specifications from a .csv file). Dataset must be defined in utils.py. For customized data, checkout custom/custom_model_data.py.")
-
+                        help="Anchor dataset path for data point anchoring in specifications")
     parser.add_argument("--filter_path", type=str, default=None,
-                        help='A filter in pkl format contains examples that will be skipped (not used).')
+                        help='Pickle file containing examples to skip during verification')
     parser.add_argument("--data_idx_file", type=str, default=None,
-                        help='A text file with a list of example IDs to run.')
+                        help='Text file with list of example IDs to run')
 
-    parser.add_argument("--spec_type", type=str, default='local_lp', choices=['local_lp', 'local_vnnlib', 'set_vnnlib', "set_box"],
-                        help='Type of verification specification. "local_lp" = L_p norm around data points, "local_vnnlib" = VNNLIB specs with anchor points, "set_vnnlib" = set-based VNNLIB specs (e.g., AcasXu), "set_box" = set-based box constraints.')
+    # Specification Configuration (adapted from αβ-CROWN specification hierarchy)
+    parser.add_argument("--spec_type", type=str, default='local_lp', 
+                        choices=['local_lp', 'local_vnnlib', 'set_vnnlib', "set_box"],
+                        help='Verification specification type: "local_lp"=Lp norm around data points, "local_vnnlib"=VNNLIB with anchor points, "set_vnnlib"=set-based VNNLIB (e.g., AcasXu), "set_box"=box constraints')
     parser.add_argument("--robustness_type", type=str, default="verified-acc",
                         choices=["verified-acc", "runnerup", "clean-acc", "specify-target", "all-positive"],
-                        help='For robustness verification: verify against all labels ("verified-acc" mode), or just the runnerup labels ("runnerup" mode), '
-                            'or using a specified label in dataset ("speicify-target" mode, only used for oval20). Not used when a VNNLIB spec is used.')
-
+                        help='Robustness verification target: "verified-acc"=verify against all labels, "runnerup"=verify against runner-up labels only')
     parser.add_argument("--norm", type=str, default='inf', choices=['1', '2', 'inf'],
-                        help='Lp-norm for epsilon perturbation in robustness verification (1, 2, inf).')
-
+                        help='Lp-norm for epsilon perturbation in robustness verification')
     parser.add_argument("--epsilon", type=float, default=None,
-                        help='Set perturbation size (Lp norm). If not set, a default value may be used based on dataset loader.')
+                        help='Perturbation bound (Lp norm). If unset, dataset-specific defaults may apply')
     parser.add_argument("--epsilon_min", type=float, default=0.,
-                        help='Set an optional minimum perturbation size (Lp norm).')
-
+                        help='Minimum perturbation bound (typically 0.0)')
     parser.add_argument("--vnnlib_path", type=str, default=None,
-                        help='Path to .vnnlib specification file. Will override any Lp/robustness verification arguments.')
+                        help='Path to VNNLIB specification file (overrides Lp/robustness verification arguments)')
     parser.add_argument("--vnnlib_path_prefix", type=str, default='',
-                        help='Add a prefix to .vnnlib specs path to correct malformed csv files.')
+                        help='Prefix to add to VNNLIB specification paths (for correcting malformed CSV files)')
     parser.add_argument("--rhs_offset", type=float, default=None,
-                        help='Adding an offset to RHS.')
+                        help='Offset to add to right-hand side of constraints (advanced usage)')
 
     parsed_args = parser.parse_args(sys.argv[1:])
     args_dict = vars(parsed_args)
