@@ -547,8 +547,6 @@ class CompositeVerifier(BaseVerifier):
         for v_type in verifier_types:
             if v_type == VerifierType.ERAN:
                 self.verifiers[v_type] = ERANVerifier(self.net, self.spec, self.device)
-            elif v_type == VerifierType.IVAN:
-                self.verifiers[v_type] = IVANVerifier(self.net, self.spec, self.device)
             elif v_type == VerifierType.ABCROWN:
                 self.verifiers[v_type] = ABCROWNVerifier(self.net, self.spec, self.device)
 
@@ -646,13 +644,6 @@ class ERANVerifier(BaseVerifier):
             print(e.stderr)
             raise RuntimeError("ERAN verification failed.") from e
 
-class IVANVerifier(BaseVerifier):
-    def __init__(self, dataset : Dataset, method, spec : Spec, device: str = 'cpu'):
-        super().__init__(dataset, spec, device)
-
-    def verify(self, proof, public_inputs):
-
-        raise NotImplementedError("IVAN verification not implemented yet")
 
 class ABCROWNVerifier(BaseVerifier):
     def __init__(self, dataset : Dataset, method, spec : Spec, device: str = 'cpu'):
@@ -2582,14 +2573,8 @@ if __name__ == "__main__":
                         help='Upper bounds for set-based input specification (box constraints)')
 
     # File I/O (adapted from αβ-CROWN general hierarchy)
-    parser.add_argument('--csv_name', type=str, default=None,
-                        help='CSV file containing verification instances (ERAN/αβ-CROWN compatible format)')
-    parser.add_argument('--results_file', type=str, default="out.txt",
-                        help='Output file for verification results summary')
     parser.add_argument('--root_path', type=str, default="",
                         help='Root path prefix for relative file paths')
-    parser.add_argument('--output_file', type=str, default="out.pkl",
-                        help='Output file for detailed verification results (pickle format)')
 
     # Model Configuration (adapted from αβ-CROWN model hierarchy)
     parser.add_argument('--model_path', type=str, default=None,
@@ -2671,7 +2656,13 @@ if __name__ == "__main__":
     model = Model(model_path=args_dict["model_path"],
                   device = args_dict["device"])
 
-    dataset = Dataset(dataset_path=args_dict["dataset"],
+    # For VNNLIB spec types, use vnnlib_path instead of dataset path
+    dataset_path_for_init = args_dict["dataset"]
+    if args_dict["spec_type"] in ["local_vnnlib", "set_vnnlib"] and args_dict["vnnlib_path"] is not None:
+        dataset_path_for_init = args_dict["vnnlib_path"]
+        print(f"🔍 Using VNNLIB file as dataset path: {dataset_path_for_init}")
+
+    dataset = Dataset(dataset_path=dataset_path_for_init,
                       anchor_csv_path=args_dict["anchor"],
                       device=args_dict["device"],
                       spec_type=args_dict["spec_type"],
