@@ -20,7 +20,7 @@ Abstract-Constraint-Transformer/
 ├── .gitignore                          # Git ignore patterns for Python, conda environments, etc
 │
 ├── setup/                              # Environment setup scripts and requirements
-│   ├── README.md                       # Setup documentation and troubleshooting guide
+│   ├── [README.md](setup/README.md)    # Setup documentation and troubleshooting guide
 │   ├── setup.sh                        # Main automated setup script for all environments
 │   ├── eran_env_setup.sh               # ERAN-specific environment setup script
 │   ├── main_requirements.txt           # ACT main environment Python dependencies
@@ -28,7 +28,7 @@ Abstract-Constraint-Transformer/
 │   └── eran_requirements.txt           # ERAN environment Python dependencies
 │
 ├── verifier/                           # Main verification framework and interfaces
-│   ├── README.md                       # Verifier module documentation and usage guide
+│   ├── [README.md](verifier/README.md) # Verifier module documentation and usage guide
 │   ├── verifier_tensorised.py          # Main unified verification interface (entry point)
 │   ├── abcrown_runner.py               # αβ-CROWN integration and execution wrapper
 │   ├── hybridz_tensorised.py           # ACT Hybrid Zonotope verification implementation
@@ -41,12 +41,12 @@ Abstract-Constraint-Transformer/
 │   └── empty_config.yaml               # Required configuration file for αβ-CROWN backend operation
 │
 ├── modules/                            # External verifier submodules
-│   ├── README.md                       # Submodules overview and integration notes
+│   ├── [README.md](modules/README.md)  # Submodules overview and integration notes
 │   ├── abcrown/                        # αβ-CROWN complete verifier submodule
 │   └── eran/                           # ERAN abstract interpretation verifier submodule
 │
 ├── models/                             # Pre-trained neural network models
-│   ├── README.md                       # Model collection overview and usage guide
+│   ├── [README.md](models/README.md)   # Model collection overview and usage guide
 │   ├── Sample_models/                  # Custom sample models for testing and development
 │   │   ├── MNIST/                      # Sample MNIST CNN models
 │   │   │   ├── small_relu_mnist_cnn_model_1.onnx       # Small CNN with ReLU activation
@@ -59,7 +59,7 @@ Abstract-Constraint-Transformer/
 │   │       └── small_tanh_cifar10_cnn_model_1.onnx     # Small CNN with Tanh activation
 │
 └── data/                                               # Sample datasets and verification specifications
-    ├── README.md                                       # Dataset documentation and format specifications
+    ├── [README.md](data/README.md)                     # Dataset documentation and format specifications
     ├── MNIST_csv/                                      # MNIST dataset in CSV format
     │   └── mnist_first_100_samples.csv                 # First 100 MNIST test samples for verification
     │
@@ -87,6 +87,14 @@ Before installation, ensure you have the following:
 - **Miniconda or Anaconda**: Required for environment management
   - Follow the steps: https://www.anaconda.com/docs/getting-started/miniconda/install#quickstart-install-instructions
 
+### Gurobi License Setup (Required)
+
+**Important**: ACT requires Gurobi optimizer for MILP/LP solving. Academic users can obtain **free licenses**.
+
+1. **Academic License**: Visit https://www.gurobi.com/academia/ to obtain a free academic license
+2. **License Installation**: Once obtained, place your `gurobi.lic` file at: ./gurobi/gurobi.lic
+
+**Note**: Without a valid Gurobi license, verification methods that rely on MILP/LP solving (HybridZ methods) will not function.
 
 ### 1. Clone Repository
 
@@ -726,10 +734,6 @@ For ERAN compilation issues, ensure system dependencies:
 sudo apt-get update
 sudo apt-get install build-essential cmake m4 autoconf libtool
 ```
-
-### Gurobi Licence
-Academic users can obtain free licences at: https://www.gurobi.com/academia/. Once obtained, replace gurobi/gurobi.lic with it.
-
 
 ## Contributing
 
