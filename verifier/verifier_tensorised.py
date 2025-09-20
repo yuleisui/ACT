@@ -628,20 +628,24 @@ class ERANVerifier(BaseVerifier):
 
         try:
             print("[ERANVerifier] ERAN verifier running now, please wait for result generation.")
+            print(f"[ERANVerifier] Command: {' '.join(cmd)}")
             result = subprocess.run(
                 cmd,
                 check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
                 text=True,
-
                 cwd=os.path.join(os.getcwd(), "../modules/eran/tf_verify")
             )
-            print("[ERANVerifier] Output:\n", result.stdout)
-            return result.stdout
+            print("[ERANVerifier] ERAN verification completed successfully")
+            return result.returncode
         except subprocess.CalledProcessError as e:
             print("[ERANVerifier] ERAN execution failed:")
-            print(e.stderr)
+            print(f"Return code: {e.returncode}")
+            if e.stdout:
+                print("STDOUT:")
+                print(e.stdout)
+            if e.stderr:
+                print("STDERR:")
+                print(e.stderr)
             raise RuntimeError("ERAN verification failed.") from e
 
 
@@ -711,19 +715,24 @@ class ABCROWNVerifier(BaseVerifier):
 
         try:
             print("[ABCROWNVerifier] ABCROWN verifier running now, please wait for result generation.")
+            print(f"[ABCROWNVerifier] Command: {' '.join(cmd)}")
             result = subprocess.run(
                 cmd,
                 check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
                 text=True,
                 cwd=os.getcwd()
             )
-            print("[ABCROWNVerifier] Output:\n", result.stdout)
-            return result.stdout
+            print("[ABCROWNVerifier] ABCROWN verification completed successfully")
+            return result.returncode
         except subprocess.CalledProcessError as e:
             print("[ABCROWNVerifier] ABCROWN execution failed:")
-            print(e.stderr)
+            print(f"Return code: {e.returncode}")
+            if e.stdout:
+                print("STDOUT:")
+                print(e.stdout)
+            if e.stderr:
+                print("STDERR:")
+                print(e.stderr)
             raise RuntimeError("ABCROWN verification failed.") from e
 
 class IntervalVerifier(BaseVerifier):
