@@ -175,6 +175,9 @@ class BaseVerifier:
         elif self.input_lb.shape[1:] == model_shape[2:] and model_shape[1] == 1:
             self.input_lb = self.input_lb.unsqueeze(1)
             self.input_ub = self.input_ub.unsqueeze(1)
+            # Also adapt input_center
+            if hasattr(self, 'input_center') and self.input_center is not None and self.input_center.shape[1:] == model_shape[2:]:
+                self.input_center = self.input_center.unsqueeze(1)
             
         else:
             raise RuntimeError(f"Input shape mismatch: cannot adapt {self.input_lb.shape} to model shape {model_shape}. "
@@ -2449,12 +2452,16 @@ class HybridZonotopeVerifier(BaseVerifier):
 
             self.clean_prediction_stats['verification_attempted'] += 1
 
-            if self.input_lb.ndim == 1:
-                lb_i = self.input_lb
-                ub_i = self.input_ub
-            else:
+
+            if self.input_lb.shape[0] == 1:
+                lb_i = self.input_lb[0] if self.input_lb.ndim > 1 else self.input_lb
+                ub_i = self.input_ub[0] if self.input_ub.ndim > 1 else self.input_ub
+            elif self.input_lb.shape[0] > idx:
                 lb_i = self.input_lb[idx]
                 ub_i = self.input_ub[idx]
+            else:
+                lb_i = self.input_lb[0] if self.input_lb.ndim > 1 else self.input_lb
+                ub_i = self.input_ub[0] if self.input_ub.ndim > 1 else self.input_ub
 
             if self.use_auto_lirpa:
                 input_example = (lb_i + ub_i) / 2.0

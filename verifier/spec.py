@@ -60,8 +60,7 @@ class InputSpec(BaseSpec):
 
         if self.spec_type == SpecType.LOCAL_LP:
 
-            print(f"🔧 [InputSpec] Using ERAN-style epsilon handling")
-            print(f"📊 epsilon = {epsilon}")
+            print(f"📊 [InputSpec] Epsilon = {epsilon}")
 
             if self.norm == LPNormType.LINF:
                 if dataset.preprocess and hasattr(self.dataset, 'mean') and hasattr(self.dataset, 'std') and self.dataset.mean is not None and self.dataset.std is not None:
