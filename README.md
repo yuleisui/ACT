@@ -5,7 +5,7 @@ A unified neural network verification framework that integrates multiple state-o
 ## Overview
 
 ACT combines three powerful verification approaches:
-- **[ERAN](https://github.com/eth-sri/eran)**: ETH Robustness Analyser with ab### Set-based VNNLIB (`set_vnnlib`)
+- **[ERAN](https://github.com/eth-sri/eran)**: ETH Robustness Analyser with abstract interpretation methods (DeepPoly, DeepZono, etc)
 - **[αβ-CROWN](https://github.com/Verified-Intelligence/alpha-beta-CROWN)**: Complete neural network verifier with Branch-and-Bound (BaB)
 - **Hybrid Zonotope**: Novel tensorised hybrid verification method with MILP/LP relaxation strategies, incorporating three core configurations (Full-precision MILP, Fully-relaxed LP, Partially-relaxed MILP+LP)
 
