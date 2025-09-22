@@ -8,23 +8,6 @@ class BaseSpec:
     def __init__(self, dataset : Dataset = None, model : Model = None, status: VerificationStatus = VerificationStatus.UNKNOWN):
         self.dataset = dataset
         self.model = model
-        self.status = status
-        self.children: List[BaseSpec] = []
-        self.parent: Optional[BaseSpec] = None
-
-    def update_status(self, status: VerificationStatus):
-        self.status = status
-
-    def add_child(self, child : 'BaseSpec'):
-        self.children.append(child)
-        child.parent = self
-
-    def get_children(self):
-        return self.children
-
-    def reset(self):
-        self.status = VerificationStatus.UNKNOWN
-        self.children = []
 
 class InputSpec(BaseSpec):
     def __init__(self,

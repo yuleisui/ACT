@@ -107,10 +107,6 @@ def print_memory_usage(stage_name=""):
         print(f"⚠️ [{stage_name}] psutil not available, cannot monitor memory")
         return 0
 
-class VerifierType(Enum):
-    ERAN = "eran"
-    IVAN = "ivan"
-    ABCROWN = "abcrown"
 
 class BaseVerifier:
     def __init__(self, dataset : Dataset, spec : Spec, device: str = 'cpu'):
@@ -540,33 +536,6 @@ class BaseVerifier:
         print("🏆" + "="*70 + "🏆")
         return final_result
 
-class CompositeVerifier(BaseVerifier):
-    def __init__(self, net, spec, verifier_types: List[VerifierType], device: str = 'cpu'):
-        super().__init__(net, spec, device)
-        self.verifiers: Dict[VerifierType, BaseVerifier] = {}
-        self._initialize_verifiers(verifier_types)
-
-    def _initialize_verifiers(self, verifier_types: List[VerifierType]):
-        for v_type in verifier_types:
-            if v_type == VerifierType.ERAN:
-                self.verifiers[v_type] = ERANVerifier(self.net, self.spec, self.device)
-            elif v_type == VerifierType.ABCROWN:
-                self.verifiers[v_type] = ABCROWNVerifier(self.net, self.spec, self.device)
-
-    def verify(self, proof, public_inputs, verifier_type: Optional[VerifierType] = None):
-        if verifier_type is not None:
-            if verifier_type not in self.verifiers:
-                raise ValueError(f"Verifier {verifier_type} not initialized")
-            return self.verifiers[verifier_type].verify(proof, public_inputs)
-
-        results = {}
-        for v_type, verifier in self.verifiers.items():
-            try:
-                results[v_type] = verifier.verify(proof, public_inputs)
-            except Exception as e:
-                results[v_type] = {"success": False, "error": str(e)}
-
-        return results
 
 class ERANVerifier(BaseVerifier):
     def __init__(self, dataset : Dataset, method, spec : Spec, device: str = 'cpu'):
