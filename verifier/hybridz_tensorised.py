@@ -9,7 +9,30 @@ import os
 import sys
 import psutil
 import gc
-os.environ['GRB_LICENSE_FILE'] = '../gurobi/gurobi.lic'
+
+def setup_gurobi_license():
+    if 'GRB_LICENSE_FILE' not in os.environ:
+        if 'ACTHOME' in os.environ:
+            license_path = os.path.join(os.environ['ACTHOME'], 'gurobi', 'gurobi.lic')
+            print(f"[ACT] Using ACTHOME environment variable: {os.environ['ACTHOME']}")
+        else:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            project_root = os.path.join(current_dir, '..')
+            license_path = os.path.join(project_root, 'gurobi', 'gurobi.lic')
+            print(f"[ACT] Auto-detecting project root from file location")
+        
+        license_path = os.path.abspath(license_path)
+        
+        if os.path.exists(license_path):
+            os.environ['GRB_LICENSE_FILE'] = license_path
+            print(f"[ACT] Gurobi license found and set: {license_path}")
+        else:
+            print(f"[WARN] Gurobi license not found at: {license_path}")
+            print(f"[INFO] Please ensure gurobi.lic is placed in: {os.path.dirname(license_path)}")
+    else:
+        print(f"[ACT] Using existing Gurobi license: {os.environ['GRB_LICENSE_FILE']}")
+
+setup_gurobi_license()
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'modules', 'abcrown', 'auto_LiRPA')))
 from auto_LiRPA import BoundedModule, PerturbationLpNorm, BoundedTensor
 

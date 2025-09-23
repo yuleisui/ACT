@@ -73,16 +73,22 @@ class Dataset:
 
     def _download_and_load_builtin(self, name):
         self._data_source = name
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.join(current_dir, '..')
+        data_root = os.path.join(project_root, 'data')
+        data_root = os.path.abspath(data_root)
+        
+        print(f"[ACT] Data directory: {data_root}")
 
         if name == 'mnist':
             dataset = torchvision.datasets.MNIST(
-                root='../data', train=False, download=True,
+                root=data_root, train=False, download=True,
                 transform=transforms.ToTensor())
             images = [img.numpy().squeeze() for img, _ in dataset]
             labels = [label for _, label in dataset]
         elif name in ['cifar', 'cifar10']:
             dataset = torchvision.datasets.CIFAR10(
-                root='../data', train=False, download=True,
+                root=data_root, train=False, download=True,
                 transform=transforms.ToTensor())
             images = [img.numpy() for img, _ in dataset]
             labels = [label for _, label in dataset]
