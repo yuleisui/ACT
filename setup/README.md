@@ -49,7 +49,7 @@ source setup.sh
 ### Manual ERAN Setup (if needed)
 ```bash
 cd setup/
-bash eran_env_setup.sh
+source eran_env_setup.sh
 ```
 
 ## Troubleshooting

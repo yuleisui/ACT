@@ -93,7 +93,7 @@ git submodule update --init --recursive
 # Rebuild ERAN environment
 conda env remove -n act-eran
 cd setup/
-bash eran_env_setup.sh
+source eran_env_setup.sh
 ```
 
 ### αβ-CROWN Import Conflicts
