@@ -24,7 +24,7 @@ This directory contains the core verification framework and interfaces for the A
   - Novel tensorised hybrid verification method
   - Complexity-simplified Hybrid Zonotope activation transformer representation forms
   - MILP/LP relaxation strategies with configurable ratios
-  - Parallel generator merging optimisation - disabled by default
+  - Parallel generator merging optimization - disabled by default
   - Three core configurations: Full-precision MILP, Fully-relaxed LP, Partially-relaxed MILP+LP
 
 - **`bab_spec_refinement.py`**: Prototype Branch-and-bound specification refinement

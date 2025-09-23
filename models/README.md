@@ -1,6 +1,6 @@
 # Models Directory
 
-This directory contains pre-trained neural network models for verification benchmarking and testing. Models are organised by dataset.
+This directory contains pre-trained neural network models for verification benchmarking and testing. Models are organized by dataset.
 
 ## Directory Structure
 

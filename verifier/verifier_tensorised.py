@@ -2513,7 +2513,7 @@ if __name__ == "__main__":
     parser.add_argument('--relaxation_ratio', type=float, default=1.0,
                         help='ACT Hybrid Zonotope relaxation ratio: 0.0=full-precision MILP, 1.0=fully-relaxed LP, 0.0~1.0=partially-relaxed MILP+LP. Only applies to hybridz_relaxed method (hybridz_relaxed_with_bab forces 1.0)')
     parser.add_argument('--enable_generator_merging', action='store_true', default=False,
-                        help='ACT innovation: Enable parallel generator merging optimisation in the final linear layer (hybrid zonotope enhancement)')
+                        help='ACT innovation: Enable parallel generator merging optimization in the final linear layer (hybrid zonotope enhancement)')
     parser.add_argument('--cosine_threshold', type=float, default=0.95,
                         help='ACT innovation: Cosine similarity threshold for parallel generator detection (0.0-1.0, higher=stricter)')
 
