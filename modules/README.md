@@ -77,7 +77,7 @@ ACT translates its unified parameters to each tool's native format:
 | MNIST | ✓ | ✓ | ✓ |
 | CIFAR-10 | ✓ | ✓ | ✓ |
 | VNNLIB | x | ✓ | ✓ |
-| BaB Refinement | ✗ | ✓ | ✓ |
+| BaB Refinement | x | ✓ | ✓ |
 
 ## Troubleshooting
 

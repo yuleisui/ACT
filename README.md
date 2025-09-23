@@ -10,7 +10,7 @@ A unified neural network verification framework that integrates multiple state-o
 
 ## Quick Start
 
-For the full detailed setup and configuration guide, please refer to the [Setup wiki page](https://github.com/doctormeeee/Abstract-Constraint-Transformer/wiki/Setup) and [Usage wiki page](https://github.com/doctormeeee/Abstract-Constraint-Transformer/wiki/Usage).
+For the full detailed setup and configuration guide, please refer to the [Setup wiki page](https://github.com/doctormeeee/Abstract-Constraint-Transformer/wiki/Setup-Guide) and [Usage wiki page](https://github.com/doctormeeee/Abstract-Constraint-Transformer/wiki/Usage-Guide).
 The following provides a minimal Quick Start with step-by-step commands to get the project running.
 
 ```bash
