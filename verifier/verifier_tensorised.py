@@ -685,7 +685,6 @@ class ABCROWNVerifier(BaseVerifier):
             "norm" : norm,
             "epsilon" : self.spec.input_spec.epsilon,
             "vnnlib_path" : vnnlib_path
-
         }
 
         if netname.endswith(".onnx"):
@@ -700,7 +699,11 @@ class ABCROWNVerifier(BaseVerifier):
         for k, v in args_dict.items():
             if v is not None:
                 args_list.append(f"--{k}")
-                args_list.append(str(v))
+                if isinstance(v, list) and k in ['mean', 'std']:
+                    for val in v:
+                        args_list.append(str(val))
+                else:
+                    args_list.append(str(v))
 
         print("aruguments checking for abcrown")
         print(args_dict)
