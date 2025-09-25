@@ -595,29 +595,52 @@ class ERANVerifier(BaseVerifier):
                     args_list.append(str(v))
 
         conda_env_name = "act-eran"
+        
+        # Dynamic path detection for ERAN runner
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.join(current_dir, '..')
+        eran_tf_verify_path = os.path.join(project_root, 'modules', 'eran', 'tf_verify')
+        eran_tf_verify_path = os.path.abspath(eran_tf_verify_path)
 
-        cmd = ["conda", "run", "-n", conda_env_name, "python3", "__main__.py"] + args_list
+        cmd = ["conda", "run", "--no-capture-output", "-n", conda_env_name, "python3", "-u", "__main__.py"] + args_list
 
         try:
             print("[ERANVerifier] ERAN verifier running now, please wait for result generation.")
             print(f"[ERANVerifier] Command: {' '.join(cmd)}")
-            result = subprocess.run(
+            print(f"[ERANVerifier] Working directory: {eran_tf_verify_path}")
+            
+            # Use real-time output instead of waiting for completion
+            process = subprocess.Popen(
                 cmd,
-                check=True,
-                text=True,
-                cwd=os.path.join(os.getcwd(), "../modules/eran/tf_verify")
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                cwd=eran_tf_verify_path
             )
+            
+            # Print output in real-time
+            print("[ERANVerifier] Real-time output:")
+            print("-" * 60)
+            while True:
+                output = process.stdout.readline()
+                if output == '' and process.poll() is not None:
+                    break
+                if output:
+                    print(output.strip())
+            
+            return_code = process.poll()
+            if return_code != 0:
+                raise subprocess.CalledProcessError(return_code, cmd)
             print("[ERANVerifier] ERAN verification completed successfully")
-            return result.returncode
+            return return_code
         except subprocess.CalledProcessError as e:
             print("[ERANVerifier] ERAN execution failed:")
             print(f"Return code: {e.returncode}")
-            if e.stdout:
-                print("STDOUT:")
-                print(e.stdout)
-            if e.stderr:
-                print("STDERR:")
-                print(e.stderr)
+            raise RuntimeError("ERAN verification failed.") from e
+        except Exception as e:
+            print(f"[ERANVerifier] Unexpected error: {e}")
+            if process.poll() is None:
+                process.terminate()
             raise RuntimeError("ERAN verification failed.") from e
 
 
@@ -651,6 +674,7 @@ class ABCROWNVerifier(BaseVerifier):
         args_dict = {
             "config": "empty_config.yaml",
 
+            "device": self.device,
             "dataset": self.dataset.dataset_path.upper(),
             "start" : self.dataset.start,
             "end" : self.dataset.end,
@@ -671,7 +695,6 @@ class ABCROWNVerifier(BaseVerifier):
         else:
             raise ValueError(f"Unsupported model file type: {netname}")
 
-        print("HERE2")
 
         args_list = []
         for k, v in args_dict.items():
@@ -683,28 +706,50 @@ class ABCROWNVerifier(BaseVerifier):
         print(args_dict)
 
         conda_env_name = "act-abcrown"
-        cmd = ["conda", "run", "-n", conda_env_name, "python3", "abcrown_runner.py", self.method] + args_list
+        
+        # Dynamic path detection for ABCROWN runner
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        verifier_path = os.path.abspath(current_dir) 
+        
+        cmd = ["conda", "run", "--no-capture-output", "-n", conda_env_name, "python3", "-u", "abcrown_runner.py", self.method] + args_list
 
         try:
             print("[ABCROWNVerifier] ABCROWN verifier running now, please wait for result generation.")
             print(f"[ABCROWNVerifier] Command: {' '.join(cmd)}")
-            result = subprocess.run(
+            print(f"[ABCROWNVerifier] Working directory: {verifier_path}")
+            
+            # Use real-time output instead of waiting for completion
+            process = subprocess.Popen(
                 cmd,
-                check=True,
-                text=True,
-                cwd=os.getcwd()
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                cwd=verifier_path
             )
+            
+            # Print output in real-time
+            print("[ABCROWNVerifier] Real-time output:")
+            print("-" * 60)
+            while True:
+                output = process.stdout.readline()
+                if output == '' and process.poll() is not None:
+                    break
+                if output:
+                    print(output.strip())
+            
+            return_code = process.poll()
+            if return_code != 0:
+                raise subprocess.CalledProcessError(return_code, cmd)
             print("[ABCROWNVerifier] ABCROWN verification completed successfully")
-            return result.returncode
+            return return_code
         except subprocess.CalledProcessError as e:
             print("[ABCROWNVerifier] ABCROWN execution failed:")
             print(f"Return code: {e.returncode}")
-            if e.stdout:
-                print("STDOUT:")
-                print(e.stdout)
-            if e.stderr:
-                print("STDERR:")
-                print(e.stderr)
+            raise RuntimeError("ABCROWN verification failed.") from e
+        except Exception as e:
+            print(f"[ABCROWNVerifier] Unexpected error: {e}")
+            if process.poll() is None:
+                process.terminate()
             raise RuntimeError("ABCROWN verification failed.") from e
 
 class IntervalVerifier(BaseVerifier):
@@ -2113,7 +2158,6 @@ class HybridZonotopeVerifier(BaseVerifier):
                 layer_start_time = time.time()
 
                 hz = HybridZonotopeOps.FlattenHybridZonotopeGridIntersection(hz)
-                print("Here: Flatten")
 
                 layer_end_time = time.time()
                 layer_duration = layer_end_time - layer_start_time
@@ -2191,7 +2235,6 @@ class HybridZonotopeVerifier(BaseVerifier):
             hz_elem = HybridZonotopeOps.FlattenHybridZonotopeGridIntersection(hz)
         else:
             hz_elem = hz
-            print("Here: Elem")
 
         print("Output: ", hz_elem.n)
         verification_core_end_time = time.time()
@@ -2687,8 +2730,7 @@ if __name__ == "__main__":
             raise ValueError(f"abCrown verifier with method {method} is not supported for dataset {dataset.dataset_path}. \
                              Please use \'mnist\', \'cifar\', 'eran'.")
         if args_dict["enable_spec_refinement"]:
-            print("⚠️  ABCROWN verifier is an external verifier, does not support specification refinement BaB, automatically disabled")
-        print("HERE")
+            print("⚠️  ABCROWN verifier is an external verifier, does not support native specification refinement BaB, automatically disabled")
         verifier = ABCROWNVerifier(dataset, method, spec)
         verifier.verify(proof=None, public_inputs=None)
 
