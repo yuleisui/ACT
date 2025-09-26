@@ -1,0 +1,30 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "./verifier/verifier_tensorised.py",
+            "env":{"GRB_LICENSE_FILE": "./gurobi/gurobi.lic"},
+            "args": [ "--verifier", "hybridz",
+                      "--method", "hybridz",
+                      "--model_path", "./models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx",
+                      "--dataset", "mnist",
+                      "--spec_type", "local_lp",
+                      "--start", "0",
+                      "--end", "1",
+                      "--epsilon", "0.1",
+                      "--norm", "inf",
+                      "--mean", "0.1307",
+                      "--std", "0.3081",
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        }
+    ]
+}
