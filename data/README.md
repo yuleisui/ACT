@@ -1,6 +1,6 @@
 # Data Directory
 
-This directory contains sample datasets and verification specifications used for neural network verification testing and benchmarking. Data is organised by format and purpose to support various verification scenarios.
+This directory contains sample datasets and verification specifications used for neural network verification testing and benchmarking. Data is organized by format and purpose to support various verification scenarios.
 
 ## Directory Structure
 
@@ -19,8 +19,8 @@ This directory contains sample datasets and verification specifications used for
 - **`cifar10_first_100_samples.csv`**: First 100 CIFAR-10 test samples
   - Format: `label,r_0,g_0,b_0,r_1,g_1,b_1,...,r_1023,g_1023,b_1023`
   - Dimensions: 100 rows × 3073 columns (1 label + 3072 RGB values)
-  - Colour values: Normalised to [0,1] range
-  - Use case: Colour image verification testing
+  - Color values: Normalized to [0,1] range
+  - Use case: Color image verification testing
   - Labels: Ground truth classifications (0-9)
 
 ### Anchor Datasets (`anchor/`)
@@ -113,7 +113,7 @@ VNNLIB follows the VNN-COMP standard:
 
 ## Usage Examples
 
-All comprehensive usage examples have been moved to the main README.md file for better organisation and centralized documentation. Please refer to the main README for:
+All comprehensive usage examples have been moved to the main README.md file for better organization and centralized documentation. Please refer to the main README for:
 
 - CSV-based batch verification examples
 - VNNLIB specification verification examples  

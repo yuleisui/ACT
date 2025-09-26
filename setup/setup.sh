@@ -11,7 +11,7 @@ if ! command -v conda &> /dev/null; then
     exit 1
 fi
 
-# Step 1: Initialise Conda
+# Step 1: Initialize Conda
 source "$(conda info --base)/etc/profile.d/conda.sh"
 
 # Step 2: Create and activate main environment (act-main)
@@ -50,7 +50,7 @@ pip install -r abcrown_requirements.txt
 
 # Step 4: Call ERAN environment setup script (note: cannot activate sub-environment here)
 echo "[ACT] Setting up ERAN sub-environment..."
-bash eran_env_setup.sh
+source eran_env_setup.sh
 
 # Step 5: Create empty config file for abcrown CLI parameter mode
 echo "[ACT] Creating empty_config.yaml for CLI-only abcrown runs..."
@@ -75,5 +75,11 @@ if grep -q "^from abcrown import ABCROWN" "$INIT_FULL_PATH"; then
 else
     echo "[ACT] No patch needed. __init__.py already safe."
 fi
+
+export ACTHOME=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+
+# Set up the Gurobi license path
+export GRB_LICENSE_FILE=$ACTHOME/gurobi/gurobi.lic
+echo "[ACT] Gurobi license path configured for this shell: $GRB_LICENSE_FILE"
 
 echo "[ACT] Setup complete. Now you can run with 'conda activate act-main' and subprocess call ABCrown, ERAN and Hybrid Zonotope."

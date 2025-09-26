@@ -9,7 +9,7 @@ This directory contains all environment setup scripts and dependency requirement
   - Creates `act-main`, `act-abcrown`, and `act-eran` environments
   - Installs all Python dependencies from requirement files
   - Invokes ERAN-specific setup (GMP, MPFR, ELINA, DeepG)
-  - Configures Gurobi optimiser
+  - Configures Gurobi optimizer
   - Patches αβ-CROWN imports to prevent conflicts
 
 ### ERAN-Specific Setup
@@ -17,7 +17,7 @@ This directory contains all environment setup scripts and dependency requirement
   - Handles ERAN's linux system dependencies
   - Compiles mathematical libraries (GMP, MPFR)
   - Builds ELINA abstract interpretation library
-  - Configures DeepG optimisation components
+  - Configures DeepG optimization components
 
 ### Python Requirements
 - **`main_requirements.txt`**: Dependencies for ACT main environment (`act-main`)
@@ -29,7 +29,7 @@ This directory contains all environment setup scripts and dependency requirement
 - **`abcrown_requirements.txt`**: Dependencies for αβ-CROWN environment (`act-abcrown`)
   - PyTorch 2.x compatible with αβ-CROWN
   - ONNX simplification tools
-  - Gurobi optimiser
+  - Gurobi optimizer
   - Sorted containers for efficient data structures
 
 - **`eran_requirements.txt`**: Dependencies for ERAN environment (`act-eran`)
@@ -43,13 +43,13 @@ This directory contains all environment setup scripts and dependency requirement
 ### Quick Setup
 ```bash
 cd setup/
-bash setup.sh
+source setup.sh
 ```
 
 ### Manual ERAN Setup (if needed)
 ```bash
 cd setup/
-bash eran_env_setup.sh
+source eran_env_setup.sh
 ```
 
 ## Troubleshooting
@@ -68,10 +68,10 @@ sudo apt-get install build-essential cmake m4 autoconf libtool
 sudo apt-get install libgmp-dev libmpfr-dev
 ```
 
-### Gurobi Licence Issues
+### Gurobi License Issues
 - Academic users: https://www.gurobi.com/academia/
-- Ensure licence is activated in each conda environment
-- Check licence with: `python -c "import gurobipy; print('Gurobi OK')"`
+- Ensure license is activated in each conda environment
+- Check license with: `python -c "import gurobipy; print('Gurobi OK')"`
 
 ### ERAN Compilation Issues
 Common solutions:

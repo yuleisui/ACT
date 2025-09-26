@@ -8,7 +8,7 @@ This directory contains external verifier submodules integrated into the Abstrac
 **Complete Neural Network Verifier with Branch-and-Bound**
 
 - **Repository**: https://github.com/Verified-Intelligence/alpha-beta-CROWN
-- **Licence**: BSD 3-Clause Licence
+- **License**: BSD 3-Clause License
 - **Integration**: Git submodule
 - **Purpose**: State-of-the-art complete verification with advanced branch-and-bound algorithms
 
@@ -18,10 +18,10 @@ This directory contains external verifier submodules integrated into the Abstrac
 - Compatible with ACT's specification refinement framework
 
 ### ERAN (`eran/`)
-**ETH Robustness Analyser for Neural Networks**
+**ETH Robustness Analyzer for Neural Networks**
 
 - **Repository**: https://github.com/eth-sri/eran
-- **Licence**: Apache 2.0 Licence
+- **License**: Apache 2.0 License
 - **Integration**: Git submodule
 - **Purpose**: Abstract interpretation-based verification with multiple domains
 
@@ -30,7 +30,7 @@ This directory contains external verifier submodules integrated into the Abstrac
 - **DeepPoly**: Polyhedra-based abstract interpretation
 - **DeepZono**: Zonotope-based abstract interpretation
 - **RefinePoly**: Refinement-based DeepPoly with MILP
-- **RefineZono**: Refinement-based DeepZono with optimisation
+- **RefineZono**: Refinement-based DeepZono with optimization
 
 #### ACT Integration Notes:
 - Environment isolation due to Python 3.8/TensorFlow 2.9.3 requirements
@@ -77,7 +77,7 @@ ACT translates its unified parameters to each tool's native format:
 | MNIST | ✓ | ✓ | ✓ |
 | CIFAR-10 | ✓ | ✓ | ✓ |
 | VNNLIB | x | ✓ | ✓ |
-| BaB Refinement | ✗ | ✓ | ✓ |
+| BaB Refinement | x | ✓ | ✓ |
 
 ## Troubleshooting
 
@@ -93,7 +93,7 @@ git submodule update --init --recursive
 # Rebuild ERAN environment
 conda env remove -n act-eran
 cd setup/
-bash eran_env_setup.sh
+source eran_env_setup.sh
 ```
 
 ### αβ-CROWN Import Conflicts
@@ -102,7 +102,7 @@ The setup script automatically patches αβ-CROWN imports to prevent conflicts. 
 cd modules/abcrown/
 git checkout .  # Reset any local changes
 cd ../../setup/
-bash setup.sh   # Re-run setup to reapply patches
+source setup.sh   # Re-run setup to reapply patches
 ```
 
 ## Contributing to Submodules

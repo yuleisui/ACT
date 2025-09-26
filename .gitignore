@@ -7,3 +7,5 @@ data/cifar-10-python.tar.gz
 .DS_Store
 models/cifar10
 models/mnist
+gurobi/gurobi.lic
+verifier/out.txt
