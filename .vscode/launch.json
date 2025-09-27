@@ -6,11 +6,12 @@
     "configurations": [
         
         {
-            "name": "Python: Current File",
-            "type": "python",
+            "name": "verifier_tensorised",
+            "type": "debugpy",
             "request": "launch",
-            "program": "./verifier/verifier_tensorised.py",
-            "env":{"GRB_LICENSE_FILE": "./gurobi/gurobi.lic"},
+            "program": "${workspaceFolder}/verifier/verifier_tensorised.py",
+            "env":{"GRB_LICENSE_FILE": "${workspaceFolder}/gurobi/gurobi.lic"},
+            "cwd": "${workspaceFolder}",
             "args": [ "--verifier", "hybridz",
                       "--method", "hybridz",
                       "--model_path", "./models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx",
