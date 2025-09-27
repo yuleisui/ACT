@@ -1,0 +1,4 @@
+{
+    "python.defaultInterpreterPath": "/srv/scratch/PAG/ysui/miniconda3/envs/act-main/bin/python",
+    "python.terminal.activateEnvironment": true
+}
