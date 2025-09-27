@@ -22,27 +22,39 @@
 ##                                                                     ##
 #########################################################################
 
-from enum import Enum
-from typing import Dict, List, Optional, Union, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import numpy as np
 import argparse
 import sys
 import os
 import psutil
-import gc
 import subprocess
 import time
-import traceback
 from model import Model
 from dataset import Dataset
 from spec import Spec, InputSpec, OutputSpec
-from type import SpecType, VerificationStatus, LPNormType
+from type import SpecType, VerificationStatus
 from hybridz_tensorised import HybridZonotopeGrid, HybridZonotopeOps
-
 from bab_spec_refinement import (SpecRefinement, create_spec_refinement_core)
+from onnx2pytorch.operations.flatten import Flatten as OnnxFlatten
+from onnx2pytorch.operations.add import Add as OnnxAdd
+from onnx2pytorch.operations.div import Div as OnnxDiv
+from onnx2pytorch.operations.clip import Clip as OnnxClip
+from onnx2pytorch.operations.reshape import Reshape as OnnxReshape
+from onnx2pytorch.operations.squeeze import Squeeze as OnnxSqueeze
+from onnx2pytorch.operations.unsqueeze import Unsqueeze as OnnxUnsqueeze
+from onnx2pytorch.operations.transpose import Transpose as OnnxTranspose
+from onnx2pytorch.operations.base import OperatorWrapper
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'modules', 'abcrown', 'auto_LiRPA', 'auto_LiRPA')))
+
+try:
+    from auto_LiRPA import BoundedModule, PerturbationLpNorm, BoundedTensor
+    AUTOLIRPA_AVAILABLE = True
+except ImportError:
+    print("Warning: auto_LiRPA not available. HybridZonotopeVerifier will use standard bounds computation.")
+    AUTOLIRPA_AVAILABLE = False
 
 torch.set_printoptions(
     linewidth=500,
@@ -50,37 +62,6 @@ torch.set_printoptions(
     sci_mode=False,
     precision=4
 )
-
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'modules', 'abcrown', 'auto_LiRPA', 'auto_LiRPA')))
-try:
-    from auto_LiRPA import BoundedModule, PerturbationLpNorm, BoundedTensor
-    AUTOLIRPA_AVAILABLE = True
-except ImportError:
-    print("Warning: auto_LiRPA not available. HybridZonotopeVerifier will use standard bounds computation.")
-    AUTOLIRPA_AVAILABLE = False
-
-from onnx2pytorch.operations.flatten import Flatten as OnnxFlatten
-
-from onnx2pytorch.operations.add import Add as OnnxAdd
-
-from onnx2pytorch.operations.div import Div as OnnxDiv
-
-from onnx2pytorch.operations.clip import Clip as OnnxClip
-
-from onnx2pytorch.operations.reshape import Reshape as OnnxReshape
-from onnx2pytorch.operations.squeeze import Squeeze as OnnxSqueeze
-from onnx2pytorch.operations.unsqueeze import Unsqueeze as OnnxUnsqueeze
-from onnx2pytorch.operations.transpose import Transpose as OnnxTranspose
-
-from onnx2pytorch.operations.base import OperatorWrapper
-
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'modules', 'abcrown', 'auto_LiRPA', 'auto_LiRPA')))
-try:
-    from auto_LiRPA import BoundedModule, PerturbationLpNorm, BoundedTensor
-    AUTOLIRPA_AVAILABLE = True
-except ImportError:
-    print("Warning: auto_LiRPA not available. HybridZonotopeVerifier will use standard bounds computation.")
-    AUTOLIRPA_AVAILABLE = False
 
 def print_memory_usage(stage_name=""):
     try:
@@ -93,20 +74,19 @@ def print_memory_usage(stage_name=""):
         available_mb = system_memory.available / 1024 / 1024
         used_percent = (memory_mb / total_mb) * 100
 
-        print(f"🧠 [{stage_name}] Memory Usage:")
-        print(f"   Process: {memory_mb:.1f} MB ({used_percent:.1f}% of total)")
-        print(f"   System: {total_mb:.1f} MB total, {available_mb:.1f} MB available")
+        print(f"[{stage_name}] Memory Usage:")
+        print(f"Process: {memory_mb:.1f} MB ({used_percent:.1f}% of total)")
+        print(f"System: {total_mb:.1f} MB total, {available_mb:.1f} MB available")
 
         if torch.cuda.is_available():
             gpu_memory_mb = torch.cuda.memory_allocated() / 1024 / 1024
             gpu_cached_mb = torch.cuda.memory_reserved() / 1024 / 1024
-            print(f"   GPU: {gpu_memory_mb:.1f} MB allocated, {gpu_cached_mb:.1f} MB cached")
+            print(f"GPU: {gpu_memory_mb:.1f} MB allocated, {gpu_cached_mb:.1f} MB cached")
 
         return memory_mb
     except ImportError:
         print(f"⚠️ [{stage_name}] psutil not available, cannot monitor memory")
         return 0
-
 
 class BaseVerifier:
     def __init__(self, dataset : Dataset, spec : Spec, device: str = 'cpu'):
@@ -235,7 +215,7 @@ class BaseVerifier:
                 self.clean_prediction_stats['clean_incorrect'] += 1
                 if self.verbose:
                     print(f"❌ Sample {sample_idx+1} Clean Prediction: Incorrect (pred: {predicted_label}, true: {true_label})")
-                    print(f"   ⚠️  Skipping verification - clean prediction already incorrect")
+                    print(f"⚠️  Skipping verification - clean prediction already incorrect")
 
             return is_correct
 
@@ -302,9 +282,9 @@ class BaseVerifier:
         if stats['verification_attempted'] > 0:
             attempted = stats['verification_attempted']
             print(f"Verification result distribution:")
-            print(f"  SAT (safe): {stats['verification_sat']} ({stats['verification_sat']/attempted*100:.1f}%)")
-            print(f"  UNSAT (unsafe): {stats['verification_unsat']} ({stats['verification_unsat']/attempted*100:.1f}%)")
-            print(f"  UNKNOWN: {stats['verification_unknown']} ({stats['verification_unknown']/attempted*100:.1f}%)")
+            print(f"SAT (safe): {stats['verification_sat']} ({stats['verification_sat']/attempted*100:.1f}%)")
+            print(f"UNSAT (unsafe): {stats['verification_unsat']} ({stats['verification_unsat']/attempted*100:.1f}%)")
+            print(f"UNKNOWN: {stats['verification_unknown']} ({stats['verification_unknown']/attempted*100:.1f}%)")
 
         print("="*60)
 
@@ -314,11 +294,11 @@ class BaseVerifier:
 
         if hasattr(self, 'verbose') and getattr(self, 'verbose', False):
             if self.current_relu_constraints:
-                print(f"🔒 Set ReLU constraints: {len(self.current_relu_constraints)} constraints")
+                print(f"Set ReLU constraints: {len(self.current_relu_constraints)} constraints")
                 for constraint in self.current_relu_constraints:
-                    print(f"   {constraint['layer']}[{constraint['neuron_idx']}] = {constraint['constraint_type']}")
+                    print(f"{constraint['layer']}[{constraint['neuron_idx']}] = {constraint['constraint_type']}")
             else:
-                print(f"🔓 Cleared ReLU constraints")
+                print(f"Cleared ReLU constraints")
 
     def get_relu_constraints(self) -> List[Dict[str, Any]]:
         return self.current_relu_constraints.copy()
@@ -329,7 +309,7 @@ class BaseVerifier:
             return
 
         if self.verbose:
-            print(f"🔧 [Bounds Fix] Applying {len(self.current_relu_constraints)} ReLU constraints to layer bounds cache")
+            print(f"[Bounds Fix] Applying {len(self.current_relu_constraints)} ReLU constraints to layer bounds cache")
 
         bounds_cache = None
         if hasattr(self, 'hz_layer_bounds') and self.hz_layer_bounds:
@@ -344,7 +324,7 @@ class BaseVerifier:
             return
 
         if self.verbose:
-            print(f"🔧 [Bounds Fix] Using {cache_type} bounds cache")
+            print(f"[Bounds Fix] Using {cache_type} bounds cache")
 
         layer_names = list(bounds_cache.keys())
 
@@ -354,7 +334,7 @@ class BaseVerifier:
             constraint_type = constraint['constraint_type']
 
             if self.verbose:
-                print(f"🔧 [Bounds Fix] Processing constraint: {relu_layer}[{neuron_idx}] = {constraint_type}")
+                print(f"[Bounds Fix] Processing constraint: {relu_layer}[{neuron_idx}] = {constraint_type}")
 
             relu_layer_idx = None
             for i, layer_name in enumerate(layer_names):
@@ -393,14 +373,14 @@ class BaseVerifier:
                 original_ub = ub.view(-1)[neuron_idx].item()
                 ub.view(-1)[neuron_idx] = min(original_ub, 0.0)
                 if self.verbose:
-                    print(f"   🔒 inactive constraint: neuron {neuron_idx} ub: {original_ub:.6f} → {ub.view(-1)[neuron_idx].item():.6f}")
+                    print(f"inactive constraint: neuron {neuron_idx} ub: {original_ub:.6f} → {ub.view(-1)[neuron_idx].item():.6f}")
 
             elif constraint_type == 'active':
 
                 original_lb = lb.view(-1)[neuron_idx].item()
                 lb.view(-1)[neuron_idx] = max(original_lb, 0.0)
                 if self.verbose:
-                    print(f"   🔒 active constraint: neuron {neuron_idx} lb: {original_lb:.6f} → {lb.view(-1)[neuron_idx].item():.6f}")
+                    print(f"active constraint: neuron {neuron_idx} lb: {original_lb:.6f} → {lb.view(-1)[neuron_idx].item():.6f}")
 
             else:
                 if self.verbose:
@@ -434,7 +414,7 @@ class BaseVerifier:
                 print(f"Warning: Found NaN values in output bounds. lb contains NaN: {torch.any(torch.isnan(lb))}, ub contains NaN: {torch.any(torch.isnan(ub))}")
                 return VerificationStatus.UNKNOWN
 
-            print(f"🔧 Using traditional bounds comparison for classification check")
+            print(f"Using traditional bounds comparison for classification check")
             for j in range(lb.shape[0]):
                 if j == true_label: continue
                 if ub[j] >= lb[true_label]:
@@ -444,8 +424,8 @@ class BaseVerifier:
         return VerificationStatus.UNKNOWN
 
     def _spec_refinement_verification(self, input_lb: torch.Tensor, input_ub: torch.Tensor, sample_idx: int = 0) -> VerificationStatus:
-        print(f"🌳 Starting generic BaB specification refinement verification (sample {sample_idx})")
-        print(f"   Framework: theoretically-aligned specification refinement")
+        print(f"Starting generic BaB specification refinement verification (sample {sample_idx})")
+        print(f"Framework: theoretically-aligned specification refinement")
 
         spec_refinement = create_spec_refinement_core(
             max_depth=self.bab_config['max_depth'],
@@ -466,12 +446,12 @@ class BaseVerifier:
                 concrete_network
             )
 
-            print(f"🌳 Specification refinement verification finished: {result.status.name}")
-            print(f"   Total subproblems: {result.total_subproblems}")
-            print(f"   Spurious counterexamples: {len(result.spurious_counterexamples)}")
-            print(f"   Real counterexample: {'Yes' if result.real_counterexample else 'No'}")
-            print(f"   Max depth: {result.max_depth}")
-            print(f"   Total time: {result.total_time:.2f}s")
+            print(f"Specification refinement verification finished: {result.status.name}")
+            print(f"Total subproblems: {result.total_subproblems}")
+            print(f"Spurious counterexamples: {len(result.spurious_counterexamples)}")
+            print(f"Real counterexample: {'Yes' if result.real_counterexample else 'No'}")
+            print(f"Max depth: {result.max_depth}")
+            print(f"Total time: {result.total_time:.2f}s")
 
             return result.status
 
@@ -485,7 +465,7 @@ class BaseVerifier:
         print("🏆" + "="*70 + "🏆")
 
         for idx, result in enumerate(results):
-            print(f"   Sample {idx+1}: {result.name}")
+            print(f"Sample {idx+1}: {result.name}")
 
         print("-" * 60)
 
@@ -497,35 +477,35 @@ class BaseVerifier:
 
         valid_count = total_count - clean_failure_count
 
-        print("📈 Verification statistics:")
-        print(f"   🎯 Total samples: {total_count}")
-        print(f"   ✅ SAT (safe): {sat_count} ")
-        print(f"   ❌ UNSAT (unsafe): {unsat_count} ")
-        print(f"   ⚠️  CLEAN_FAILURE (clean prediction failed): {clean_failure_count} ")
-        print(f"   ❓ UNKNOWN: {unknown_count} ")
-        print(f"   🔍 Valid verification samples: {valid_count} ")
+        print("Verification statistics:")
+        print(f"Total samples: {total_count}")
+        print(f"✅ SAT (safe): {sat_count} ")
+        print(f"❌ UNSAT (unsafe): {unsat_count} ")
+        print(f"⚠️  CLEAN_FAILURE (clean prediction failed): {clean_failure_count} ")
+        print(f"❓ UNKNOWN: {unknown_count} ")
+        print(f"🔍 Valid verification samples: {valid_count} ")
 
         if valid_count > 0:
             sat_percentage = (sat_count / valid_count) * 100
             unsat_percentage = (unsat_count / valid_count) * 100
-            print(f"   📊 SAT over valid samples: {sat_percentage:.2f}% ({sat_count}/{valid_count})")
-            print(f"   📊 UNSAT over valid samples: {unsat_percentage:.2f}% ({unsat_count}/{valid_count})")
+            print(f"📊 SAT over valid samples: {sat_percentage:.2f}% ({sat_count}/{valid_count})")
+            print(f"📊 UNSAT over valid samples: {unsat_percentage:.2f}% ({unsat_count}/{valid_count})")
         else:
-            print("   ⚠️  No valid verification samples")
+            print("  ⚠️  No valid verification samples")
 
         if total_count > 0:
             sat_total_percentage = (sat_count / total_count) * 100
             unsat_total_percentage = (unsat_count / total_count) * 100
             clean_failure_percentage = (clean_failure_count / total_count) * 100
-            print(f"   📊 SAT over total: {sat_total_percentage:.2f}% ({sat_count}/{total_count})")
-            print(f"   📊 UNSAT over total: {unsat_total_percentage:.2f}% ({unsat_count}/{total_count})")
-            print(f"   📊 CLEAN_FAILURE over total: {clean_failure_percentage:.2f}% ({clean_failure_count}/{total_count})")
+            print(f"📊 SAT over total: {sat_total_percentage:.2f}% ({sat_count}/{total_count})")
+            print(f"📊 UNSAT over total: {unsat_total_percentage:.2f}% ({unsat_count}/{total_count})")
+            print(f"📊 CLEAN_FAILURE over total: {clean_failure_percentage:.2f}% ({clean_failure_count}/{total_count})")
 
         print("-" * 60)
 
         if all(r == VerificationStatus.SAT for r in results):
             final_result = VerificationStatus.SAT
-            print("🎉 Final Result: SAT - all samples verified safe")
+            print("✅ Final Result: SAT - all samples verified safe")
         elif any(r == VerificationStatus.UNSAT for r in results):
             final_result = VerificationStatus.UNSAT
             print("❌ Final Result: UNSAT - at least one sample violates the property")
@@ -544,18 +524,18 @@ class ERANVerifier(BaseVerifier):
         self.method = method
 
         print(f"🔍 [ERAN DEBUG] Input bounds info:")
-        print(f"    input_lb shape: {self.input_lb.shape}")
-        print(f"    input_ub shape: {self.input_ub.shape}")
-        print(f"    input_lb unique values: {len(torch.unique(self.input_lb.view(-1)))}")
-        print(f"    input_ub unique values: {len(torch.unique(self.input_ub.view(-1)))}")
-        print(f"    input_lb range: [{self.input_lb.min():.6f}, {self.input_lb.max():.6f}]")
-        print(f"    input_ub range: [{self.input_ub.min():.6f}, {self.input_ub.max():.6f}]")
-        print(f"    input_lb first 10 values: {self.input_lb.view(-1)[:10].tolist()}")
-        print(f"    input_ub first 10 values: {self.input_ub.view(-1)[:10].tolist()}")
-        print(f"    Dataset input center shape: {self.dataset.input_center.shape if hasattr(self.dataset, 'input_center') and self.dataset.input_center is not None else 'None'}")
+        print(f"input_lb shape: {self.input_lb.shape}")
+        print(f"input_ub shape: {self.input_ub.shape}")
+        print(f"input_lb unique values: {len(torch.unique(self.input_lb.view(-1)))}")
+        print(f"input_ub unique values: {len(torch.unique(self.input_ub.view(-1)))}")
+        print(f"input_lb range: [{self.input_lb.min():.6f}, {self.input_lb.max():.6f}]")
+        print(f"input_ub range: [{self.input_ub.min():.6f}, {self.input_ub.max():.6f}]")
+        print(f"input_lb first 10 values: {self.input_lb.view(-1)[:10].tolist()}")
+        print(f"input_ub first 10 values: {self.input_ub.view(-1)[:10].tolist()}")
+        print(f"Dataset input center shape: {self.dataset.input_center.shape if hasattr(self.dataset, 'input_center') and self.dataset.input_center is not None else 'None'}")
         if hasattr(self.dataset, 'input_center') and self.dataset.input_center is not None:
-            print(f"    Dataset input center unique values: {len(torch.unique(self.dataset.input_center.view(-1)))}")
-            print(f"    Dataset input center first 10 values: {self.dataset.input_center.view(-1)[:10].tolist()}")
+            print(f"Dataset input center unique values: {len(torch.unique(self.dataset.input_center.view(-1)))}")
+            print(f"Dataset input center first 10 values: {self.dataset.input_center.view(-1)[:10].tolist()}")
         print(f"🔍 [ERAN DEBUG] End of input bounds info")
         print("="*80)
 
@@ -843,7 +823,7 @@ class IntervalVerifier(BaseVerifier):
                                     applied_constraints.append(f"ReLU[{neuron_idx}]=active")
 
                 if applied_constraints and hasattr(self, 'verbose') and getattr(self, 'verbose', False):
-                    print(f"🔒 applying{layer_name}constraint: {applied_constraints}")
+                    print(f"applying{layer_name}constraint: {applied_constraints}")
 
                 lb = torch.clamp(lb, min=0)
                 ub = torch.clamp(ub, min=0)
@@ -964,7 +944,7 @@ class IntervalVerifier(BaseVerifier):
         return lb, ub, None
 
     def _abstract_constraint_solving(self, input_lb: torch.Tensor, input_ub: torch.Tensor, sample_idx: int) -> VerificationStatus:
-        print(f"   🔧 Performing Interval propagation")
+        print(f"Performing Interval propagation")
 
         output_lb, output_ub, _ = self._abstract_constraint_solving_core(
             self.spec.model.pytorch_model, input_lb, input_ub
@@ -976,11 +956,11 @@ class IntervalVerifier(BaseVerifier):
             self.spec.output_spec.labels[sample_idx].item() if self.spec.output_spec.labels is not None else None
         )
 
-        print(f"   📊 Verification verdict: {verdict.name}")
+        print(f"📊 Verification verdict: {verdict.name}")
         return verdict
 
     def verify(self) -> VerificationStatus:
-        print("🚀 Starting Interval verification pipeline")
+        print("Starting Interval verification pipeline")
 
         num_samples = self.input_center.shape[0] if self.input_center.ndim > 1 else 1
         print(f"Total samples: {num_samples}")
@@ -1004,7 +984,7 @@ class IntervalVerifier(BaseVerifier):
 
             self.clean_prediction_stats['verification_attempted'] += 1
 
-            print("🌟 Step 1: Interval abstract constraint solving")
+            print("Step 1: Interval abstract constraint solving")
             initial_verdict = self._abstract_constraint_solving(lb_i, ub_i, idx)
 
             if initial_verdict == VerificationStatus.SAT:
@@ -1022,7 +1002,7 @@ class IntervalVerifier(BaseVerifier):
             else:
                 print(f"❓ Interval inconclusive - Sample {idx+1}")
 
-            print("🌳 Launching Specification Refinement BaB process")
+            print("Launching Specification Refinement BaB process")
             print("="*60)
 
             if self.bab_config['enabled']:
@@ -1067,10 +1047,10 @@ class HybridZonotopeVerifier(BaseVerifier):
         self.enable_soundness_check = False
 
         if self.method == 'hybridz_relaxed':
-            print(f"🎭 Relaxation Strategy: ratio={relaxation_ratio:.1f} ({'Full MILP (exact)' if relaxation_ratio == 0.0 else 'Full LP (relaxed)' if relaxation_ratio == 1.0 else f'{int(relaxation_ratio*100)}% Relaxed + {int((1-relaxation_ratio)*100)}% Exact'})")
-        print(f"🔧 Generator Merging: {'Enabled' if enable_generator_merging else 'Disabled'}{f' (threshold={cosine_threshold})' if enable_generator_merging else ''}")
+            print(f"Relaxation Strategy: ratio={relaxation_ratio:.1f} ({'Full MILP (exact)' if relaxation_ratio == 0.0 else 'Full LP (relaxed)' if relaxation_ratio == 1.0 else f'{int(relaxation_ratio*100)}% Relaxed + {int((1-relaxation_ratio)*100)}% Exact'})")
+        print(f"Generator Merging: {'Enabled' if enable_generator_merging else 'Disabled'}{f' (threshold={cosine_threshold})' if enable_generator_merging else ''}")
         if enable_generator_merging:
-            print(f"   Strategy: Automatically enabling parallel generator merging at the last fully-connected layer")
+            print(f"Strategy: Automatically enabling parallel generator merging at the last fully-connected layer")
 
         self.late_stage_config = {
             'enabled': False,
@@ -1081,12 +1061,12 @@ class HybridZonotopeVerifier(BaseVerifier):
         }
 
         if self.late_stage_config['enabled']:
-            print(f"🚀 Late-stage refinement enabled:")
-            print(f"   Base verifier: {self.late_stage_config['base_verifier']}")
-            print(f"   HybridZ starts from layer: {self.late_stage_config['start_layer']}")
-            print(f"   Refinement on: {self.late_stage_config['refinement_layers']}")
+            print(f"Late-stage refinement enabled:")
+            print(f"Base verifier: {self.late_stage_config['base_verifier']}")
+            print(f"HybridZ starts from layer: {self.late_stage_config['start_layer']}")
+            print(f"Refinement on: {self.late_stage_config['refinement_layers']}")
         else:
-            print("⚙️  HybridZonotopeVerifier: auto_LiRPA pre-run disabled, using standard bound computation")
+            print(" HybridZonotopeVerifier: auto_LiRPA pre-run disabled, using standard bound computation")
 
 
     def _setup_auto_lirpa(self, input_example):
@@ -1138,9 +1118,9 @@ class HybridZonotopeVerifier(BaseVerifier):
                     'ub': bounds['ub'],
                     'shape': bounds['shape']
                 })
-                print(f"  ✅ Mapped {node_name} -> Layer {i} ({layer_type}): {bounds['shape']}")
+                print(f"✅ Mapped {node_name} -> Layer {i} ({layer_type}): {bounds['shape']}")
             else:
-                print(f"  ⚠️  Missing bounds for {node_name} (Layer {i}, {layer_type})")
+                print(f"⚠️  Missing bounds for {node_name} (Layer {i}, {layer_type})")
 
         print(f"✅ Created ordered mapping for {len(self.autolirpa_ordered_layer_bounds)} layers")
 
@@ -1202,23 +1182,23 @@ class HybridZonotopeVerifier(BaseVerifier):
 
                     for node_name, bounds in intermediate_bounds.items():
                         print(f"Processing node: {node_name}")
-                        print(f"  Bounds type: {type(bounds)}")
-                        print(f"  Bounds keys: {bounds.keys() if isinstance(bounds, dict) else 'Not a dict'}")
+                        print(f"Bounds type: {type(bounds)}")
+                        print(f"Bounds keys: {bounds.keys() if isinstance(bounds, dict) else 'Not a dict'}")
 
                         lower, upper = None, None
 
                         if isinstance(bounds, tuple) and len(bounds) >= 2:
                             lower = bounds[0]
                             upper = bounds[1]
-                            print(f"  Found {type(bounds).__name__} bounds for {node_name}")
+                            print(f"Found {type(bounds).__name__} bounds for {node_name}")
 
                         elif torch.is_tensor(bounds):
                             lower = bounds
                             upper = bounds
-                            print(f"  Found tensor bounds for {node_name}")
+                            print(f"Found tensor bounds for {node_name}")
 
                         else:
-                            print(f"  ⚠️  Unknown bounds structure for {node_name}: {type(bounds)}")
+                            print(f"⚠️  Unknown bounds structure for {node_name}: {type(bounds)}")
                             continue
 
                         if (lower is not None and upper is not None and
@@ -1235,7 +1215,7 @@ class HybridZonotopeVerifier(BaseVerifier):
                             layer_count += 1
                             print(f"✅ Saved bounds for {node_name}: {lower.shape}")
                         else:
-                            print(f"  ❌ Invalid bounds for {node_name}: lower={type(lower)}, upper={type(upper)}")
+                            print(f"❌ Invalid bounds for {node_name}: lower={type(lower)}, upper={type(upper)}")
 
                     print(f"Method 1 (save_intermediate): collected {layer_count} layers")
             except Exception as e:
@@ -1360,21 +1340,21 @@ class HybridZonotopeVerifier(BaseVerifier):
                 layer_type = type(layer).__name__.lower()
 
                 print(f"🔍 [Concrete] Processing {layer_name} ({layer_type})")
-                print(f"    Input shape: {x.shape}")
+                print(f"Input shape: {x.shape}")
 
                 try:
 
                     x_prev = x.clone()
                     x = layer(x)
 
-                    print(f"    Raw output type: {type(x)}")
+                    print(f"Raw output type: {type(x)}")
                     if hasattr(x, 'shape'):
-                        print(f"    Raw output shape: {x.shape}")
+                        print(f"Raw output shape: {x.shape}")
 
                     if isinstance(x, tuple):
 
                         print(f"⚠️  Layer {layer_name} returned tuple with {len(x)} elements, using first element")
-                        print(f"    Tuple elements types: {[type(elem) for elem in x]}")
+                        print(f"Tuple elements types: {[type(elem) for elem in x]}")
                         if len(x) > 0:
                             x = x[0]
                         else:
@@ -1383,7 +1363,7 @@ class HybridZonotopeVerifier(BaseVerifier):
                     elif isinstance(x, list):
 
                         print(f"⚠️  Layer {layer_name} returned list with {len(x)} elements, using first element")
-                        print(f"    List elements types: {[type(elem) for elem in x]}")
+                        print(f"List elements types: {[type(elem) for elem in x]}")
                         if len(x) > 0:
                             x = x[0]
                         else:
@@ -1407,12 +1387,12 @@ class HybridZonotopeVerifier(BaseVerifier):
                     }
 
                     print(f"✅ [Concrete] {layer_name}: {x.shape} -> flattened: {x_flat.shape}")
-                    print(f"    Range: [{x_flat.min():.6f}, {x_flat.max():.6f}]")
+                    print(f"Range: [{x_flat.min():.6f}, {x_flat.max():.6f}]")
 
                 except Exception as layer_e:
                     print(f"❌ Error processing layer {layer_name}: {layer_e}")
-                    print(f"    Layer type: {type(layer)}")
-                    print(f"    Input shape: {x_prev.shape if 'x_prev' in locals() else 'unknown'}")
+                    print(f"Layer type: {type(layer)}")
+                    print(f"Input shape: {x_prev.shape if 'x_prev' in locals() else 'unknown'}")
                     continue
 
                 layer_count += 1
@@ -1461,9 +1441,9 @@ class HybridZonotopeVerifier(BaseVerifier):
 
             print(f"🔍 Data shapes: Concrete={concrete_vals.shape}")
             if hz_lb is not None:
-                print(f"             HZ={hz_lb.shape}")
+                print(f"HZ={hz_lb.shape}")
             if crown_lb is not None:
-                print(f"             CROWN={crown_lb.shape}")
+                print(f"CROWN={crown_lb.shape}")
 
             soundness_results = {
                 'layer_name': layer_name,
@@ -1506,14 +1486,14 @@ class HybridZonotopeVerifier(BaseVerifier):
                     soundness_results['hz_violations'] = total_violations
 
                     print(f"🔍 HZ Soundness: {'✅ SOUND' if total_violations == 0 else f'❌ VIOLATIONS'}")
-                    print(f"   Lower bound violations: {lb_violations} (tolerance: {eps_abs:.0e})")
-                    print(f"   Upper bound violations: {ub_violations} (tolerance: {eps_abs:.0e})")
-                    print(f"   Total violations: {total_violations}/{concrete_vals.numel()}")
+                    print(f"Lower bound violations: {lb_violations} (tolerance: {eps_abs:.0e})")
+                    print(f"Upper bound violations: {ub_violations} (tolerance: {eps_abs:.0e})")
+                    print(f"Total violations: {total_violations}/{concrete_vals.numel()}")
 
                     if total_violations > 0:
 
                         violation_indices = ((concrete_vals < (hz_lb - hz_lb_tolerance)) | (concrete_vals > (hz_ub + hz_ub_tolerance))).nonzero(as_tuple=True)[0]
-                        print(f"   Violation details (first 5):")
+                        print(f"Violation details (first 5):")
                         for i, idx in enumerate(violation_indices[:5]):
                             idx = idx.item()
                             concrete_val = concrete_vals[idx].item()
@@ -1521,7 +1501,7 @@ class HybridZonotopeVerifier(BaseVerifier):
                             ub_val = hz_ub[idx].item()
                             lb_tol = hz_lb_tolerance[idx].item()
                             ub_tol = hz_ub_tolerance[idx].item()
-                            print(f"     Index {idx}: concrete={concrete_val:.6f}, bounds=[{lb_val:.6f}, {ub_val:.6f}], tolerance=[{lb_tol:.0e}, {ub_tol:.0e}]")
+                            print(f"Index {idx}: concrete={concrete_val:.6f}, bounds=[{lb_val:.6f}, {ub_val:.6f}], tolerance=[{lb_tol:.0e}, {ub_tol:.0e}]")
 
             if crown_lb is not None and crown_ub is not None:
 
@@ -1555,14 +1535,14 @@ class HybridZonotopeVerifier(BaseVerifier):
                     soundness_results['crown_violations'] = total_violations
 
                     print(f"🔍 CROWN Soundness: {'✅ SOUND' if total_violations == 0 else f'❌ VIOLATIONS'}")
-                    print(f"   Lower bound violations: {lb_violations} (tolerance: {eps_abs:.0e})")
-                    print(f"   Upper bound violations: {ub_violations} (tolerance: {eps_abs:.0e})")
-                    print(f"   Total violations: {total_violations}/{concrete_vals.numel()}")
+                    print(f"Lower bound violations: {lb_violations} (tolerance: {eps_abs:.0e})")
+                    print(f"Upper bound violations: {ub_violations} (tolerance: {eps_abs:.0e})")
+                    print(f"Total violations: {total_violations}/{concrete_vals.numel()}")
 
                     if total_violations > 0:
 
                         violation_indices = ((concrete_vals < (crown_lb - crown_lb_tolerance)) | (concrete_vals > (crown_ub + crown_ub_tolerance))).nonzero(as_tuple=True)[0]
-                        print(f"   Violation details (first 5):")
+                        print(f"Violation details (first 5):")
                         for i, idx in enumerate(violation_indices[:5]):
                             idx = idx.item()
                             concrete_val = concrete_vals[idx].item()
@@ -1570,7 +1550,7 @@ class HybridZonotopeVerifier(BaseVerifier):
                             ub_val = crown_ub[idx].item()
                             lb_tol = crown_lb_tolerance[idx].item()
                             ub_tol = crown_ub_tolerance[idx].item()
-                            print(f"     Index {idx}: concrete={concrete_val:.6f}, bounds=[{lb_val:.6f}, {ub_val:.6f}], tolerance=[{lb_tol:.0e}, {ub_tol:.0e}]")
+                            print(f"Index {idx}: concrete={concrete_val:.6f}, bounds=[{lb_val:.6f}, {ub_val:.6f}], tolerance=[{lb_tol:.0e}, {ub_tol:.0e}]")
 
             self.soundness_check_results[layer_name] = soundness_results
 
@@ -1622,19 +1602,19 @@ class HybridZonotopeVerifier(BaseVerifier):
 
         print("-" * 80)
         print(f"📊 Overall Soundness Results:")
-        print(f"   Total Layers: {total_layers}")
-        print(f"   Total Elements: {total_elements}")
+        print(f"Total Layers: {total_layers}")
+        print(f"Total Elements: {total_elements}")
 
         hz_valid_layers = sum(1 for r in self.soundness_check_results.values() if r['hz_sound'] is not None)
         crown_valid_layers = sum(1 for r in self.soundness_check_results.values() if r['crown_sound'] is not None)
 
         if hz_valid_layers > 0:
-            print(f"   HZ Soundness: {hz_sound_count}/{hz_valid_layers} layers ({hz_sound_count/hz_valid_layers:.1%})")
-            print(f"   HZ Violations: {total_hz_violations}/{total_elements} elements ({total_hz_violations/total_elements:.2%})")
+            print(f"HZ Soundness: {hz_sound_count}/{hz_valid_layers} layers ({hz_sound_count/hz_valid_layers:.1%})")
+            print(f"HZ Violations: {total_hz_violations}/{total_elements} elements ({total_hz_violations/total_elements:.2%})")
 
         if crown_valid_layers > 0:
-            print(f"   CROWN Soundness: {crown_sound_count}/{crown_valid_layers} layers ({crown_sound_count/crown_valid_layers:.1%})")
-            print(f"   CROWN Violations: {total_crown_violations}/{total_elements} elements ({total_crown_violations/total_elements:.2%})")
+            print(f"CROWN Soundness: {crown_sound_count}/{crown_valid_layers} layers ({crown_sound_count/crown_valid_layers:.1%})")
+            print(f"CROWN Violations: {total_crown_violations}/{total_elements} elements ({total_crown_violations/total_elements:.2%})")
 
         if hz_valid_layers > 0 and total_hz_violations == 0:
             print("🏆 HZ Overall: ✅ COMPLETELY SOUND")
@@ -1723,7 +1703,7 @@ class HybridZonotopeVerifier(BaseVerifier):
                 print(f"🔍 Original shapes: HZ={hz_lb.shape}, CROWN={crown_lb.shape}, Concrete=N/A")
 
             if hz_lb.shape != crown_lb.shape:
-                print(f"🔧 Shape mismatch, attempting to flatten CROWN bounds...")
+                print(f"Shape mismatch, attempting to flatten CROWN bounds...")
 
                 if crown_lb.dim() > 1:
 
@@ -1734,7 +1714,7 @@ class HybridZonotopeVerifier(BaseVerifier):
                         crown_lb_flat = crown_lb.view(-1)
                         crown_ub_flat = crown_ub.view(-1)
 
-                    print(f"🔧 CROWN flattened shape: {crown_lb_flat.shape}")
+                    print(f"CROWN flattened shape: {crown_lb_flat.shape}")
 
                     if hz_lb.shape == crown_lb_flat.shape:
                         crown_lb, crown_ub = crown_lb_flat, crown_ub_flat
@@ -1774,13 +1754,13 @@ class HybridZonotopeVerifier(BaseVerifier):
             total_neurons = hz_lb.numel()
 
             print(f"📊 Statistics Comparison:")
-            print(f"   HybridZonotope: mean width={hz_mean_width:.6f}, max width={hz_max_width:.6f}")
-            print(f"   CROWN:          mean width={crown_mean_width:.6f}, max width={crown_max_width:.6f}")
-            print(f"   CROWN improvement: {width_improvement:.2f}% (positive = CROWN better)")
-            print(f"   Bound ranges:       HZ=[{hz_min_lb:.6f}, {hz_max_ub:.6f}], CROWN=[{crown_min_lb:.6f}, {crown_max_ub:.6f}]")
-            print(f"   Neuron comparison:  CROWN tighter={tighter_crown}/{total_neurons} ({tighter_crown/total_neurons*100:.1f}%)")
-            print(f"                       HZ tighter={tighter_hz}/{total_neurons} ({tighter_hz/total_neurons*100:.1f}%)")
-            print(f"                       Equal={equal_bounds}/{total_neurons} ({equal_bounds/total_neurons*100:.1f}%)")
+            print(f"HybridZonotope: mean width={hz_mean_width:.6f}, max width={hz_max_width:.6f}")
+            print(f"CROWN:          mean width={crown_mean_width:.6f}, max width={crown_max_width:.6f}")
+            print(f"CROWN improvement: {width_improvement:.2f}% (positive = CROWN better)")
+            print(f"Bound ranges:       HZ=[{hz_min_lb:.6f}, {hz_max_ub:.6f}], CROWN=[{crown_min_lb:.6f}, {crown_max_ub:.6f}]")
+            print(f"Neuron comparison:  CROWN tighter={tighter_crown}/{total_neurons} ({tighter_crown/total_neurons*100:.1f}%)")
+            print(f"HZ tighter={tighter_hz}/{total_neurons} ({tighter_hz/total_neurons*100:.1f}%)")
+            print(f"Equal={equal_bounds}/{total_neurons} ({equal_bounds/total_neurons*100:.1f}%)")
 
 
             if total_neurons <= 50:
@@ -1796,7 +1776,7 @@ class HybridZonotopeVerifier(BaseVerifier):
                     print(f"{'Index':<4} {'HZ_LB':<12} {'HZ_UB':<12} {'CROWN_LB':<12} {'CROWN_UB':<12} {'HZ_Width':<10} {'CROWN_Width':<10} {'Improve':<8}")
                     print("-" * 80)
 
-                print(f"   Showing neuron indices: {indices_to_show} (total {len(indices_to_show)})")
+                print(f"Showing neuron indices: {indices_to_show} (total {len(indices_to_show)})")
                 try:
                     for i in indices_to_show:
 
@@ -1834,7 +1814,7 @@ class HybridZonotopeVerifier(BaseVerifier):
                     print(f"{'Index':<4} {'HZ_LB':<12} {'HZ_UB':<12} {'CROWN_LB':<12} {'CROWN_UB':<12} {'HZ_Width':<10} {'CROWN_Width':<10} {'Improve':<8}")
                     print("-" * 80)
 
-                print(f"   Showing neuron indices: {indices_to_show} (total {len(indices_to_show)})")
+                print(f"Showing neuron indices: {indices_to_show} (total {len(indices_to_show)})")
                 try:
                     for i in indices_to_show:
                         try:
@@ -1901,7 +1881,7 @@ class HybridZonotopeVerifier(BaseVerifier):
                     print(f"{'Index':<4} {'HZ LB':<12} {'HZ UB':<12} {'CROWN LB':<12} {'CROWN UB':<12} {'HZ Width':<10} {'CROWN Width':<10} {'Improve':<8}")
                     print("-" * 80)
 
-                print(f"   Showing neuron indices: {indices_to_show} (total {len(indices_to_show)})")
+                print(f"Showing neuron indices: {indices_to_show} (total {len(indices_to_show)})")
                 try:
                     for i in indices_to_show:
                         try:
@@ -1978,12 +1958,12 @@ class HybridZonotopeVerifier(BaseVerifier):
 
         print("-" * 80)
         print(f"📊 Overall Results:")
-        print(f"   Total Layers:        {total_layers}")
-        print(f"   CROWN Wins:          {crown_wins} ({crown_wins/total_layers:.1%})")
-        print(f"   HybridZonotope Wins: {hz_wins} ({hz_wins/total_layers:.1%})")
+        print(f"Total Layers:        {total_layers}")
+        print(f"CROWN Wins:          {crown_wins} ({crown_wins/total_layers:.1%})")
+        print(f"HybridZonotope Wins: {hz_wins} ({hz_wins/total_layers:.1%})")
 
         avg_improvement = np.mean([comp['width_improvement'] for comp in self.layer_precision_comparison.values()])
-        print(f"   Average Improvement: {avg_improvement:+.2%} (CROWN vs HZ)")
+        print(f"Average Improvement: {avg_improvement:+.2%} (CROWN vs HZ)")
 
         if avg_improvement > 0:
             print("🏆 Overall Winner: CROWN (auto_LiRPA)")
@@ -2006,9 +1986,9 @@ class HybridZonotopeVerifier(BaseVerifier):
         last_linear_index = linear_layers[-1] if linear_layers else -1
 
         print(f"\n🕒 Starting layer-by-layer verification - method: {method}")
-        print(f"🔧 Network structure analysis: total layers={len(all_layers)}, Linear layers={len(linear_layers)}")
+        print(f"Network structure analysis: total layers={len(all_layers)}, Linear layers={len(linear_layers)}")
         if self.enable_generator_merging and last_linear_index >= 0:
-            print(f"🎯 Generator merging will be automatically enabled at layer {last_linear_index} (last Linear layer)")
+            print(f"Generator merging will be automatically enabled at layer {last_linear_index} (last Linear layer)")
         print("="*60)
 
         if self.enable_soundness_check:
@@ -2041,7 +2021,7 @@ class HybridZonotopeVerifier(BaseVerifier):
                 'layer_index': -1
             }
             print(f"✅ [Concrete] {input_layer_name}: {original_input_center.shape} -> flattened: {input_center_flat.shape}")
-            print(f"    Range: [{input_center_flat.min():.6f}, {input_center_flat.max():.6f}]")
+            print(f"Range: [{input_center_flat.min():.6f}, {input_center_flat.max():.6f}]")
 
             hz_input_bounds = self._compute_hz_layer_bounds(hz, input_layer_name, "input")
 
@@ -2068,7 +2048,7 @@ class HybridZonotopeVerifier(BaseVerifier):
                 enable_merging = self.enable_generator_merging and is_last_linear
 
                 if enable_merging:
-                    print(f"🔧 Last Linear layer (layer {layer_count}): enabling generator merging optimization")
+                    print(f"Last Linear layer (layer {layer_count}): enabling generator merging optimization")
                     hz = hz.linear(W, b, enable_generator_merging=True, cosine_threshold=self.cosine_threshold)
                 else:
                     if self.enable_generator_merging and not is_last_linear:
@@ -2084,7 +2064,7 @@ class HybridZonotopeVerifier(BaseVerifier):
                 layer_start_time = time.time()
 
                 hz.set_method(method)
-                print(f"🚀 Processing Conv2d layer: verifier method {method}, hz.method {hz.method}")
+                print(f"Processing Conv2d layer: verifier method {method}, hz.method {hz.method}")
                 hz = hz.conv(layer.weight, layer.bias, stride=layer.stride, padding=layer.padding,
                              dilation=layer.dilation, groups=layer.groups)
 
@@ -2113,7 +2093,7 @@ class HybridZonotopeVerifier(BaseVerifier):
                             debug_applied_constraints.append(f"ReLU[{constraint['neuron_idx']}]={constraint['constraint_type']}")
 
                 if debug_applied_constraints:
-                    print(f"🔒 [{layer_name}] applyingReLUconstraint: {debug_applied_constraints}")
+                    print(f"[{layer_name}] applyingReLUconstraint: {debug_applied_constraints}")
 
                 hz = hz.relu(
                     auto_lirpa_info=None,
@@ -2243,7 +2223,7 @@ class HybridZonotopeVerifier(BaseVerifier):
         verification_core_end_time = time.time()
         verification_core_time = verification_core_end_time - verification_core_start_time
 
-        print("\n📈 Verification core time statistics:")
+        print("\nVerification core time statistics:")
         print(f"📊 Total layer-by-layer processing time: {total_layer_time:.4f} seconds")
         print(f"⏱️  Other processing time: {verification_core_time - total_layer_time:.4f} seconds")
         print(f"🕒 Total verification core time: {verification_core_time:.4f} seconds")
@@ -2258,7 +2238,7 @@ class HybridZonotopeVerifier(BaseVerifier):
         print(f"\n🔍 Computing output layer dimension-wise bounds (total {hz_elem.n} output neurons)")
         output_lbs, output_ubs = self._concretize_hz(hz_elem, method=method)
 
-        print(f"🚀 Returning output layer HybridZonotope and bounds for two-stage verification")
+        print(f"Returning output layer HybridZonotope and bounds for two-stage verification")
         return hz_elem, output_lbs, output_ubs
 
     def _concretize_hz(self, hz_elem, method='hybridz', time_limit=500):
@@ -2309,7 +2289,7 @@ class HybridZonotopeVerifier(BaseVerifier):
                                   true_label: Optional[int]) -> VerificationStatus:
 
         if output_constraints is not None:
-            print(f"🔧 HZ verification: processing linear constraints ({len(output_constraints)} constraints)")
+            print(f"HZ verification: processing linear constraints ({len(output_constraints)} constraints)")
             for row in output_constraints:
                 a = torch.tensor(row[:-1], device=output_lbs.device)
                 b = row[-1]
@@ -2319,7 +2299,7 @@ class HybridZonotopeVerifier(BaseVerifier):
             return VerificationStatus.SAT
 
         if true_label is not None:
-            print(f"🔧 HZ verification: using two-stage verification strategy (conservative judgment first, then precise difference)")
+            print(f"HZ verification: using two-stage verification strategy (conservative judgment first, then precise difference)")
             return self._classify_with_two_stage_strategy_hz(output_hz, output_lbs, output_ubs, true_label)
 
         return VerificationStatus.UNKNOWN
@@ -2333,7 +2313,7 @@ class HybridZonotopeVerifier(BaseVerifier):
         num_outputs = len(output_lbs)
         print(f"🔍 Starting two-stage HZ verification: true_label={true_label}, num_outputs={num_outputs}")
 
-        print(f"📈 Stage 1: Conservative bound comparison")
+        print(f"Stage 1: Conservative bound comparison")
         true_label_lb = output_lbs[true_label].item()
 
         conservative_safe = True
@@ -2342,14 +2322,14 @@ class HybridZonotopeVerifier(BaseVerifier):
                 continue
             other_ub = output_ubs[j].item()
             if true_label_lb <= other_ub:
-                print(f"  ⚠️  Conservative judgment failed: output[{true_label}]_lb={true_label_lb:.6f} <= output[{j}]_ub={other_ub:.6f}")
+                print(f"⚠️  Conservative judgment failed: output[{true_label}]_lb={true_label_lb:.6f} <= output[{j}]_ub={other_ub:.6f}")
                 conservative_safe = False
                 break
             else:
-                print(f"  ✅ output[{true_label}]_lb={true_label_lb:.6f} > output[{j}]_ub={other_ub:.6f}")
+                print(f"✅ output[{true_label}]_lb={true_label_lb:.6f} > output[{j}]_ub={other_ub:.6f}")
 
         if conservative_safe:
-            print(f"🎉 Stage 1 success: true_label lower bound greater than all other neuron upper bounds, directly judged robust")
+            print(f"✅ Stage 1 success: true_label lower bound greater than all other neuron upper bounds, directly judged robust")
             return VerificationStatus.SAT
 
         print(f"🔍 Stage 2: Precise difference verification (ERAN style)")
@@ -2368,7 +2348,7 @@ class HybridZonotopeVerifier(BaseVerifier):
             if j == true_label:
                 continue
 
-            print(f"  Checking difference: output[{true_label}] - output[{j}]")
+            print(f"Checking difference: output[{true_label}] - output[{j}]")
 
             try:
 
@@ -2383,25 +2363,25 @@ class HybridZonotopeVerifier(BaseVerifier):
                     diff_lb_val = float(diff_lb)
                     diff_ub_val = float(diff_ub)
 
-                print(f"    Difference range: [{diff_lb_val:.6f}, {diff_ub_val:.6f}]")
+                print(f"Difference range: [{diff_lb_val:.6f}, {diff_ub_val:.6f}]")
 
                 if diff_lb_val <= 0:
-                    print(f"    ❌ Difference output[{true_label}] - output[{j}] lower bound <= 0: {diff_lb_val:.6f}")
+                    print(f"❌ Difference output[{true_label}] - output[{j}] lower bound <= 0: {diff_lb_val:.6f}")
                     return VerificationStatus.UNSAT
                 else:
-                    print(f"    ✅ Difference output[{true_label}] - output[{j}] lower bound > 0: {diff_lb_val:.6f}")
+                    print(f"✅ Difference output[{true_label}] - output[{j}] lower bound > 0: {diff_lb_val:.6f}")
 
             except Exception as e:
-                print(f"    ⚠️  Error constructing difference zonotope: {e}")
-                print(f"    Cannot complete HZ difference verification, returning UNKNOWN")
+                print(f"⚠️  Error constructing difference zonotope: {e}")
+                print(f"Cannot complete HZ difference verification, returning UNKNOWN")
                 return VerificationStatus.UNKNOWN
 
-        print(f"  ✅ All HZ difference verifications passed")
+        print(f"✅ All HZ difference verifications passed")
         return VerificationStatus.SAT
 
     def _abstract_constraint_solving(self, input_lb: torch.Tensor, input_ub: torch.Tensor, sample_idx: int) -> VerificationStatus:
 
-        print(f"   🔧 Creating HybridZonotope abstract domain")
+        print(f"Creating HybridZonotope abstract domain")
         self.input_hz = HybridZonotopeGrid(
             input_lb=input_lb,
             input_ub=input_ub,
@@ -2411,14 +2391,14 @@ class HybridZonotopeVerifier(BaseVerifier):
             device=self.device
         )
 
-        print(f"   🔍 Using method: {self.method}")
+        print(f"🔍 Using method: {self.method}")
         verification_result = self._abstract_constraint_solving_core(model=self.model, input_hz=self.input_hz, method=self.method, sample_idx=sample_idx)
 
         if verification_result is not None and len(verification_result) == 3:
             output_hz, output_lbs, output_ubs = verification_result
         else:
 
-            print(f"   ❌ Verification core returned abnormal value")
+            print(f"❌ Verification core returned abnormal value")
             return VerificationStatus.UNKNOWN
 
         self.apply_relu_constraints_to_bounds()
@@ -2435,13 +2415,13 @@ class HybridZonotopeVerifier(BaseVerifier):
 
             verdict = VerificationStatus.UNKNOWN
 
-        print(f"   📊 Verification result: {verdict.name}")
+        print(f"📊 Verification result: {verdict.name}")
         return verdict
 
     def verify(self, proof=None, public_inputs=None):
 
         print_memory_usage("HybridZonotopeVerifier Start")
-        print("🚀 Starting complete verification process - conforming to theoretical architecture design")
+        print("Starting complete verification process - conforming to theoretical architecture design")
 
         if self.input_center is None:
             print("❌ Error: input_center is None. Cannot proceed with verification.")
@@ -2490,23 +2470,23 @@ class HybridZonotopeVerifier(BaseVerifier):
                             if len(std_val) == 1:
 
                                 eps_normalized = eps / std_val[0]
-                                print(f"🔧 [Auto_LiRPA] Original eps: {eps}, Normalized eps: {eps_normalized} (divided by std[0]: {std_val[0]})")
+                                print(f"[Auto_LiRPA] Original eps: {eps}, Normalized eps: {eps_normalized} (divided by std[0]: {std_val[0]})")
                             else:
 
                                 eps_normalized = eps / std_val[0]
-                                print(f"🔧 [Auto_LiRPA] Original eps: {eps}, Normalized eps: {eps_normalized} (divided by std[0]: {std_val[0]}, full std: {std_val})")
+                                print(f"[Auto_LiRPA] Original eps: {eps}, Normalized eps: {eps_normalized} (divided by std[0]: {std_val[0]}, full std: {std_val})")
                         elif isinstance(std_val, (int, float)):
 
                             eps_normalized = eps / std_val
-                            print(f"🔧 [Auto_LiRPA] Original eps: {eps}, Normalized eps: {eps_normalized} (divided by std: {std_val})")
+                            print(f"[Auto_LiRPA] Original eps: {eps}, Normalized eps: {eps_normalized} (divided by std: {std_val})")
                         else:
 
                             eps_normalized = eps
-                            print(f"🔧 [Auto_LiRPA] Using original eps: {eps} (std format not recognized: {type(std_val)})")
+                            print(f"[Auto_LiRPA] Using original eps: {eps} (std format not recognized: {type(std_val)})")
                         eps = eps_normalized
                     self._compute_autolirpa_bounds((lb_i, ub_i), eps=eps)
 
-            print("🌟 Step 1: HybridZonotope abstract constraint solving")
+            print("Step 1: HybridZonotope abstract constraint solving")
             initial_verdict = self._abstract_constraint_solving(lb_i, ub_i, idx)
 
             if initial_verdict == VerificationStatus.SAT:
@@ -2525,7 +2505,7 @@ class HybridZonotopeVerifier(BaseVerifier):
             else:
                 print(f"❓ HybridZonotope result uncertain - sample {idx+1}")
 
-            print("🌳 Automatically activating Specification Refinement BaB process")
+            print("Automatically activating Specification Refinement BaB process")
             print("="*60)
 
             if self.bab_config['enabled']:
@@ -2743,7 +2723,7 @@ if __name__ == "__main__":
         verifier = IntervalVerifier(dataset, method, spec)
 
         if args_dict["enable_spec_refinement"]:
-            print("🌳 Enabling specification refinement BaB verification")
+            print("Enabling specification refinement BaB verification")
             verifier.bab_config.update({
                 'enabled': True,
                 'max_depth': args_dict["bab_max_depth"],
@@ -2752,17 +2732,17 @@ if __name__ == "__main__":
                 'split_tolerance': args_dict["bab_split_tolerance"],
                 'verbose': args_dict["bab_verbose"]
             })
-            print(f"   Maximum depth: {args_dict['bab_max_depth']}")
-            print(f"   Maximum subproblems: {args_dict['bab_max_subproblems']}")
-            print(f"   Time limit: {args_dict['bab_time_limit']} seconds")
+            print(f"Maximum depth: {args_dict['bab_max_depth']}")
+            print(f"Maximum subproblems: {args_dict['bab_max_subproblems']}")
+            print(f"Time limit: {args_dict['bab_time_limit']} seconds")
 
         else:
-            print("⚙️  Specification refinement BaB verification disabled")
+            print(" Specification refinement BaB verification disabled")
             verifier.bab_config['enabled'] = False
 
         result = verifier.verify()
         if result == VerificationStatus.SAT:
-            print("🎉 The property is satisfied.")
+            print("✅ The property is satisfied.")
         elif result == VerificationStatus.UNSAT:
             print("❌ The property is not satisfied.")
         else:
@@ -2778,12 +2758,12 @@ if __name__ == "__main__":
             if args_dict["relaxation_ratio"] != 1.0:
                 print(f"⚠️  hybridz_relaxed_with_bab method forces relaxation_ratio=1.0 (full relaxed LP), ignoring user setting of {args_dict['relaxation_ratio']}")
             else:
-                print(f"🔧 hybridz_relaxed_with_bab method using relaxation_ratio=1.0 (full relaxed LP)")
+                print(f"hybridz_relaxed_with_bab method using relaxation_ratio=1.0 (full relaxed LP)")
         else:
 
             relaxation_ratio = args_dict["relaxation_ratio"]
             if method == 'hybridz_relaxed':
-                print(f"🔧 hybridz_relaxed method using relaxation_ratio={relaxation_ratio}")
+                print(f"hybridz_relaxed method using relaxation_ratio={relaxation_ratio}")
 
         verifier = HybridZonotopeVerifier(dataset, method, spec, args_dict["device"],
                                           relaxation_ratio,
@@ -2792,7 +2772,7 @@ if __name__ == "__main__":
 
         if args_dict["enable_spec_refinement"]:
             if method == 'hybridz_relaxed_with_bab':
-                print("🌳 Enabling specification refinement BaB verification (hybridz_relaxed_with_bab)")
+                print("Enabling specification refinement BaB verification (hybridz_relaxed_with_bab)")
                 verifier.bab_config.update({
                     'enabled': True,
                     'max_depth': args_dict["bab_max_depth"],
@@ -2801,15 +2781,15 @@ if __name__ == "__main__":
                     'split_tolerance': args_dict["bab_split_tolerance"],
                     'verbose': args_dict["bab_verbose"]
                 })
-                print(f"   Maximum depth: {args_dict['bab_max_depth']}")
-                print(f"   Maximum subproblems: {args_dict['bab_max_subproblems']}")
-                print(f"   Time limit: {args_dict['bab_time_limit']} seconds")
+                print(f"Maximum depth: {args_dict['bab_max_depth']}")
+                print(f"Maximum subproblems: {args_dict['bab_max_subproblems']}")
+                print(f"Time limit: {args_dict['bab_time_limit']} seconds")
 
             else:
                 print(f"⚠️  Specification refinement BaB only supports hybridz_relaxed_with_bab method, current method is {method}, automatically disabled")
                 verifier.bab_config['enabled'] = False
         else:
-            print("⚙️  Specification refinement BaB verification disabled")
+            print(" Specification refinement BaB verification disabled")
             verifier.bab_config['enabled'] = False
 
         start_time = time.time()
@@ -2817,7 +2797,7 @@ if __name__ == "__main__":
         end_time = time.time()
         print(f"⏱️  Total verification time: {end_time - start_time:.2f} seconds")
         if result == VerificationStatus.SAT:
-            print("🎉 The property is satisfied.")
+            print("✅ The property is satisfied.")
         elif result == VerificationStatus.UNSAT:
             print("❌ The property is not satisfied.")
         else:

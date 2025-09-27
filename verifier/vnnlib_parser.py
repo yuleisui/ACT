@@ -1,6 +1,4 @@
 import re
-import numpy as np
-import torch
 
 class VNNLIBParser:
 
