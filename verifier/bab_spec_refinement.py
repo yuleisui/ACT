@@ -74,7 +74,7 @@ class SpecRefinement:
         if self.verbose:
             print("🌳 Starting ReLU BaB specification refinement verification")
 
-            print(f"   Time limit: {self.time_limit}s")
+            print(f"Time limit: {self.time_limit}s")
 
         start_time = time.time()
 
@@ -147,19 +147,19 @@ class SpecRefinement:
                 print(f"\n� Processing subproblem #{current_subproblem.subproblem_id}")
                 print(f"📊 Current status: queued={len(work_queue)}, verified={len(verified_regions)}, depth={current_subproblem.depth}")
                 print(f"📋 Subproblem details:")
-                print(f"   depth: {current_subproblem.depth}")
+                print(f"depth: {current_subproblem.depth}")
 
                 if hasattr(current_subproblem, 'parent_id') and current_subproblem.parent_id is not None:
                     parent_info = f"Parent problem ID={current_subproblem.parent_id}"
                 else:
                     parent_info = "Root problem"
-                print(f"   Relationship: {parent_info}")
+                print(f"Relationship: {parent_info}")
                 if current_subproblem.relu_constraints:
-                    print(f"   ReLUconstraint count: {len(current_subproblem.relu_constraints)}")
+                    print(f"ReLUconstraint count: {len(current_subproblem.relu_constraints)}")
                     for i, constraint in enumerate(current_subproblem.relu_constraints[-2:]):
-                        print(f"     constraint{i+1}: {constraint['layer']}[{constraint['neuron_idx']}] = {constraint['constraint_type']}")
+                        print(f"constraint{i+1}: {constraint['layer']}[{constraint['neuron_idx']}] = {constraint['constraint_type']}")
                 else:
-                    print(f"   ReLUconstraint: None")
+                    print(f"ReLUconstraint: None")
                 print("-" * 60)
 
             incomplete_verifier.input_lb = current_subproblem.input_lb.unsqueeze(0)
@@ -191,7 +191,7 @@ class SpecRefinement:
                 self.stats['sat_subproblems'] += 1
                 if self.verbose:
                     print(f"✅ Subproblem #{current_subproblem.subproblem_id} abstract verification successful (depth={current_subproblem.depth})")
-                    print(f"   Result: region is safe, added to verified regions")
+                    print(f"Result: region is safe, added to verified regions")
 
             elif bounding_status == VerificationStatus.UNSAT:
 
@@ -262,7 +262,7 @@ class SpecRefinement:
                 else:
 
                     if self.verbose:
-                        print(f"   Subproblem #{current_subproblem.subproblem_id} no counterexample or skipped spurious check, proceeding with direct ReLU BaB refinement")
+                        print(f"Subproblem #{current_subproblem.subproblem_id} no counterexample or skipped spurious check, proceeding with direct ReLU BaB refinement")
 
                     if current_subproblem.depth < self.max_depth:
                         child_subproblems = self._spec_refinement_core(
@@ -365,7 +365,7 @@ class SpecRefinement:
             if hasattr(incomplete_verifier.spec.output_spec, 'labels') and incomplete_verifier.spec.output_spec.labels is not None:
                 true_label = incomplete_verifier.spec.output_spec.labels[0].item()
 
-            from verifier_tensorised import BaseVerifier
+            from base_verifier import BaseVerifier
             verdict = BaseVerifier._single_result_verdict(
                 concrete_output, concrete_output,
                 output_constraints,
@@ -375,7 +375,7 @@ class SpecRefinement:
             satisfies_property = (verdict == VerificationStatus.SAT)
 
             if self.verbose:
-                print(f"   🔍 Spurious Check:")
+                print(f"🔍 Spurious Check:")
 
             is_spurious = satisfies_property
 
@@ -401,7 +401,7 @@ class SpecRefinement:
                     if child.relu_constraints:
                         latest_constraint = child.relu_constraints[-1]
                         constraint_info = f"{latest_constraint['layer']}[{latest_constraint['neuron_idx']}]={latest_constraint['constraint_type']}"
-                    print(f"     Subproblem {i+1}: {constraint_info}")
+                    print(f"Subproblem {i+1}: {constraint_info}")
             return relu_subproblems
 
         if self.verbose:
@@ -432,9 +432,9 @@ class SpecRefinement:
             layer_name, neuron_idx, lb_val, ub_val, instability = target_relu
 
             if self.verbose:
-                print(f"🎯 Subproblem #{subproblem.subproblem_id} selected splitting target:")
-                print(f"     Layer: {layer_name}")
-                print(f"     Neuron: {neuron_idx}")
+                print(f"Subproblem #{subproblem.subproblem_id} selected splitting target:")
+                print(f"Layer: {layer_name}")
+                print(f"Neuron: {neuron_idx}")
 
             child_subproblems = []
 
@@ -476,8 +476,8 @@ class SpecRefinement:
 
             if self.verbose:
                 print(f"✅ Subproblem #{subproblem.subproblem_id} ReLU BaB splitting completed: generated {len(child_subproblems)} subproblems")
-                print(f"   Subproblem 1: ReLU[{layer_name}:{neuron_idx}] = inactive")
-                print(f"   Subproblem 2: ReLU[{layer_name}:{neuron_idx}] = active")
+                print(f"Subproblem 1: ReLU[{layer_name}:{neuron_idx}] = inactive")
+                print(f"Subproblem 2: ReLU[{layer_name}:{neuron_idx}] = active")
 
             return child_subproblems
 
@@ -516,7 +516,7 @@ class SpecRefinement:
 
                                 if self.verbose:
                                     unstable_count = ((lb < 0) & (ub > 0)).sum().item()
-                                    print(f"   🔍 {layer_name} (from {prev_layer_name}): {unstable_count} unstable ReLU")
+                                    print(f"🔍 {layer_name} (from {prev_layer_name}): {unstable_count} unstable ReLU")
 
                                     for constraint in subproblem.relu_constraints:
                                         if constraint['layer'] == layer_name:
@@ -524,7 +524,7 @@ class SpecRefinement:
                                             if neuron_idx < len(lb.view(-1)):
                                                 lb_val = lb.view(-1)[neuron_idx].item()
                                                 ub_val = ub.view(-1)[neuron_idx].item()
-                                                print(f"      🎯 Constraint neuron {neuron_idx}: [{lb_val:.6f}, {ub_val:.6f}] ({constraint['constraint_type']})")
+                                                print(f"Constraint neuron {neuron_idx}: [{lb_val:.6f}, {ub_val:.6f}] ({constraint['constraint_type']})")
 
             elif hasattr(incomplete_verifier, 'autolirpa_layer_bounds') and incomplete_verifier.autolirpa_layer_bounds:
                 layer_names = list(incomplete_verifier.autolirpa_layer_bounds.keys())
@@ -541,7 +541,7 @@ class SpecRefinement:
 
                             if self.verbose:
                                 unstable_count = ((lb < 0) & (ub > 0)).sum().item()
-                                print(f"   🔍 {layer_name}: {unstable_count} unstable ReLU")
+                                print(f"🔍 {layer_name}: {unstable_count} unstable ReLU")
 
             else:
                 if self.verbose:
@@ -611,9 +611,9 @@ class SpecRefinement:
         print(f"Unknown result subproblems: {self.stats['unknown_subproblems']}")
 
         print(f"\n🔍 Spurious Check statistics:")
-        print(f"   Spurious counterexamples: {self.stats['spurious_counterexamples']}")
-        print(f"   Real counterexamples: {self.stats['real_counterexamples']}")
-        print(f"   Abstract domain refinement splits: {self.stats['refinement_splits']}")
+        print(f"Spurious counterexamples: {self.stats['spurious_counterexamples']}")
+        print(f"Real counterexamples: {self.stats['real_counterexamples']}")
+        print(f"Abstract domain refinement splits: {self.stats['refinement_splits']}")
 
         print(f"\n📊 Verified regions: {len(result.verified_regions)}")
         print(f"📊 Spurious counterexamples: {len(result.spurious_counterexamples)}")
@@ -636,14 +636,14 @@ def create_spec_refinement_core(max_depth=8, max_subproblems=500, time_limit=150
     )
 
 if __name__ == "__main__":
-    print("🌳 Specification Refinement ReLU BaB Core Module")
+    print("Specification Refinement ReLU BaB Core Module")
     print("Core module focused on ReLU Branch and Bound specification refinement verification")
     print("\nCore Workflow:")
-    print("1️⃣  Abstract Constraint Solving → Abstract verification")
-    print("2️⃣  ReLU BaB Splitting → Identify unstable ReLUs and split")
-    print("3️⃣  [Optional] Spurious Check → Check if 𝒩(ce) satisfies ψ")
-    print("4️⃣  Refinement Loop → Recursive refinement until verification complete")
-    print("\n🔑 Core Features:")
+    print("1️⃣ Abstract Constraint Solving → Abstract verification")
+    print("2️⃣ ReLU BaB Splitting → Identify unstable ReLUs and split")
+    print("3️⃣ [Optional] Spurious Check → Check if 𝒩(ce) satisfies ψ")
+    print("4️⃣ Refinement Loop → Recursive refinement until verification complete")
+    print("\nCore Features:")
     print("✅ Focused on ReLU BaB splitting strategies")
     print("✅ Support for optional counterexample mode")
     print("✅ Compatible with HybridZonotope relaxed verification")

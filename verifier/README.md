@@ -5,7 +5,7 @@ This directory contains the core verification framework and interfaces for the A
 ## Files Overview
 
 ### Main Interface
-- **`verifier_tensorised.py`**: Primary entry point for all verification tasks
+- **`main.py`**: Primary entry point for all verification tasks
   - Unified command-line interface for all verifiers
   - Parameter parsing and validation
   - Backend selection and routing
@@ -20,7 +20,9 @@ This directory contains the core verification framework and interfaces for the A
   - Provides error handling and logging
 
 ### ACT Native Implementation
-- **`hybridz_tensorised.py`**: ACT Hybrid Zonotope verification engine
+- **`hybridz_verifier.py`**: ACT Hybrid Zonotope verification engine
+- **`hybridz_transformers.py`**: Hybrid Zonotope transformer classes  
+- **`hybridz_operations.py`**: Hybrid Zonotope operation methods
   - Novel tensorised hybrid verification method
   - Complexity-simplified Hybrid Zonotope activation transformer representation forms
   - MILP/LP relaxation strategies with configurable ratios
@@ -74,7 +76,7 @@ This directory contains the core verification framework and interfaces for the A
 
 The verifier directory implements a modular architecture:
 
-1. **Unified Interface Layer**: `verifier_tensorised.py` provides consistent API
+1. **Unified Interface Layer**: `main.py` provides consistent API
 2. **Backend Abstraction**: Runner modules translate between ACT and external tools
 3. **Native Implementation**: ACT-specific verification algorithms
 4. **Utility Layer**: Common data handling, parsing, and type definitions
