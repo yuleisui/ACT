@@ -4,11 +4,9 @@ from gurobipy import GRB
 import numpy as np
 from scipy.optimize import linprog
 import torch.nn.functional as F
-
 import os
 import sys
 import psutil
-import gc
 
 def setup_gurobi_license():
     if 'GRB_LICENSE_FILE' not in os.environ:
@@ -34,7 +32,6 @@ def setup_gurobi_license():
 
 setup_gurobi_license()
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'modules', 'abcrown', 'auto_LiRPA')))
-from auto_LiRPA import BoundedModule, PerturbationLpNorm, BoundedTensor
 
 import time
 
@@ -194,7 +191,7 @@ class HybridZonotopeElem:
     def relu(self, auto_lirpa_info=None, relu_constraints=None):
 
         if relu_constraints:
-            print(f"🔒 [HZ ReLU] Applying {len(relu_constraints)} ReLU constraints")
+            print(f"[HZ ReLU] Applying {len(relu_constraints)} ReLU constraints")
             return self._relu_with_constraints(relu_constraints)
 
         if auto_lirpa_info is not None:
@@ -248,14 +245,12 @@ class HybridZonotopeElem:
 
     def _relu_with_constraints(self, relu_constraints):
 
-        print(f"🔒 [HZ Elem] Starting ReLU constraint transformation, constraint count: {len(relu_constraints)}")
+        print(f"[HZ Elem] Starting ReLU constraint transformation, constraint count: {len(relu_constraints)}")
 
         lb, ub = HybridZonotopeOps.GetLayerWiseBounds(
             self.center, self.G_c, self.G_b, self.A_c, self.A_b, self.b,
             self.method, self.time_limit
         )
-
-        original_unstable = ((lb < 0) & (ub > 0)).sum().item()
 
         constraints_applied = 0
         for constraint in relu_constraints:
@@ -263,8 +258,6 @@ class HybridZonotopeElem:
             constraint_type = constraint['constraint_type']
 
             if neuron_idx < lb.numel():
-                old_lb = lb[neuron_idx].item()
-                old_ub = ub[neuron_idx].item()
 
                 if constraint_type == 'inactive':
 
@@ -281,8 +274,6 @@ class HybridZonotopeElem:
             else:
 
                 pass
-
-        modified_unstable = ((lb < 0) & (ub > 0)).sum().item()
 
         new_center_list, new_G_c_list, new_G_b_list, new_A_c_list, new_A_b_list, new_b_list = HybridZonotopeOps.ReLUStandard(
             (lb, ub), self.dtype, self.device, method=self.method, relaxation_ratio=self.relaxation_ratio
@@ -319,13 +310,10 @@ class HybridZonotopeElem:
 
         print_memory_usage("Elem ReLU Start")
 
-        start_time = time.time()
-
         lb, ub = HybridZonotopeOps.GetLayerWiseBounds(
             self.center, self.G_c, self.G_b, self.A_c, self.A_b, self.b,
             self.method, self.time_limit
         )
-        end_time = time.time()
 
         new_center_list, new_G_c_list, new_G_b_list, new_A_c_list, new_A_b_list, new_b_list = HybridZonotopeOps.ReLUStandard(
             (lb, ub), self.dtype, self.device, method=self.method, relaxation_ratio=self.relaxation_ratio
@@ -568,7 +556,7 @@ class HybridZonotopeGrid:
 
     def _relu_with_constraints(self, relu_constraints):
 
-        print(f"🔒 [HZ Grid] Starting ReLU constraint transformation")
+        print(f"[HZ Grid] Starting ReLU constraint transformation")
 
         flat_center, flat_G_c, flat_G_b = self.PreActivationGetFlattenedTensor()
 
@@ -657,7 +645,7 @@ class HybridZonotopeGrid:
 
         n_neurons = len(lb)
         batch_size = min(1024, n_neurons)
-        print(f"🧠 Memory-optimized ReLU: processing {n_neurons} neurons in batches of {batch_size}")
+        print(f"Memory-optimized ReLU: processing {n_neurons} neurons in batches of {batch_size}")
 
         all_new_center_list, all_new_G_c_list, all_new_G_b_list = [], [], []
         all_A_c_list, all_A_b_list, all_b_list = [], [], []
@@ -667,7 +655,7 @@ class HybridZonotopeGrid:
             batch_lb = lb[batch_start:batch_end]
             batch_ub = ub[batch_start:batch_end]
 
-            print(f"  Processing batch {batch_start//batch_size + 1}/{(n_neurons + batch_size - 1)//batch_size}: neurons {batch_start}-{batch_end-1}")
+            print(f"Processing batch {batch_start//batch_size + 1}/{(n_neurons + batch_size - 1)//batch_size}: neurons {batch_start}-{batch_end-1}")
             print_memory_usage(f"Batch {batch_start//batch_size + 1}")
 
             batch_center_list, batch_G_c_list, batch_G_b_list, batch_A_c_list, batch_A_b_list, batch_b_list = HybridZonotopeOps.ReLUStandard(
@@ -687,7 +675,7 @@ class HybridZonotopeGrid:
 
         print(f"Grid ReLU batch processing completed: {len(all_new_center_list)} total elements")
 
-        print("🔧 Constructing block diagonal matrices in memory-efficient way...")
+        print("Constructing block diagonal matrices in memory-efficient way...")
 
         new_flat_center = torch.cat(all_new_center_list, dim=0)
 
@@ -757,7 +745,7 @@ class HybridZonotopeGrid:
         if func_type not in ['sigmoid', 'tanh']:
             raise ValueError(f"Unsupported function type: {func_type}. Supported: 'sigmoid', 'tanh'.")
 
-        print(f"🚀 Computing bounds for entire feature map ({self.C}x{self.H}x{self.W}) for {func_type}")
+        print(f"Computing bounds for entire feature map ({self.C}x{self.H}x{self.W}) for {func_type}")
         flat_center, flat_G_c, flat_G_b = self.PreActivationGetFlattenedTensor()
 
         lb, ub = HybridZonotopeOps.GetLayerWiseBounds(
@@ -836,10 +824,10 @@ class HybridZonotopeGrid:
             bounded_model = auto_lirpa_info.get('bounded_model')
             layer_name = auto_lirpa_info.get('layer_name')
             layer_bounds = auto_lirpa_info.get('layer_bounds', {})
-            print(f"🚀 MaxPool using auto_LiRPA optimization for {layer_name}")
+            print(f"MaxPool using auto_LiRPA optimization for {layer_name}")
 
         else:
-            print("⚙️  MaxPool using standard computation")
+            print(" MaxPool using standard computation")
 
         kernel_size = (kernel_size, kernel_size) if isinstance(kernel_size, int) else kernel_size
         stride = (stride, stride) if isinstance(stride, int) else stride
@@ -852,7 +840,7 @@ class HybridZonotopeGrid:
         H_out = (H_in - H_ker + 2 * padding[0]) // stride[0] + 1
         W_out = (W_in - W_ker + 2 * padding[1]) // stride[1] + 1
 
-        print("🔧 Using serial MILP MaxPool...")
+        print("Using serial MILP MaxPool...")
         return self._maxpool_serial(kernel_size, stride, padding)
 
     def _maxpool_serial(self, kernel_size, stride, padding):
@@ -863,7 +851,7 @@ class HybridZonotopeGrid:
         H_out = (H_in - H_ker + 2 * padding[0]) // stride[0] + 1
         W_out = (W_in - W_ker + 2 * padding[1]) // stride[1] + 1
 
-        print(f"🚀 Computing bounds for entire input feature map ({C_in}x{H_in}x{W_in}) before MaxPool")
+        print(f"Computing bounds for entire input feature map ({C_in}x{H_in}x{W_in}) before MaxPool")
         flat_center, flat_G_c, flat_G_b = self.PreActivationGetFlattenedTensor()
 
         input_lb, input_ub = HybridZonotopeOps.GetLayerWiseBounds(
@@ -933,9 +921,9 @@ class HybridZonotopeGrid:
             if not bounded_model or not layer_bounds:
                 print("⚠️  Insufficient auto_LiRPA info, falling back to MILP")
                 if not bounded_model:
-                    print("   Missing: bounded_model")
+                    print("  Missing: bounded_model")
                 if not layer_bounds:
-                    print("   Missing: layer_bounds")
+                    print("  Missing: layer_bounds")
                 return None
 
             print(f"� auto_LiRPA guided element selection for {layer_name}")
@@ -949,7 +937,7 @@ class HybridZonotopeGrid:
 
     def _maxpool_auto_lirpa_selection(self, kernel_size, stride, padding, bounded_model, layer_bounds):
 
-        print("🧠 Learning MaxPool element selection from auto_LiRPA...")
+        print("Learning MaxPool element selection from auto_LiRPA...")
 
         C_in, H_in, W_in = self.C, self.H, self.W
         H_ker, W_ker = kernel_size
@@ -1004,7 +992,7 @@ class HybridZonotopeGrid:
                 actual_shape = shape
 
             if total_elements == input_target_size:
-                print(f"🎯 Found potential input layer: {key} (size={total_elements})")
+                print(f"Found potential input layer: {key} (size={total_elements})")
 
                 if i + 1 < len(layer_keys):
                     next_key = layer_keys[i + 1]
@@ -1018,7 +1006,7 @@ class HybridZonotopeGrid:
                     else:
                         next_total_elements = next_shape[0] if len(next_shape) > 0 else 0
 
-                    print(f"  Checking next layer {next_key}: size={next_total_elements}, target_output={output_target_size}")
+                    print(f"Checking next layer {next_key}: size={next_total_elements}, target_output={output_target_size}")
 
                     if next_total_elements == output_target_size:
                         print(f"✅ Found input-output pair: {key} → {next_key}")
@@ -1043,7 +1031,7 @@ class HybridZonotopeGrid:
                     break
 
         if input_bounds and output_bounds:
-            print("🎯 Successfully extracted both input and output bounds!")
+            print("Successfully extracted both input and output bounds!")
 
             self._debug_print_maxpool_bounds(input_bounds, output_bounds, kernel_size, stride, padding)
             return input_bounds, output_bounds
@@ -1114,7 +1102,7 @@ class HybridZonotopeGrid:
         return selection_mapping
 
     def _apply_selection_pattern(self, selection_mapping, C_out, H_out, W_out):
-        print("🎯 Applying learned selection pattern...")
+        print("Applying learned selection pattern...")
 
         new_center_grid = torch.zeros(C_out, H_out, W_out, 1, dtype=self.dtype, device=self.device)
         new_G_c_grid = torch.zeros(C_out, H_out, W_out, self.ng, dtype=self.dtype, device=self.device)
@@ -1152,7 +1140,7 @@ class HybridZonotopeGrid:
         print("MaxPool Boundary Analysis - Validating auto_LiRPA Selection Strategy")
         print("="*80)
         print(f"Input size: {C_in}×{H_in}×{W_in}, Output size: {C_out}×{H_out}×{W_out}")
-        print(f"🔧 Pooling parameters: kernel={kernel_size}, stride={stride}, padding={padding}")
+        print(f"Pooling parameters: kernel={kernel_size}, stride={stride}, padding={padding}")
 
         c = 0
         print(f"\n📋 Channel {c} boundary information:")
@@ -1166,7 +1154,7 @@ class HybridZonotopeGrid:
                 print(f"({h},{w}) [{lb:.3f}, {ub:.3f}]", end="  ")
             print()
 
-        print("\n🎯 Output boundaries:")
+        print("\nOutput boundaries:")
         for h_out in range(H_out):
             for w_out in range(W_out):
                 lb = output_lb[c, h_out, w_out].item()
@@ -1178,8 +1166,8 @@ class HybridZonotopeGrid:
         for h_out in range(H_out):
             for w_out in range(W_out):
                 print(f"\nOutput position ({h_out},{w_out}):")
-                print(f"  Output boundary: [{output_lb[c, h_out, w_out].item():.3f}, {output_ub[c, h_out, w_out].item():.3f}]")
-                print(f"  Corresponding pooling window:")
+                print(f"Output boundary: [{output_lb[c, h_out, w_out].item():.3f}, {output_ub[c, h_out, w_out].item():.3f}]")
+                print(f"Corresponding pooling window:")
 
                 for kh in range(H_ker):
                     for kw in range(W_ker):
@@ -1194,13 +1182,13 @@ class HybridZonotopeGrid:
                             ub_match = abs(ub - output_ub[c, h_out, w_out].item()) < 1e-6
                             match_str = ""
                             if lb_match and ub_match:
-                                match_str = " ← 🎯 Perfect match!"
+                                match_str = " ← Perfect match!"
                             elif ub_match:
-                                match_str = " ← 📈 Upper bound match"
+                                match_str = " ← Upper bound match"
                             elif lb_match:
                                 match_str = " ← 📉 Lower bound match"
 
-                            print(f"    Position({h_in},{w_in}): [{lb:.3f}, {ub:.3f}]{match_str}")
+                            print(f"Position({h_in},{w_in}): [{lb:.3f}, {ub:.3f}]{match_str}")
 
         print("="*80 + "\n")
 
@@ -1433,7 +1421,7 @@ class HybridZonotopeOps:
         ng = Gc_np.shape[1]
         nc = len(b_np)
 
-        print(f"🔧 [SMT] Computing bounds for {N} neurons...")
+        print(f"[SMT] Computing bounds for {N} neurons...")
 
         lb = np.zeros(N)
         ub = np.zeros(N)
@@ -1493,8 +1481,8 @@ class HybridZonotopeOps:
         n_outputs, ng = Gc_np.shape
         nc = len(b_np)
 
-        print(f"🔧 [SMT] Using unified SMT framework to solve property violation...")
-        print(f"   Parameters: n_outputs={n_outputs}, ng={ng}, nc={nc}")
+        print(f"[SMT] Using unified SMT framework to solve property violation...")
+        print(f"Parameters: n_outputs={n_outputs}, ng={ng}, nc={nc}")
 
         solver = z3.Solver()
         solver.set("timeout", time_limit * 1000)
@@ -1515,7 +1503,7 @@ class HybridZonotopeOps:
                 if isinstance(constraint_expr, (int, float)) and constraint_expr == 0:
 
                     if abs(b_np[i]) > 1e-12:
-                        print(f"   ❌ [SMT] Constraint {i} unsatisfiable: 0 == {b_np[i]}")
+                        print(f"❌ [SMT] Constraint {i} unsatisfiable: 0 == {b_np[i]}")
                         return None
                 else:
 
@@ -1535,7 +1523,7 @@ class HybridZonotopeOps:
             match = re.search(r'output\[(\d+)\]', property_constraint)
             if match:
                 true_label = int(match.group(1))
-                print(f"   🎯 [SMT] Classification violation: finding max(others) > output[{true_label}]")
+                print(f"[SMT] Classification violation: finding max(others) > output[{true_label}]")
 
                 other_constraints = []
                 for k in range(n_outputs):
@@ -1545,27 +1533,27 @@ class HybridZonotopeOps:
                 if other_constraints:
                     solver.add(z3.Or(other_constraints))
                 else:
-                    print(f"   ❌ [SMT] Only one output class, cannot construct violation constraint")
+                    print(f"❌ [SMT] Only one output class, cannot construct violation constraint")
                     return None
             else:
-                print(f"   ❌ [SMT] Cannot parse true label from: {property_constraint}")
+                print(f"❌ [SMT] Cannot parse true label from: {property_constraint}")
                 return None
 
         elif "linear_constraints_violated" in property_constraint:
 
-            print(f"   🎯 [SMT] Linear constraint violation: specific violation condition not yet implemented")
+            print(f"[SMT] Linear constraint violation: specific violation condition not yet implemented")
 
             return None
 
         else:
-            print(f"   ❌ [SMT] Unrecognized property constraint type: {property_constraint}")
+            print(f"❌ [SMT] Unrecognized property constraint type: {property_constraint}")
             return None
 
-        print(f"   🔍 [SMT] startingsolving...")
+        print(f"🔍 [SMT] startingsolving...")
         check_result = solver.check()
 
         if check_result == z3.sat:
-            print(f"   ✅ [SMT] Found solution satisfying violation constraint")
+            print(f"✅ [SMT] Found solution satisfying violation constraint")
             model = solver.model()
 
             eps_c_values = []
@@ -1576,16 +1564,16 @@ class HybridZonotopeOps:
                 else:
                     eps_c_values.append(0.0)
 
-            print(f"   📊 [SMT] Found eps_c solution satisfying violation condition: {eps_c_values[:5]}..." if len(eps_c_values) > 5 else f"   📊 [SMT] eps_c solution: {eps_c_values}")
+            print(f"📊 [SMT] Found eps_c solution satisfying violation condition: {eps_c_values[:5]}..." if len(eps_c_values) > 5 else f"   📊 [SMT] eps_c solution: {eps_c_values}")
 
-            print(f"   ✅ [SMT] Satisfiability check passed: solution violating safety property exists")
+            print(f"✅ [SMT] Satisfiability check passed: solution violating safety property exists")
             return True
 
         elif check_result == z3.unsat:
-            print(f"   ✅ [SMT] constraint unsatisfiable, safety property verified")
+            print(f"✅ [SMT] constraint unsatisfiable, safety property verified")
             return False
         else:
-            print(f"   ⚠️  [SMT] solving timed out or unknown result: {check_result}")
+            print(f"⚠️  [SMT] solving timed out or unknown result: {check_result}")
             return None
 
     @staticmethod
@@ -1845,26 +1833,26 @@ class HybridZonotopeOps:
 
         total_constraint_terms = nc * (ng + nb)
         print(f"📊 MILP problem size analysis:")
-        print(f"   - Neuron count N: {N}")
-        print(f"   - Continuous variables ng: {ng}")
-        print(f"   - Binary variables nb: {nb} ⚠️")
-        print(f"   - Constraint count nc: {nc}")
-        print(f"   - Total constraint terms: {total_constraint_terms:,}")
-        print(f"   - Binary complexity: 2^{nb} = {2**min(nb, 20):,}...")
+        print(f"- Neuron count N: {N}")
+        print(f"- Continuous variables ng: {ng}")
+        print(f"- Binary variables nb: {nb}")
+        print(f"- Constraint count nc: {nc}")
+        print(f"- Total constraint terms: {total_constraint_terms:,}")
+        print(f"- Binary complexity: 2^{nb} = {2**min(nb, 20):,}...")
 
         if nc > 0:
             Ac_density = np.count_nonzero(Ac_np) / (nc * ng) if ng > 0 else 0
             Ab_density = np.count_nonzero(Ab_np) / (nc * nb) if nb > 0 else 0
             b_range = (np.min(b_np), np.max(b_np)) if nc > 0 else (0, 0)
             print(f"🔍 Constraint matrix analysis:")
-            print(f"   - Ac nonzero density: {Ac_density:.4f} ({np.count_nonzero(Ac_np)}/{nc*ng})")
-            print(f"   - Ab nonzero density: {Ab_density:.4f} ({np.count_nonzero(Ab_np)}/{nc*nb})")
-            print(f"   - b value range: [{b_range[0]:.6f}, {b_range[1]:.6f}]")
-            print(f"   - Ac coefficient range: [{np.min(Ac_np):.6f}, {np.max(Ac_np):.6f}]")
-            print(f"   - Ab coefficient range: [{np.min(Ab_np):.6f}, {np.max(Ab_np):.6f}]")
+            print(f"- Ac nonzero density: {Ac_density:.4f} ({np.count_nonzero(Ac_np)}/{nc*ng})")
+            print(f"- Ab nonzero density: {Ab_density:.4f} ({np.count_nonzero(Ab_np)}/{nc*nb})")
+            print(f"- b value range: [{b_range[0]:.6f}, {b_range[1]:.6f}]")
+            print(f"- Ac coefficient range: [{np.min(Ac_np):.6f}, {np.max(Ac_np):.6f}]")
+            print(f"- Ab coefficient range: [{np.min(Ab_np):.6f}, {np.max(Ab_np):.6f}]")
 
-        print(f"🔧 Building Gurobi model...")
-        print(f"🔧 Model construction start time: {time.time()}")
+        print(f"Building Gurobi model...")
+        print(f"Model construction start time: {time.time()}")
         model_start_time = time.time()
 
         import gc
@@ -1906,7 +1894,7 @@ class HybridZonotopeOps:
             model.setParam('NumericFocus', 1)
             model.setParam('ScaleFlag', 2)
         elif nb > 200 and is_output_layer:
-            print(f"🎯 Output layer ultra large-scale binary problem (nb={nb}, N={N}) - 32-core parallel feasibility-first config")
+            print(f"Output layer ultra large-scale binary problem (nb={nb}, N={N}) - 32-core parallel feasibility-first config")
             model.setParam('TimeLimit', 480)
             model.setParam('Method', 3)
             model.setParam('MIPFocus', 3)
@@ -1920,7 +1908,7 @@ class HybridZonotopeOps:
             model.setParam('FeasibilityTol', 1e-6)
             model.setParam('OptimalityTol', 1e-6)
         elif nb > 50:
-            print(f"🎯 Large-scale binary problem (nb={nb}) - 32-core parallel accuracy-first config")
+            print(f"Large-scale binary problem (nb={nb}) - 32-core parallel accuracy-first config")
             model.setParam('TimeLimit', time_limit * N)
             model.setParam('Threads', 0)
 
@@ -1930,13 +1918,13 @@ class HybridZonotopeOps:
             model.setParam('Heuristics', 0.1)
 
         else:
-            print(f"🚀 Small/medium-scale binary problem (nb={nb}) - 32-core parallel standard config")
+            print(f"Small/medium-scale binary problem (nb={nb}) - 32-core parallel standard config")
             model.setParam('TimeLimit', time_limit * N)
             model.setParam('Threads', 0)
             model.setParam('Presolve', 2)
             model.setParam('MIPFocus', 1)
 
-        print(f"🔧 Adding variables: {ng} continuous + {nb} binary...")
+        print(f"Adding variables: {ng} continuous + {nb} binary...")
         var_start_time = time.time()
         eps_c = model.addVars(ng, lb=-1, ub=1, vtype=GRB.CONTINUOUS, name="eps_c")
         eps_b = model.addVars(nb, vtype=GRB.BINARY, name="eps_b")
@@ -1972,7 +1960,7 @@ class HybridZonotopeOps:
 
         constraint_time = time.time() - constraint_start_time
 
-        print(f"🔧 Updating model...")
+        print(f"Updating model...")
         update_start_time = time.time()
         model.update()
         update_time = time.time() - update_start_time
@@ -1983,7 +1971,7 @@ class HybridZonotopeOps:
         lb = np.zeros(N)
         ub = np.zeros(N)
 
-        print(f"🚀 Starting optimization for {N} neurons...")
+        print(f"Starting optimization for {N} neurons...")
         opt_start_time = time.time()
 
         recent_times = []
@@ -2063,7 +2051,7 @@ class HybridZonotopeOps:
     def GetLayerWiseBounds(flat_center, flat_G_c, flat_G_b, A_c_tensor, A_b_tensor, b_tensor, method='hybridz', time_limit=500, num_workers=4):
         print_memory_usage("GetLayerWiseBounds Start")
         N = flat_center.shape[0]
-        print(f"🚀 Processing {N} neurons with method={method}")
+        print(f"Processing {N} neurons with method={method}")
 
         flat_center = flat_center.detach()
         flat_G_c = flat_G_c.detach()
@@ -2079,20 +2067,20 @@ class HybridZonotopeOps:
             return HybridZonotopeOps.ComputeIntervalElemBounds(flat_center, flat_G_c, flat_G_b)
 
         elif method == 'hybridz_relaxed':
-            print("🎭 Using mixed strategy (relaxed LP + exact MILP) bounds")
+            print("Using mixed strategy (relaxed LP + exact MILP) bounds")
 
             ng = flat_G_c.shape[1] if flat_G_c.numel() > 0 else 0
             nb = flat_G_b.shape[1] if flat_G_b.numel() > 0 else 0
             nc = A_c_tensor.shape[0] if A_c_tensor is not None and A_c_tensor.numel() > 0 else 0
 
-            print(f"🎭 Mixed strategy bounds: N={N}, ng={ng}, nb={nb}, nc={nc}")
+            print(f"Mixed strategy bounds: N={N}, ng={ng}, nb={nb}, nc={nc}")
 
             if nb == 0:
                 if nc == 0:
-                    print("🚀 Fully relaxed: No constraints, using Generic bounds")
+                    print("Fully relaxed: No constraints, using Generic bounds")
                     return HybridZonotopeOps.ComputeGenericZElemBounds(flat_center, flat_G_c)
                 else:
-                    print(f"🚀 Fully relaxed: Using LP bounds with {nc} constraints")
+                    print(f"Fully relaxed: Using LP bounds with {nc} constraints")
                     constraint_complexity = nc * ng
                     gurobi_threshold = 5000
 
@@ -2102,29 +2090,29 @@ class HybridZonotopeOps:
                         return HybridZonotopeOps.ComputeConstrainedZElemBoundsGurobi(flat_center, flat_G_c, A_c_tensor, b_tensor, time_limit)
             else:
 
-                print(f"🎭 Mixed strategy: Using MILP bounds with {nb} binary variables")
+                print(f"Mixed strategy: Using MILP bounds with {nb} binary variables")
                 return HybridZonotopeOps.ComputeHybridZElemBoundsGurobi(flat_center, flat_G_c, flat_G_b, A_c_tensor, A_b_tensor, b_tensor, time_limit)
 
         elif method == 'hybridz_relaxed_with_bab':
-            print("🌳 Using Hybrid Strategy: Gurobi bounds + SMT counterexamples")
+            print("Using Hybrid Strategy: Gurobi bounds + SMT counterexamples")
 
             ng = flat_G_c.shape[1] if flat_G_c.numel() > 0 else 0
             nb = flat_G_b.shape[1] if flat_G_b.numel() > 0 else 0
             nc = A_c_tensor.shape[0] if A_c_tensor is not None and A_c_tensor.numel() > 0 else 0
 
-            print(f"🌳 Hybrid bounds: N={N}, ng={ng}, nb={nb}, nc={nc}")
+            print(f"Hybrid bounds: N={N}, ng={ng}, nb={nb}, nc={nc}")
 
             if nb > 0:
                 print("⚠️  WARNING: Binary variables detected in BaB mode! Converting to fully relaxed LP...")
-                print(f"   Binary variables (nb={nb}) will be treated as continuous [-1, 1]")
+                print(f"Binary variables (nb={nb}) will be treated as continuous [-1, 1]")
 
             if nc == 0:
-                print("🚀 No constraints detected! Using Generic bounds")
+                print("No constraints detected! Using Generic bounds")
                 return HybridZonotopeOps.ComputeGenericZElemBounds(flat_center, flat_G_c)
             else:
                 print(f"📊 Phase 1: Using Gurobi for fast constrained bounds: {N} neurons, {nc} constraints")
 
-                print("   📋 Note: SMT counterexample generation available on-demand for output layer")
+                print("  📋 Note: SMT counterexample generation available on-demand for output layer")
                 return HybridZonotopeOps.ComputeConstrainedZElemBoundsGurobi(
                     flat_center, flat_G_c, A_c_tensor, b_tensor, time_limit
                 )
@@ -2136,10 +2124,10 @@ class HybridZonotopeOps:
             nb = flat_G_b.shape[1] if flat_G_b.numel() > 0 else 0
             nc = A_c_tensor.shape[0] if A_c_tensor is not None and A_c_tensor.numel() > 0 else 0
 
-            print(f"🚀 Ultra-vectorized bounds: N={N}, ng={ng}, nb={nb}, nc={nc}")
+            print(f"Ultra-vectorized bounds: N={N}, ng={ng}, nb={nb}, nc={nc}")
 
             if nb == 0 and nc == 0:
-                print(f"🚀 No constraints detected! Using ultra-fast Generic bounds for {N} neurons")
+                print(f"No constraints detected! Using ultra-fast Generic bounds for {N} neurons")
                 return HybridZonotopeOps.ComputeGenericZElemBounds(flat_center, flat_G_c)
 
             elif nb == 0:
@@ -2567,12 +2555,12 @@ class HybridZonotopeOps:
 
         print_memory_usage("Intersection start")
 
-        print("🔧 Computing permutation indices...")
+        print("Computing permutation indices...")
         perm_indices = list(range(0, 2*dim, 2)) + list(range(1, 2*dim, 2))
-        print(f"🔧 Permutation indices computed, length: {len(perm_indices)}")
+        print(f"Permutation indices computed, length: {len(perm_indices)}")
 
         chunk_size = min(512, dim // 4) if dim > 1024 else dim
-        print(f"🔧 Using chunk_size={chunk_size} for intersection operations")
+        print(f"Using chunk_size={chunk_size} for intersection operations")
 
         Z_center = abstract_transormer_hz.center[perm_indices]
 
@@ -2614,14 +2602,14 @@ class HybridZonotopeOps:
         torch.cuda.empty_cache() if torch.cuda.is_available() else None
         print_memory_usage("After Gc/Gb construction and cleanup")
 
-        print("🔧 Step 4: Constructing Ac_bottom without storing intermediate R_Z_Gc...")
+        print("Step 4: Constructing Ac_bottom without storing intermediate R_Z_Gc...")
 
         temp_R_Z_Gc = abstract_transormer_hz.G_c[perm_indices][:dim]
         Ac_bottom = torch.cat([temp_R_Z_Gc, -Y_G_c], dim=1)
         del temp_R_Z_Gc
         print(f"✅ Step 4 completed, Ac_bottom shape: {Ac_bottom.shape}")
 
-        print("🔧 Step 5: Constructing Ab_bottom without storing intermediate R_Z_Gb...")
+        print("Step 5: Constructing Ab_bottom without storing intermediate R_Z_Gb...")
 
         if abstract_transormer_hz.G_b.shape[1] > 0:
             temp_R_Z_Gb = abstract_transormer_hz.G_b[perm_indices][:dim]
@@ -2631,7 +2619,7 @@ class HybridZonotopeOps:
             Ab_bottom = torch.cat([torch.zeros(dim, 0, device=Y_G_b.device, dtype=Y_G_b.dtype), -Y_G_b], dim=1)
         print(f"✅ Step 5 completed, Ab_bottom shape: {Ab_bottom.shape}")
 
-        print("🔧 Step 6: Constructing new_b without storing intermediate R_Z_center...")
+        print("Step 6: Constructing new_b without storing intermediate R_Z_center...")
 
         temp_R_Z_center = Z_center[:dim]
         new_b = torch.cat([Z_b, Y_b, Y_center - temp_R_Z_center], dim=0)
@@ -2640,7 +2628,7 @@ class HybridZonotopeOps:
 
         print_memory_usage("After optimized R matrix operations")
 
-        print("🔧 Step 7: Constructing constraint matrices with minimal memory footprint...")
+        print("Step 7: Constructing constraint matrices with minimal memory footprint...")
 
         total_nc = Z_nc + Y_nc
         total_ng = Z_ng + Y_ng
@@ -2675,7 +2663,7 @@ class HybridZonotopeOps:
 
         print_memory_usage("After constraint matrix construction")
 
-        print("🔧 Step 8: Applying output filter (taking second half)...")
+        print("Step 8: Applying output filter (taking second half)...")
 
         new_center = new_center[dim:]
         new_Gc = new_Gc[dim:]
@@ -2734,7 +2722,7 @@ class HybridZonotopeOps:
             print(f"⚠️  Dimension mismatch: HZ={n_neurons}, auto_LiRPA={len(lirpa_lb_flat)}, falling back")
             return None
 
-        print(f"🎯 ReLU optimization: {len(stable_pos)} stable+, {len(stable_neg)} stable-, {len(unstable)} unstable")
+        print(f"ReLU optimization: {len(stable_pos)} stable+, {len(stable_neg)} stable-, {len(unstable)} unstable")
 
         new_center_list, new_G_c_list, new_G_b_list, new_A_c_list, new_A_b_list, new_b_list = [], [], [], [], [], []
 
@@ -2745,16 +2733,16 @@ class HybridZonotopeOps:
 
                 lb_i_optimized = max(lb_i, 1e-6)
                 ub_i_optimized = max(ub_i, lb_i_optimized + 1e-6)
-                print(f"  Neuron {i}: stable+ [{lb_i:.6f}, {ub_i:.6f}] -> [{lb_i_optimized:.6f}, {ub_i_optimized:.6f}]")
+                print(f"Neuron {i}: stable+ [{lb_i:.6f}, {ub_i:.6f}] -> [{lb_i_optimized:.6f}, {ub_i_optimized:.6f}]")
             elif i in stable_neg:
 
                 ub_i_optimized = min(ub_i, -1e-6)
                 lb_i_optimized = min(lb_i, ub_i_optimized - 1e-6)
-                print(f"  Neuron {i}: stable- [{lb_i:.6f}, {ub_i:.6f}] -> [{lb_i_optimized:.6f}, {ub_i_optimized:.6f}]")
+                print(f"Neuron {i}: stable- [{lb_i:.6f}, {ub_i:.6f}] -> [{lb_i_optimized:.6f}, {ub_i_optimized:.6f}]")
             else:
 
                 lb_i_optimized, ub_i_optimized = lb_i, ub_i
-                print(f"  Neuron {i}: unstable [{lb_i:.6f}, {ub_i:.6f}] (needs binary var)")
+                print(f"Neuron {i}: unstable [{lb_i:.6f}, {ub_i:.6f}] (needs binary var)")
 
             new_center_i, new_G_c_i, new_G_b_i, new_A_c_i, new_A_b_i, new_b_i = HybridZonotopeOps.ReLUElem(
                 lb_i_optimized, ub_i_optimized, dtype=dtype, device=device
@@ -2783,14 +2771,14 @@ class HybridZonotopeOps:
             n_exact = n_neurons - n_relaxed
 
             if relaxation_ratio == 1.0:
-                print(f"🚀 Using fully relaxed ReLU (LP instead of MILP) for all {n_neurons} neurons")
+                print(f"Using fully relaxed ReLU (LP instead of MILP) for all {n_neurons} neurons")
             elif relaxation_ratio == 0.0:
-                print(f"🎯 Using fully exact ReLU (MILP) for all {n_neurons} neurons")
+                print(f"Using fully exact ReLU (MILP) for all {n_neurons} neurons")
             else:
-                print(f"🎭 Using mixed ReLU strategy: {n_relaxed} relaxed (LP) + {n_exact} exact (MILP) out of {n_neurons} neurons (ratio={relaxation_ratio:.1f})")
+                print(f"Using mixed ReLU strategy: {n_relaxed} relaxed (LP) + {n_exact} exact (MILP) out of {n_neurons} neurons (ratio={relaxation_ratio:.1f})")
         elif method == 'hybridz_relaxed_with_bab':
 
-            print(f"🌳 BaB mode: Using fully relaxed ReLU (LP) for all {n_neurons} neurons")
+            print(f"BaB mode: Using fully relaxed ReLU (LP) for all {n_neurons} neurons")
         else:
             print(f"Using standard ReLU (MILP) for {n_neurons} neurons")
 
@@ -2842,11 +2830,11 @@ class HybridZonotopeOps:
             n_exact = n_neurons - n_relaxed
 
             if relaxation_ratio == 1.0:
-                print(f"🚀 Using fully relaxed {func_type.upper()} (LP instead of MILP) for all {n_neurons} neurons")
+                print(f"Using fully relaxed {func_type.upper()} (LP instead of MILP) for all {n_neurons} neurons")
             elif relaxation_ratio == 0.0:
-                print(f"🎯 Using fully exact {func_type.upper()} (MILP) for all {n_neurons} neurons")
+                print(f"Using fully exact {func_type.upper()} (MILP) for all {n_neurons} neurons")
             else:
-                print(f"🎭 Using mixed {func_type.upper()} strategy: {n_relaxed} relaxed (LP) + {n_exact} exact (MILP) out of {n_neurons} neurons (ratio={relaxation_ratio:.1f})")
+                print(f"Using mixed {func_type.upper()} strategy: {n_relaxed} relaxed (LP) + {n_exact} exact (MILP) out of {n_neurons} neurons (ratio={relaxation_ratio:.1f})")
         else:
             print(f"Using standard {func_type.upper()} (MILP) for {n_neurons} neurons")
 
@@ -2902,11 +2890,11 @@ class HybridZonotopeOps:
         if A_c is not None and A_c.numel() > 0:
 
             combined_matrix = torch.cat([G_c, A_c], dim=0)
-            print(f"📐 Combined matrix shape: {combined_matrix.shape} (Gc: {G_c.shape}, Ac: {A_c.shape})")
+            print(f"Combined matrix shape: {combined_matrix.shape} (Gc: {G_c.shape}, Ac: {A_c.shape})")
         else:
 
             combined_matrix = G_c
-            print(f"📐 Analyzing Gc only: {G_c.shape} (no constraints)")
+            print(f"Analyzing Gc only: {G_c.shape} (no constraints)")
 
         def cosine_similarity(vec1, vec2):
             dot_product = torch.dot(vec1.flatten(), vec2.flatten())
@@ -2932,13 +2920,13 @@ class HybridZonotopeOps:
                 if abs(cos_sim) > cosine_threshold:
                     merge_pairs.append((i, j, cos_sim.item()))
                     merged_indices.add(j)
-                    print(f"  📋 Found parallel generators: col {i} ↔ col {j} (cosine={cos_sim:.4f})")
+                    print(f"📋 Found parallel generators: col {i} ↔ col {j} (cosine={cos_sim:.4f})")
 
         if not merge_pairs:
             print("✅ No parallel generators found, returning original matrices")
             return center, G_c, G_b, A_c, A_b, b
 
-        print(f"🎯 Found {len(merge_pairs)} parallel generator pairs to merge")
+        print(f"Found {len(merge_pairs)} parallel generator pairs to merge")
 
         remaining_indices = []
         for i in range(ng):
@@ -2966,10 +2954,10 @@ class HybridZonotopeOps:
                 G_c_merged[:, target_col] += G_c[:, j]
                 if A_c_merged is not None:
                     A_c_merged[:, target_col] += A_c[:, j]
-                print(f"  ✅ Merged col {j} into col {i} (cosine={cos_sim:.4f}) -> new_col {target_col}")
+                print(f"✅ Merged col {j} into col {i} (cosine={cos_sim:.4f}) -> new_col {target_col}")
 
-        print(f"🎉 Generator merging completed: {ng} -> {new_ng} generators (reduction: {ng-new_ng})")
-        print(f"   📊 Compression ratio: {(ng-new_ng)/ng*100:.1f}% reduction")
+        print(f"✅ Generator merging completed: {ng} -> {new_ng} generators (reduction: {ng-new_ng})")
+        print(f"📊 Compression ratio: {(ng-new_ng)/ng*100:.1f}% reduction")
 
         return center, G_c_merged, G_b, A_c_merged, A_b, b
 
@@ -2977,10 +2965,10 @@ class HybridZonotopeOps:
     def GetCounterexampleForOutputLayer(flat_center, flat_G_c, A_c_tensor, b_tensor, property_constraint, time_limit=30):
 
         try:
-            print(f"🔧 [SMT] Counterexample generation for output layer starting...")
-            print(f"   Output layer shape: center{flat_center.shape}, G_c{flat_G_c.shape}")
-            print(f"   Constraint shape: A_c{A_c_tensor.shape}, b{b_tensor.shape}")
-            print(f"   Property constraint: {property_constraint}")
+            print(f"[SMT] Counterexample generation for output layer starting...")
+            print(f"Output layer shape: center{flat_center.shape}, G_c{flat_G_c.shape}")
+            print(f"Constraint shape: A_c{A_c_tensor.shape}, b{b_tensor.shape}")
+            print(f"Property constraint: {property_constraint}")
 
             result = HybridZonotopeOps.ComputeConstrainedZElemBoundsSMT(
                 flat_center, flat_G_c, A_c_tensor, b_tensor,
@@ -3003,7 +2991,7 @@ class HybridZonotopeOps:
                 return None
 
         except Exception as e:
-            print(f"   ❌ [SMT] Counterexample generation failed: {e}")
+            print(f"❌ [SMT] Counterexample generation failed: {e}")
             import traceback
             traceback.print_exc()
             return None
