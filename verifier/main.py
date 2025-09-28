@@ -44,6 +44,10 @@ def main():
     parser.add_argument('--cosine_threshold', type=float, default=0.95,
                         help='ACT innovation: Cosine similarity threshold for parallel generator detection (0.0-1.0, higher=stricter)')
 
+    # ACT CI/CD Environment Configuration
+    parser.add_argument('--ci', action='store_true', default=False,
+                        help='ACT CI mode: Use scipy.linprog instead of Gurobi for LP solving (no commercial license required). Automatically enables fallback to open-source solvers when Gurobi license is unavailable')
+
     # ACT Specification Refinement (Branch-and-Bound) Framework
     parser.add_argument('--enable_spec_refinement', action='store_true', default=False,
                         help='ACT innovation: Enable specification refinement BaB verification. Automatically triggers when initial abstract verification returns UNKNOWN/UNSAT')
@@ -269,7 +273,8 @@ def main():
         verifier = HybridZonotopeVerifier(dataset, method, spec, args_dict["device"],
                                           relaxation_ratio,
                                           args_dict["enable_generator_merging"],
-                                          args_dict["cosine_threshold"])
+                                          args_dict["cosine_threshold"],
+                                          ci_mode=args_dict["ci"])
 
         if args_dict["enable_spec_refinement"]:
             if method == 'hybridz_relaxed_with_bab':

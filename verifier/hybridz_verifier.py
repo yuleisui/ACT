@@ -31,7 +31,8 @@ except ImportError:
 
 class HybridZonotopeVerifier(BaseVerifier):
     def __init__(self, dataset: Dataset, method : str, spec: Spec, device: str = 'cpu',
-                 relaxation_ratio: float = 1.0, enable_generator_merging: bool = False, cosine_threshold: float = 0.95):
+                 relaxation_ratio: float = 1.0, enable_generator_merging: bool = False, cosine_threshold: float = 0.95,
+                 ci_mode: bool = False):
 
         from hybridz_transformers import HybridZonotopeElem
         self.HybridZonotopeElem = HybridZonotopeElem
@@ -43,6 +44,7 @@ class HybridZonotopeVerifier(BaseVerifier):
         self.relaxation_ratio = relaxation_ratio
         self.enable_generator_merging = enable_generator_merging
         self.cosine_threshold = cosine_threshold
+        self.ci_mode = ci_mode
 
         self.hz_layer_bounds = {}
         self.autolirpa_layer_bounds = {}
@@ -139,7 +141,7 @@ class HybridZonotopeVerifier(BaseVerifier):
 
         input_lb, input_ub = input_bounds
 
-        print(f"🔍 [Auto_LiRPA] Computing all layer bounds using method: {method}")
+        print(f"[Auto_LiRPA] Computing all layer bounds using method: {method}")
 
         try:
 
@@ -279,8 +281,8 @@ class HybridZonotopeVerifier(BaseVerifier):
     def _compute_hz_layer_bounds(self, hz, layer_name, layer_type="unknown"):
 
         try:
-            print(f"🔍 [HZ Bounds] Computing bounds for {layer_name} ({layer_type})")
-            print(f"🔍 [HZ Bounds] Current time: {time.time()}")
+            print(f"[HZ Bounds] Computing bounds for {layer_name} ({layer_type})")
+            print(f"[HZ Bounds] Current time: {time.time()}")
 
             if hasattr(hz, 'PreActivationGetFlattenedTensor'):
 
@@ -291,21 +293,21 @@ class HybridZonotopeVerifier(BaseVerifier):
                 flat_center, flat_G_c, flat_G_b = hz.center, hz.G_c, hz.G_b
                 A_c, A_b, b = hz.A_c, hz.A_b, hz.b
 
-            print(f"🔍 [HZ Bounds] Data extracted, about to call GetLayerWiseBounds")
+            print(f"[HZ Bounds] Data extracted, about to call GetLayerWiseBounds")
 
             method = hz.method
-            print(f"🔍 [HZ Bounds] Using method: {method} for layer {layer_name}")
+            print(f"[HZ Bounds] Using method: {method} for layer {layer_name}")
 
-            print(f"🔍 [HZ Bounds] Calling GetLayerWiseBounds with method={method}, time_limit=500")
+            print(f"[HZ Bounds] Calling GetLayerWiseBounds with method={method}, time_limit=500")
             start_time = time.time()
 
             lb, ub = HybridZonotopeOps.GetLayerWiseBounds(
                 flat_center, flat_G_c, flat_G_b, A_c, A_b, b,
-                method, time_limit=500
+                method, time_limit=500, ci_mode=self.ci_mode
             )
 
             end_time = time.time()
-            print(f"🔍 [HZ Bounds] GetLayerWiseBounds completed in {end_time - start_time:.2f}s")
+            print(f"[HZ Bounds] GetLayerWiseBounds completed in {end_time - start_time:.2f}s")
 
             self.hz_layer_bounds[layer_name] = {
                 'lb': lb.detach().clone(),
@@ -327,8 +329,8 @@ class HybridZonotopeVerifier(BaseVerifier):
     def _compute_concrete_inference(self, input_center, model):
 
         try:
-            print(f"🔍 [Concrete] Computing concrete network inference at input center")
-            print(f"🔍 [Concrete] Input center shape: {input_center.shape}")
+            print(f"[Concrete] Computing concrete network inference at input center")
+            print(f"[Concrete] Input center shape: {input_center.shape}")
 
             if input_center.dim() == 1:
                 x = input_center.unsqueeze(0)
@@ -341,13 +343,13 @@ class HybridZonotopeVerifier(BaseVerifier):
             layer_values = {}
             layer_count = 0
 
-            print(f"🔍 [Concrete] Starting forward pass with input shape: {x.shape}")
+            print(f"[Concrete] Starting forward pass with input shape: {x.shape}")
 
             for layer in model.children():
                 layer_name = f"layer_{layer_count}_{type(layer).__name__}"
                 layer_type = type(layer).__name__.lower()
 
-                print(f"🔍 [Concrete] Processing {layer_name} ({layer_type})")
+                print(f"[Concrete] Processing {layer_name} ({layer_type})")
                 print(f"Input shape: {x.shape}")
 
                 try:
@@ -419,7 +421,7 @@ class HybridZonotopeVerifier(BaseVerifier):
     def _check_soundness(self, layer_name, hz_bounds=None, autolirpa_bounds=None, concrete_values=None):
 
         try:
-            print(f"\n🔍 [Soundness Check] {layer_name}")
+            print(f"\n[Soundness Check] {layer_name}")
             print("="*80)
 
             if concrete_values is None and layer_name in self.concrete_layer_values:
@@ -447,7 +449,7 @@ class HybridZonotopeVerifier(BaseVerifier):
             else:
                 crown_lb, crown_ub = None, None
 
-            print(f"🔍 Data shapes: Concrete={concrete_vals.shape}")
+            print(f"Data shapes: Concrete={concrete_vals.shape}")
             if hz_lb is not None:
                 print(f"HZ={hz_lb.shape}")
             if crown_lb is not None:
@@ -572,7 +574,7 @@ class HybridZonotopeVerifier(BaseVerifier):
 
     def _print_final_soundness_summary(self):
         if not self.soundness_check_results:
-            print("🔍 [Final Soundness Summary] No soundness check data available")
+            print("[Final Soundness Summary] No soundness check data available")
             return
 
         print("\n" + "="*80)
@@ -695,20 +697,20 @@ class HybridZonotopeVerifier(BaseVerifier):
                 print(f"⚠️  [Precision] Incomplete bounds for {layer_name}")
                 return
 
-            print(f"🔍 [DEBUG] HZ bounds source: {type(hz_lb)}, shape: {hz_lb.shape}")
-            print(f"🔍 [DEBUG] CROWN bounds source: {type(crown_lb)}, shape: {crown_lb.shape}")
-            print(f"🔍 [DEBUG] HZ bounds range: [{hz_lb.min():.6f}, {hz_ub.max():.6f}]")
-            print(f"🔍 [DEBUG] CROWN bounds range: [{crown_lb.min():.6f}, {crown_ub.max():.6f}]")
-            print(f"🔍 [DEBUG] Are HZ and CROWN lb the same tensor? {torch.equal(hz_lb, crown_lb) if hz_lb.shape == crown_lb.shape else 'Different shapes'}")
-            print(f"🔍 [DEBUG] Are HZ and CROWN ub the same tensor? {torch.equal(hz_ub, crown_ub) if hz_ub.shape == crown_ub.shape else 'Different shapes'}")
+            print(f"[DEBUG] HZ bounds source: {type(hz_lb)}, shape: {hz_lb.shape}")
+            print(f"[DEBUG] CROWN bounds source: {type(crown_lb)}, shape: {crown_lb.shape}")
+            print(f"[DEBUG] HZ bounds range: [{hz_lb.min():.6f}, {hz_ub.max():.6f}]")
+            print(f"[DEBUG] CROWN bounds range: [{crown_lb.min():.6f}, {crown_ub.max():.6f}]")
+            print(f"[DEBUG] Are HZ and CROWN lb the same tensor? {torch.equal(hz_lb, crown_lb) if hz_lb.shape == crown_lb.shape else 'Different shapes'}")
+            print(f"[DEBUG] Are HZ and CROWN ub the same tensor? {torch.equal(hz_ub, crown_ub) if hz_ub.shape == crown_ub.shape else 'Different shapes'}")
 
             concrete_vals = None
             if layer_name in self.concrete_layer_values:
                 concrete_data = self.concrete_layer_values[layer_name]
                 concrete_vals = concrete_data['values']
-                print(f"🔍 Original shapes: HZ={hz_lb.shape}, CROWN={crown_lb.shape}, Concrete={concrete_vals.shape}")
+                print(f"Original shapes: HZ={hz_lb.shape}, CROWN={crown_lb.shape}, Concrete={concrete_vals.shape}")
             else:
-                print(f"🔍 Original shapes: HZ={hz_lb.shape}, CROWN={crown_lb.shape}, Concrete=N/A")
+                print(f"Original shapes: HZ={hz_lb.shape}, CROWN={crown_lb.shape}, Concrete=N/A")
 
             if hz_lb.shape != crown_lb.shape:
                 print(f"Shape mismatch, attempting to flatten CROWN bounds...")
@@ -942,7 +944,7 @@ class HybridZonotopeVerifier(BaseVerifier):
 
     def _print_final_precision_summary(self):
         if not self.layer_precision_comparison:
-            print("🔍 [Final Summary] No precision comparison data available")
+            print("[Final Summary] No precision comparison data available")
             return
 
         print("\n" + "="*80)
@@ -1000,7 +1002,7 @@ class HybridZonotopeVerifier(BaseVerifier):
         print("="*60)
 
         if self.enable_soundness_check:
-            print(f"🔍 [Soundness] Computing concrete network inference...")
+            print(f"[Soundness] Computing concrete network inference...")
 
             if hasattr(hz, 'center_grid'):
 
@@ -1013,7 +1015,7 @@ class HybridZonotopeVerifier(BaseVerifier):
 
         if self.enable_layer_comparison or self.bab_config['enabled']:
             input_layer_name = f"input_layer"
-            print(f"🔍 [Layer Bounds] Computing input layer bounds (layer_comparison={self.enable_layer_comparison}, bab_enabled={self.bab_config['enabled']})")
+            print(f"[Layer Bounds] Computing input layer bounds (layer_comparison={self.enable_layer_comparison}, bab_enabled={self.bab_config['enabled']})")
 
             original_input_center = self.input_center
 
@@ -1243,7 +1245,7 @@ class HybridZonotopeVerifier(BaseVerifier):
         if self.enable_soundness_check:
             self._print_final_soundness_summary()
 
-        print(f"\n🔍 Computing output layer dimension-wise bounds (total {hz_elem.n} output neurons)")
+        print(f"\nComputing output layer dimension-wise bounds (total {hz_elem.n} output neurons)")
         output_lbs, output_ubs = self._concretize_hz(hz_elem, method=method)
 
         print(f"Returning output layer HybridZonotope and bounds for two-stage verification")
@@ -1259,7 +1261,7 @@ class HybridZonotopeVerifier(BaseVerifier):
         lbs_tensor, ubs_tensor = HybridZonotopeOps.GetLayerWiseBounds(
             hz_elem.center, hz_elem.G_c, hz_elem.G_b,
             hz_elem.A_c, hz_elem.A_b, hz_elem.b,
-            method=method, time_limit=time_limit
+            method=method, time_limit=time_limit, ci_mode=self.ci_mode
         )
 
         if isinstance(lbs_tensor, (int, float)):
@@ -1396,10 +1398,11 @@ class HybridZonotopeVerifier(BaseVerifier):
             method=self.method,
             time_limit=500,
             relaxation_ratio=self.relaxation_ratio,
-            device=self.device
+            device=self.device,
+            ci_mode=self.ci_mode
         )
 
-        print(f"🔍 Using method: {self.method}")
+        print(f"Using method: {self.method}")
         verification_result = self._abstract_constraint_solving_core(model=self.model, input_hz=self.input_hz, method=self.method, sample_idx=sample_idx)
 
         if verification_result is not None and len(verification_result) == 3:

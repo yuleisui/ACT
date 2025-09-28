@@ -67,7 +67,8 @@ def print_memory_usage(stage_name=""):
 class HybridZonotopeElem:
 
     def __init__(self, center=None, G_c=None, G_b=None, A_c=None, A_b=None, b=None,
-                    method='hybridz', time_limit=500, relaxation_ratio=1.0, dtype=torch.float32, device='cpu'):
+                    method='hybridz', time_limit=500, relaxation_ratio=1.0, dtype=torch.float32, device='cpu',
+                    ci_mode=False):
         self.center = None
         self.G_c = None
         self.G_b = None
@@ -77,6 +78,7 @@ class HybridZonotopeElem:
         self.method = method
         self.time_limit = time_limit
         self.relaxation_ratio = relaxation_ratio
+        self.ci_mode = ci_mode
 
         if center is None and G_c is None and G_b is None and A_c is None and A_b is None and b is None:
 
@@ -131,7 +133,7 @@ class HybridZonotopeElem:
     def GetInputHybridZElem(self):
         return HybridZonotopeElem(self.center, self.G_c, self.G_b, self.A_c, self.A_b, self.b,
                                   method=self.method, time_limit=self.time_limit, relaxation_ratio=self.relaxation_ratio,
-                                  dtype=self.dtype, device=self.device)
+                                  dtype=self.dtype, device=self.device, ci_mode=self.ci_mode)
 
     def linear(self, W, bias=None, enable_generator_merging=False, cosine_threshold=0.95):
 
@@ -354,7 +356,7 @@ class HybridZonotopeElem:
         if func_type not in ['sigmoid', 'tanh']:
             raise ValueError(f"Unsupported function type: {func_type}. Supported: 'sigmoid', 'tanh'.")
 
-        lb, ub = HybridZonotopeOps.GetLayerWiseBounds(self.center, self.G_c, self.G_b, self.A_c, self.A_b, self.b, self.method, self.time_limit)
+        lb, ub = HybridZonotopeOps.GetLayerWiseBounds(self.center, self.G_c, self.G_b, self.A_c, self.A_b, self.b, self.method, self.time_limit, ci_mode=self.ci_mode)
         mid = (lb + ub) / 2
 
         new_center_list, new_G_c_list, new_G_b_list, new_A_c_list, new_A_b_list, new_b_list = \
@@ -388,7 +390,8 @@ class HybridZonotopeElem:
 
 class HybridZonotopeGrid:
     def __init__(self, center_grid=None, G_c_grid=None, G_b_grid=None, A_c_tensor=None,
-                 A_b_tensor=None, b_tensor=None, input_lb=None, input_ub=None, method='hybridz', time_limit=500, relaxation_ratio=1.0, dtype=torch.float32, device='cpu'):
+                 A_b_tensor=None, b_tensor=None, input_lb=None, input_ub=None, method='hybridz', time_limit=500, relaxation_ratio=1.0, dtype=torch.float32, device='cpu',
+                 ci_mode=False):
         if (input_lb is not None or input_ub is not None) and (
             center_grid is not None or G_c_grid is not None or G_b_grid is not None or
             A_c_tensor is not None or A_b_tensor is not None or b_tensor is not None
@@ -400,6 +403,7 @@ class HybridZonotopeGrid:
         self.relaxation_ratio = relaxation_ratio
         self.dtype = dtype
         self.device = device
+        self.ci_mode = ci_mode
 
         if input_lb is not None and input_ub is not None:
 
@@ -483,7 +487,7 @@ class HybridZonotopeGrid:
     def GetInputHybridZGrid(self):
         return HybridZonotopeGrid(self.center_grid, self.G_c_grid, self.G_b_grid, self.A_c_tensor, self.A_b_tensor, self.b_tensor,
                                   method=self.method, time_limit=self.time_limit, relaxation_ratio=self.relaxation_ratio,
-                                  dtype=self.dtype, device=self.device)
+                                  dtype=self.dtype, device=self.device, ci_mode=self.ci_mode)
 
     def add(self, scalar):
         new_center_grid, new_G_c_grid, new_G_b_grid, new_A_c_tensor, new_A_b_tensor, new_b_tensor = HybridZonotopeOps.AddCore(
@@ -931,8 +935,8 @@ class HybridZonotopeGrid:
                     print("  Missing: layer_bounds")
                 return None
 
-            print(f"� auto_LiRPA guided element selection for {layer_name}")
-            print(f"📋 Available layer bounds: {list(layer_bounds.keys())}")
+            print(f"auto_LiRPA guided element selection for {layer_name}")
+            print(f"Available layer bounds: {list(layer_bounds.keys())}")
 
             return self._maxpool_auto_lirpa_selection(kernel_size, stride, padding, bounded_model, layer_bounds)
 
@@ -1148,7 +1152,7 @@ class HybridZonotopeGrid:
         print(f"Pooling parameters: kernel={kernel_size}, stride={stride}, padding={padding}")
 
         c = 0
-        print(f"\n📋 Channel {c} boundary information:")
+        print(f"\nChannel {c} boundary information:")
 
         print("\n🔢 Input boundaries:")
         print("Position format: (h,w) [lower_bound, upper_bound]")
