@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+#########################################################################
+##   Abstract Constraint Transformer (ACT) - Dataset Parser            ##
+##                                                                     ##
+##   doctormeeee (https://github.com/doctormeeee) and contributors     ##
+##   Copyright (C) 2024-2025                                           ##
+##                                                                     ##
+#########################################################################
+
 from typing import Union, Optional, List, Tuple
 import os
 import numpy as np

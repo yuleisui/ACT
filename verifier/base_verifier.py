@@ -2,9 +2,10 @@
 # -*- coding: utf-8 -*-
 
 #########################################################################
-##   Abstract Constraint Transformer (ACT) - Base Verifier            ##
+##   Abstract Constraint Transformer (ACT) - Base Verifier             ##
 ##                                                                     ##
-##   Copyright (C) 2024-2025 ACT Development Team                      ##
+##   doctormeeee (https://github.com/doctormeeee) and contributors     ##
+##   Copyright (C) 2024-2025                                           ##
 ##                                                                     ##
 #########################################################################
 

@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+#########################################################################
+##   Abstract Constraint Transformer (ACT) - BaB Spec Refinement       ##
+##                                                                     ##
+##   doctormeeee (https://github.com/doctormeeee) and contributors     ##
+##   Copyright (C) 2024-2025                                           ##
+##                                                                     ##
+#########################################################################
+
 import torch
 import time
 from typing import List, Tuple, Optional, Dict, Any

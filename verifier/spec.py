@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+#########################################################################
+##   Abstract Constraint Transformer (ACT) - Specification Classes    ##
+##                                                                     ##
+##   doctormeeee (https://github.com/doctormeeee) and contributors     ##
+##   Copyright (C) 2024-2025                                           ##
+##                                                                     ##
+#########################################################################
+
 from typing import Optional
 import torch
 from dataset import Dataset

@@ -7,6 +7,7 @@ This directory contains the core verification framework and interfaces for the A
 ### Main Interface
 - **`main.py`**: Primary entry point for all verification tasks
   - Unified command-line interface for all verifiers
+  - Contains code adapted from the open-source αβ-CROWN project with enhancements for ACT framework integration
   - Parameter parsing and validation
   - Backend selection and routing
   - Comprehensive argument compatibility across tools

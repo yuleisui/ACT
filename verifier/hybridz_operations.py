@@ -4,7 +4,8 @@
 #########################################################################
 ##   Abstract Constraint Transformer (ACT) - HybridZonotope Operations ##
 ##                                                                     ##
-##   Copyright (C) 2024-2025 ACT Development Team                      ##
+##   doctormeeee (https://github.com/doctormeeee) and contributors     ##
+##   Copyright (C) 2024-2025                                           ##
 ##                                                                     ##
 #########################################################################
 

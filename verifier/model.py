@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+#########################################################################
+##   Abstract Constraint Transformer (ACT) - Network Model Parser      ##
+##                                                                     ##
+##   doctormeeee (https://github.com/doctormeeee) and contributors     ##
+##   Copyright (C) 2024-2025                                           ##
+##                                                                     ##
+#########################################################################
+
 import os
 import torch
 import onnx

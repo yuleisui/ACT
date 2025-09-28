@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+#########################################################################
+##   Abstract Constraint Transformer (ACT) - VNNLIB Parser             ##
+##                                                                     ##
+##   doctormeeee (https://github.com/doctormeeee) and contributors     ##
+##   Copyright (C) 2024-2025                                           ##
+##                                                                     ##
+#########################################################################
+
 import re
 
 class VNNLIBParser:

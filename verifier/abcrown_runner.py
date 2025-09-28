@@ -3,9 +3,10 @@
 # -*- coding: utf-8 -*-
 
 #########################################################################
-##   Abstract Constraint Transformer (ACT) - αβ-CROWN Integration     ##
+##   Abstract Constraint Transformer (ACT) - αβ-CROWN Integration      ##
 ##                                                                     ##
-##   Copyright (C) 2024-2025 ACT Development Team                      ##
+##   doctormeeee (https://github.com/doctormeeee) and contributors     ##
+##   Copyright (C) 2024-2025                                           ##
 ##                                                                     ##
 ##   This file contains code adapted from the open-source αβ-CROWN     ##
 ##   project with modifications and enhancements for integration       ##

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-#########################################################################
+###########################################################################
 ##   Abstract Constraint Transformer (ACT) - HybridZonotope Transformers ##
-##                                                                     ##
-##   Copyright (C) 2024-2025 ACT Development Team                      ##
-##                                                                     ##
-#########################################################################
+##                                                                       ##
+##   doctormeeee (https://github.com/doctormeeee) and contributors       ##
+##   Copyright (C) 2024-2025                                             ##
+##                                                                       ##
+###########################################################################
 
 import torch
 import torch.nn.functional as F
