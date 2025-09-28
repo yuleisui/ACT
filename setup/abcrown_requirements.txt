@@ -23,6 +23,7 @@ onnxsim>=0.4.31
 skl2onnx>=1.14
 onnxoptimizer>=0.3
 git+https://github.com/Verified-Intelligence/onnx2pytorch.git
+tensorflow
 
 
 
