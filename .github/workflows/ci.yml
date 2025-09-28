@@ -9,7 +9,7 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     
     strategy:
       matrix:
@@ -39,7 +39,7 @@ jobs:
       with:
         auto-update-conda: true
         python-version: 3.9
-        miniforge-variant: Mambaforge
+        miniforge-variant: Miniforge3
         use-mamba: true
         
     - name: Install system dependencies
