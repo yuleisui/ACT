@@ -20,14 +20,18 @@ The following provides a minimal Quick Start with step-by-step commands to get t
 git clone --recursive https://github.com/doctormeeee/Abstract-Constraint-Transformer.git
 cd Abstract-Constraint-Transformer
 
-# 2. Set up environments (inside setup/)
+# 2. Place Gurobi license (Required for MILP optimization)
+# Place your gurobi.lic file in ./gurobi/ directory
+cp /path/to/your/gurobi.lic ./gurobi/gurobi.lic
+
+# 3. Set up environments (inside setup/)
 cd setup
 source setup.sh
 
-# 3. Activate environment
+# 4. Activate environment
 conda activate act-main
 
-# 4. Run verification (inside verifier/)
+# 5. Run verification (inside verifier/)
 cd ../verifier
 python main.py \
   --verifier hybridz --method hybridz \
@@ -36,7 +40,7 @@ python main.py \
   --start 0 --end 1 --epsilon 0.1 --norm inf \
   --mean 0.1307 --std 0.3081
 
-# 5. Example output
+# 6. Example output
 The verifier will run with the full-precision MILP Hybrid Zonotope and report SAT/UNSAT or timeout results.
 ```
 

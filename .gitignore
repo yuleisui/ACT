@@ -9,3 +9,4 @@ models/cifar10
 models/mnist
 gurobi/gurobi.lic
 verifier/out.txt
+Abstract-Constraint-Transformer.wiki/

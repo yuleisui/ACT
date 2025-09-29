@@ -1,27 +1,27 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-#########################################################################
-##   Abstract Constraint Transformer (ACT) - Main Entry Point          ##
-##                                                                     ##
-##   doctormeeee (https://github.com/doctormeeee) and contributors     ##
-##   Copyright (C) 2024-2025                                           ##
-##                                                                     ##
-##   This program integrates multiple neural network verification      ##
-##   tools and provides novel hybrid zonotope verification methods.    ##
-##                                                                     ##
-##   External tool compatibility parameters are adapted from:          ##
+##############################################################################
+##   Abstract Constraint Transformer (ACT) - Main Entry Point               ##
+##                                                                          ##
+##   doctormeeee (https://github.com/doctormeeee) and contributors          ##
+##   Copyright (C) 2024-2025                                                ##
+##                                                                          ##
+##   This program integrates multiple neural network verification           ##
+##   tools and provides novel hybrid zonotope verification methods.         ##
+##                                                                          ##
+##   External tool compatibility parameters are adapted from:               ##
 ##   - α,β-CROWN: https://github.com/Verified-Intelligence/alpha-beta-CROWN ##
-##     Copyright (C) 2021-2025 The α,β-CROWN Team                      ##
-##     Licensed under BSD 3-Clause License                             ##
-##   - ERAN: https://github.com/eth-sri/eran                           ##
-##     Copyright ETH Zurich, Licensed under Apache 2.0 License         ##
-##                                                                     ##
-##   This integration enables unified command-line interface across    ##
-##   different verification backends while maintaining ACT's native    ##
-##   capabilities and novel contributions.                             ##
-##                                                                     ##
-#########################################################################
+##     Copyright (C) 2021-2025 The α,β-CROWN Team                           ##
+##     Licensed under BSD 3-Clause License                                  ##
+##   - ERAN: https://github.com/eth-sri/eran                                ##
+##     Copyright ETH Zurich, Licensed under Apache 2.0 License              ##
+##                                                                          ##
+##   This integration enables unified command-line interface across         ##
+##   different verification backends while maintaining ACT's native         ##
+##   capabilities and novel contributions.                                  ##
+##                                                                          ##
+##############################################################################
 import argparse
 import sys
 import time
@@ -54,16 +54,25 @@ def load_verifier_default_configs(verifier, method, dataset):
     
     defaults = {}
     
-    # non-method-specific default configs (ERAN/abCrown)
-    dataset = dataset.upper()
-    if dataset in config:
-        print(f"Loading {verifier} defaults for dataset: {dataset}")
-        for key, value in config[dataset].items():
+    # Determine dataset section name based on dataset type
+    if dataset in ['mnist', 'cifar', 'cifar10']:
+        dataset_section = dataset.upper()
+    elif dataset.endswith('.csv'):
+        dataset_section = 'CSV'
+    elif dataset.endswith('.vnnlib'):
+        dataset_section = 'VNNLIB'
+    else:
+        dataset_section = dataset.upper()  # Fallback for other named datasets
+    
+    # Load non-method-specific default configs
+    if dataset_section in config:
+        print(f"Loading {verifier} defaults for dataset type: {dataset_section}")
+        for key, value in config[dataset_section].items():
             defaults[key] = _parse_config_value(key, value)
     
     # method-specific default configs (only for HybridZ currently)
     if verifier == 'hybridz':
-        method_section = f"{dataset}.{method.upper()}" # e.g., MNIST.HYBRIDZ_RELAXED, dataset and method are combined to form section name
+        method_section = f"{dataset_section}.{method.upper()}"  # Use dataset_section instead of dataset
         if method_section in config:
             print(f"Loading {verifier} method-specific defaults: {method_section}")
             for key, value in config[method_section].items():
@@ -253,7 +262,7 @@ def main():
     dataset_path_for_init = args_dict["dataset"]
     if args_dict["spec_type"] in ["local_vnnlib", "set_vnnlib"] and args_dict["vnnlib_path"] is not None:
         dataset_path_for_init = args_dict["vnnlib_path"]
-        print(f"🔍 Using VNNLIB file as dataset path: {dataset_path_for_init}")
+        print(f"Using VNNLIB file as dataset path: {dataset_path_for_init}")
 
     dataset = Dataset(dataset_path=dataset_path_for_init,
                       anchor_csv_path=args_dict["anchor"],

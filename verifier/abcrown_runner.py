@@ -2,31 +2,31 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-#########################################################################
-##   Abstract Constraint Transformer (ACT) - αβ-CROWN Integration      ##
-##                                                                     ##
-##   doctormeeee (https://github.com/doctormeeee) and contributors     ##
-##   Copyright (C) 2024-2025                                           ##
-##                                                                     ##
-##   This file contains code adapted from the open-source αβ-CROWN     ##
-##   project with modifications and enhancements for integration       ##
-##   within the ACT verification framework.                            ##
-##                                                                     ##
-##   Original αβ-CROWN source:                                         ##
+###############################################################################
+##   Abstract Constraint Transformer (ACT) - αβ-CROWN Integration            ##
+##                                                                           ##
+##   doctormeeee (https://github.com/doctormeeee) and contributors           ##
+##   Copyright (C) 2024-2025                                                 ##
+##                                                                           ##
+##   This file contains code adapted from the open-source αβ-CROWN           ##
+##   project with modifications and enhancements for integration             ##
+##   within the ACT verification framework.                                  ##
+##                                                                           ##
+##   Original αβ-CROWN source:                                               ##
 ##   - Repository: https://github.com/Verified-Intelligence/alpha-beta-CROWN ##
-##     Copyright (C) 2021-2025 The α,β-CROWN Team                      ##
-##     Licensed under BSD 3-Clause License                             ##
-##     Primary authors: Huan Zhang, Zhouxing Shi, Xiangru Zhong        ##
-##                                                                     ##
-##   ACT modifications include:                                        ##
-##   - Integration with ACT unified interface and parameter system     ##
-##   - Compatibility improvements for ACT verification workflows       ##
-##                                                                     ##
-##   This integration enables seamless αβ-CROWN verification within    ##
-##   the ACT framework while maintaining full compatibility with       ##
-##   original αβ-CROWN capabilities and performance characteristics.   ##
-##                                                                     ##
-#########################################################################
+##     Copyright (C) 2021-2025 The α,β-CROWN Team                            ##
+##     Licensed under BSD 3-Clause License                                   ##
+##     Primary authors: Huan Zhang, Zhouxing Shi, Xiangru Zhong              ##
+##                                                                           ##
+##   ACT modifications include:                                              ##
+##   - Integration with ACT unified interface and parameter system           ##
+##   - Compatibility improvements for ACT verification workflows             ##
+##                                                                           ##
+##   This integration enables seamless αβ-CROWN verification within          ##
+##   the ACT framework while maintaining full compatibility with             ##
+##   original αβ-CROWN capabilities and performance characteristics.         ##
+##                                                                           ##
+###############################################################################
 
 import copy
 import socket
