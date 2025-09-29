@@ -59,7 +59,7 @@ from read_vnnlib import read_vnnlib
 from cuts.cut_utils import terminate_mip_processes, terminate_mip_processes_by_c_matching
 from lp_test import compare_optimized_bounds_against_lp_bounds
 
-class ABCROWN:
+class abCrown:
 
     def __init__(self, method=None, args=None):
 
@@ -601,7 +601,7 @@ class ABCROWN:
         return self.logger.verification_summary
 
 def main(method, args_list):
-    abcrown = ABCROWN(method=method, args=args_list)
+    abcrown = abCrown(method=method, args=args_list)
     abcrown.alpha_beta()
 
 if __name__== '__main__':

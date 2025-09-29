@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 #########################################################################
-##   Abstract Constraint Transformer (ACT) - Specification Classes    ##
+##   Abstract Constraint Transformer (ACT) - Specification Classes     ##
 ##                                                                     ##
 ##   doctormeeee (https://github.com/doctormeeee) and contributors     ##
 ##   Copyright (C) 2024-2025                                           ##

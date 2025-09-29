@@ -16,7 +16,7 @@ from dataset import Dataset
 from spec import Spec
 from type import SpecType
 
-class ABCROWNVerifier(BaseVerifier):
+class abCrownVerifier(BaseVerifier):
     def __init__(self, dataset : Dataset, method, spec : Spec, device: str = 'cpu'):
         super().__init__(dataset, spec, device)
         self.method = method
@@ -31,7 +31,7 @@ class ABCROWNVerifier(BaseVerifier):
         elif self.spec.spec_type == SpecType.SET_VNNLIB or self.spec.spec_type == SpecType.LOCAL_VNNLIB:
             spec_type = 'bound'
         else:
-            raise ValueError(f"Unsupported specification type for ABCROWN: {self.spec.spec_type}. Supported types are 'local_lp', 'set_box', 'set_vnnlib'.")
+            raise ValueError(f"Unsupported specification type for abCrown: {self.spec.spec_type}. Supported types are 'local_lp', 'set_box', 'set_vnnlib'.")
 
         netname = self.spec.model.model_path
         if netname is not None and not os.path.isabs(netname):
@@ -82,16 +82,16 @@ class ABCROWNVerifier(BaseVerifier):
 
         conda_env_name = "act-abcrown"
         
-        # Dynamic path detection for ABCROWN runner
+        # Dynamic path detection for abCrown runner
         current_dir = os.path.dirname(os.path.abspath(__file__))
         verifier_path = os.path.abspath(current_dir) 
         
         cmd = ["conda", "run", "--no-capture-output", "-n", conda_env_name, "python3", "-u", "abcrown_runner.py", self.method] + args_list
 
         try:
-            print("[ABCROWNVerifier] ABCROWN verifier running now, please wait for result generation.")
-            print(f"[ABCROWNVerifier] Command: {' '.join(cmd)}")
-            print(f"[ABCROWNVerifier] Working directory: {verifier_path}")
+            print("[abCrownVerifier] abCrown verifier running now, please wait for result generation.")
+            print(f"[abCrownVerifier] Command: {' '.join(cmd)}")
+            print(f"[abCrownVerifier] Working directory: {verifier_path}")
             
             # Use real-time output instead of waiting for completion
             process = subprocess.Popen(
@@ -103,7 +103,7 @@ class ABCROWNVerifier(BaseVerifier):
             )
             
             # Print output in real-time
-            print("[ABCROWNVerifier] Real-time output:")
+            print("[abCrownVerifier] Real-time output:")
             print("-" * 60)
             while True:
                 output = process.stdout.readline()
@@ -115,14 +115,14 @@ class ABCROWNVerifier(BaseVerifier):
             return_code = process.poll()
             if return_code != 0:
                 raise subprocess.CalledProcessError(return_code, cmd)
-            print("[ABCROWNVerifier] ABCROWN verification completed successfully")
+            print("[abCrownVerifier] abCrown verification completed successfully")
             return return_code
         except subprocess.CalledProcessError as e:
-            print("[ABCROWNVerifier] ABCROWN execution failed:")
+            print("[abCrownVerifier] abCrown execution failed:")
             print(f"Return code: {e.returncode}")
-            raise RuntimeError("ABCROWN verification failed.") from e
+            raise RuntimeError("abCrown verification failed.") from e
         except Exception as e:
-            print(f"[ABCROWNVerifier] Unexpected error: {e}")
+            print(f"[abCrownVerifier] Unexpected error: {e}")
             if process.poll() is None:
                 process.terminate()
-            raise RuntimeError("ABCROWN verification failed.") from e
+            raise RuntimeError("abCrown verification failed.") from e

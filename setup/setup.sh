@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-echo "[ACT] Setting up main ACT + ABCROWN environment..."
+echo "[ACT] Setting up main ACT environment..."
 
 # Step 1: Conda check
 if ! command -v conda &> /dev/null; then
@@ -82,4 +82,4 @@ export ACTHOME=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 export GRB_LICENSE_FILE=$ACTHOME/gurobi/gurobi.lic
 echo "[ACT] Gurobi license path configured for this shell: $GRB_LICENSE_FILE"
 
-echo "[ACT] Setup complete. Now you can run with 'conda activate act-main' and subprocess call ABCrown, ERAN and Hybrid Zonotope."
+echo "[ACT] Setup complete. Now you can run with 'conda activate act-main' and subprocess call abCrown, ERAN and Hybrid Zonotope."

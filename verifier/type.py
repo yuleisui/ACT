@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 #########################################################################
-##   Abstract Constraint Transformer (ACT) - Type Definitions         ##
+##   Abstract Constraint Transformer (ACT) - Type Definitions          ##
 ##                                                                     ##
 ##   doctormeeee (https://github.com/doctormeeee) and contributors     ##
 ##   Copyright (C) 2024-2025                                           ##

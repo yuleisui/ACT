@@ -53,7 +53,7 @@ jobs:
             --ci
 
   abcrown:
-    name: ABCrown
+    name: abCrown
     runs-on: ubuntu-22.04
     needs: hybridz
     steps:
@@ -81,14 +81,14 @@ jobs:
           cd .github/
           source setup_ci_abcrown.sh
 
-      - name: Patch ABCrown submodule
+      - name: Patch abCrown submodule
         run: |
           INIT_FULL_PATH="modules/abcrown/complete_verifier/__init__.py"
-          if grep -q "^from abcrown import ABCROWN" "$INIT_FULL_PATH"; then
-            sed -i 's/^from abcrown import ABCROWN/# from abcrown import ABCROWN/' "$INIT_FULL_PATH"
+          if grep -q "^from abcrown import abCrown" "$INIT_FULL_PATH"; then
+            sed -i 's/^from abcrown import abCrown/# from abcrown import abCrown/' "$INIT_FULL_PATH"
           fi
 
-      - name: Run ABCrown verification
+      - name: Run abCrown verification
         shell: bash -l {0}
         run: |
           source "$(conda info --base)/etc/profile.d/conda.sh"

@@ -7,8 +7,21 @@
 ##   doctormeeee (https://github.com/doctormeeee) and contributors     ##
 ##   Copyright (C) 2024-2025                                           ##
 ##                                                                     ##
+##   This program integrates multiple neural network verification      ##
+##   tools and provides novel hybrid zonotope verification methods.    ##
+##                                                                     ##
+##   External tool compatibility parameters are adapted from:          ##
+##   - α,β-CROWN: https://github.com/Verified-Intelligence/alpha-beta-CROWN ##
+##     Copyright (C) 2021-2025 The α,β-CROWN Team                      ##
+##     Licensed under BSD 3-Clause License                             ##
+##   - ERAN: https://github.com/eth-sri/eran                           ##
+##     Copyright ETH Zurich, Licensed under Apache 2.0 License         ##
+##                                                                     ##
+##   This integration enables unified command-line interface across    ##
+##   different verification backends while maintaining ACT's native    ##
+##   capabilities and novel contributions.                             ##
+##                                                                     ##
 #########################################################################
-
 import argparse
 import sys
 import time
@@ -17,9 +30,64 @@ from dataset import Dataset
 from spec import Spec, InputSpec, OutputSpec
 from type import SpecType, VerificationStatus
 from eran_verifier import ERANVerifier
-from abcrown_verifier import ABCROWNVerifier
+from abcrown_verifier import abCrownVerifier
 from interval_verifier import IntervalVerifier
 from hybridz_verifier import HybridZonotopeVerifier
+import configparser
+import os
+
+def load_verifier_default_configs(verifier, method, dataset):
+    if not verifier or not dataset:
+        return {}
+    
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.join(current_dir, '..')
+    config_root = os.path.join(project_root, 'configs')
+    config_root = os.path.abspath(config_root)
+    
+    config_file = os.path.join(config_root, f"{verifier}_defaults.ini")
+    if not os.path.exists(config_file):
+        return {}
+    
+    config = configparser.ConfigParser()
+    config.read(config_file)
+    
+    defaults = {}
+    
+    # non-method-specific default configs (ERAN/abCrown)
+    dataset = dataset.upper()
+    if dataset in config:
+        print(f"Loading {verifier} defaults for dataset: {dataset}")
+        for key, value in config[dataset].items():
+            defaults[key] = _parse_config_value(key, value)
+    
+    # method-specific default configs (only for HybridZ currently)
+    if verifier == 'hybridz':
+        method_section = f"{dataset}.{method.upper()}" # e.g., MNIST.HYBRIDZ_RELAXED, dataset and method are combined to form section name
+        if method_section in config:
+            print(f"Loading {verifier} method-specific defaults: {method_section}")
+            for key, value in config[method_section].items():
+                defaults[key] = _parse_config_value(key, value)  # Override dataset defaults
+    
+    return defaults
+
+def _parse_config_value(key, value):
+    """Parse a single config value based on its key"""
+    if key in ['mean', 'std']:
+        value_clean = value.strip('[]"\'')
+        if ',' in value_clean:
+            return [float(v.strip()) for v in value_clean.split(',')]
+        else:
+            return [float(value_clean)]
+    elif key in ['enable_spec_refinement']: 
+        return value.lower() == 'true'
+    elif key in ['relaxation_ratio', 'bab_max_depth', 'bab_max_subproblems', 'bab_time_limit']:
+        try:
+            return float(value) if '.' in value else int(value)
+        except ValueError:
+            return value
+    else:
+        return value.strip('"\'')
 
 def main():
     parser = argparse.ArgumentParser(description='Abstract Constraint Transformer (ACT) - Unified Neural Network Verification Framework')
@@ -113,7 +181,7 @@ def main():
     parser.add_argument("--std", nargs='+', type=float, default=None,
                         help='Standard deviation values for data preprocessing normalisation (single value or per-channel list)')
     parser.add_argument('--pkl_path', type=str, default=None,
-                        help="Load verification properties from pickle file (legacy oval20 dataset support)")
+                        help="Load verification properties from pickle file (oval20 dataset support)")
     parser.add_argument("--dataset", type=str, default=None,
                         help="Dataset name (mnist, cifar10, etc.) or path to CSV file")
     parser.add_argument("--anchor", type=str, default=None,
@@ -124,13 +192,13 @@ def main():
                         help='Text file with list of example IDs to run')
 
     # Specification Configuration (adapted from αβ-CROWN specification hierarchy)
-    parser.add_argument("--spec_type", type=str, default='local_lp', 
+    parser.add_argument("--spec_type", type=str, default=None, 
                         choices=['local_lp', 'local_vnnlib', 'set_vnnlib', "set_box"],
                         help='Verification specification type: "local_lp"=Lp norm around data points, "local_vnnlib"=VNNLIB with anchor points, "set_vnnlib"=set-based VNNLIB (e.g., AcasXu), "set_box"=box constraints')
     parser.add_argument("--robustness_type", type=str, default="verified-acc",
                         choices=["verified-acc", "runnerup", "clean-acc", "specify-target", "all-positive"],
                         help='Robustness verification target: "verified-acc"=verify against all labels, "runnerup"=verify against runner-up labels only')
-    parser.add_argument("--norm", type=str, default='inf', choices=['1', '2', 'inf'],
+    parser.add_argument("--norm", type=str, default=None, choices=['1', '2', 'inf'],
                         help='Lp-norm for epsilon perturbation in robustness verification')
     parser.add_argument("--epsilon", type=float, default=None,
                         help='Perturbation bound (Lp norm). If unset, dataset-specific defaults may apply')
@@ -142,12 +210,21 @@ def main():
                         help='Prefix to add to VNNLIB specification paths (for correcting malformed CSV files)')
     parser.add_argument("--rhs_offset", type=float, default=None,
                         help='Offset to add to right-hand side of constraints (advanced usage)')
+    # ================================================================================
+
 
     parsed_args = parser.parse_args(sys.argv[1:])
     args_dict = vars(parsed_args)
 
-    if args_dict["mean"] is None:
+    # Load and apply default configurations from ini files
+    defaults = load_verifier_default_configs(args_dict.get('verifier'), args_dict.get('method'), args_dict.get('dataset'))
+    for key, value in defaults.items():
+        if args_dict.get(key) is None:  # Only set if not provided by user
+            args_dict[key] = value
+            print(f"Using default {key}: {value}")
 
+    # Legacy fallback for missing mean/std (safety net for datasets not in config)
+    if args_dict["mean"] is None:
         if args_dict["dataset"] is None or (args_dict["dataset"] is not None and args_dict["dataset"].endswith('.csv')):
             args_dict["mean"] = [0.0]
         elif args_dict["dataset"] == 'mnist':
@@ -158,7 +235,6 @@ def main():
             args_dict["mean"] = [0.0]
 
     if args_dict["std"] is None:
-
         if args_dict["dataset"] is None or (args_dict["dataset"] is not None and args_dict["dataset"].endswith('.csv')):
             args_dict["std"] = [1.0]
         elif args_dict["dataset"] == 'mnist':
@@ -197,8 +273,9 @@ def main():
 
     output_spec = OutputSpec(dataset = dataset)
 
-    spec = Spec(input_spec=input_spec,
-                output_spec=output_spec, model=model)
+    spec = Spec(model=model,
+                input_spec=input_spec,
+                output_spec=output_spec)
 
     verifier_type = args_dict["verifier"]
 
@@ -213,14 +290,19 @@ def main():
         verifier = ERANVerifier(dataset, method, spec)
         verifier.verify(proof=None, public_inputs=None)
 
-    elif verifier_type == 'abcrown' and method in ['alpha', 'beta', 'alpha_beta']:
+    elif verifier_type == 'abcrown' and method in ['alpha', 'beta', 'alpha_beta']: # TODO
 
-        if dataset.dataset_path not in ["mnist", "cifar", "eran"]:
+        if dataset.dataset_path not in ["mnist", "cifar", "cifar10", "eran"]:
             raise ValueError(f"abCrown verifier with method {method} is not supported for dataset {dataset.dataset_path}. \
-                             Please use \'mnist\', \'cifar\', 'eran'.")
+                             Please use \'mnist\', \'cifar\', \'cifar10\', or \'eran\'.")
+        
+        if dataset.dataset_path == "cifar10":
+            print("⚠️  Dataset name 'cifar10' is deprecated for αβ-CROWN verifier, using 'cifar' instead")
+            dataset.dataset_path = "cifar"
+
         if args_dict["enable_spec_refinement"]:
-            print("⚠️  ABCROWN verifier is an external verifier, does not support native specification refinement BaB, automatically disabled")
-        verifier = ABCROWNVerifier(dataset, method, spec)
+            print("⚠️  abCrown verifier is an external verifier, does not support native specification refinement BaB, automatically disabled")
+        verifier = abCrownVerifier(dataset, method, spec)
         verifier.verify(proof=None, public_inputs=None)
 
     elif verifier_type == 'interval':
