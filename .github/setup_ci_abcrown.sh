@@ -30,7 +30,7 @@ pip install -r ../setup/abcrown_requirements.txt
 
 # Step 4: Create empty config file for abcrown CLI parameter mode
 echo "[ACT-CI-abCrown] Creating empty_config.yaml for CLI-only abcrown runs..."
-echo "{}" > ../verifier/empty_config.yaml
+echo "{}" > ../verifier/abstract_constraint_solver/abcrown/empty_config.yaml
 
 # Step 5: Patch the abcrown module __init__.py
 ABCROWN_SUBMODULE_DIR="../modules/abcrown"
