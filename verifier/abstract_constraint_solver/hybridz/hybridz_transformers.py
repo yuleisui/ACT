@@ -16,7 +16,9 @@ import sys
 import psutil
 import time
 
-from hybridz_operations import HybridZonotopeOps
+import path_config
+
+from abstract_constraint_solver.hybridz.hybridz_operations import HybridZonotopeOps
 
 def setup_gurobi_license():
     if 'GRB_LICENSE_FILE' not in os.environ:
@@ -25,7 +27,9 @@ def setup_gurobi_license():
             print(f"[ACT] Using ACTHOME environment variable: {os.environ['ACTHOME']}")
         else:
             current_dir = os.path.dirname(os.path.abspath(__file__))
-            project_root = os.path.join(current_dir, '..')
+            solver_dir = os.path.dirname(current_dir)  
+            verifier_dir = os.path.dirname(solver_dir)  
+            project_root = os.path.dirname(verifier_dir) 
             license_path = os.path.join(project_root, 'gurobi', 'gurobi.lic')
             print(f"[ACT] Auto-detecting project root from file location")
         

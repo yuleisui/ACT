@@ -1,10 +1,9 @@
 .vscode
-verifier/__pycache__
+__pycache__
+.DS_Store
 data/MNIST/
 data/cifar-10-batches-py/
 data/cifar-10-python.tar.gz
-*/.DS_Store
-.DS_Store
 models/cifar10
 models/mnist
 gurobi/gurobi.lic

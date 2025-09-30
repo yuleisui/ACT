@@ -13,14 +13,18 @@ from typing import Union, Optional, List, Tuple
 import os
 import numpy as np
 import torch
-from vnnlib_parser import VNNLIBParser
 import re
 import json
 
 import torchvision
 import torchvision.transforms as transforms
+import sys
+import os
 
-from type import SpecType
+import path_config
+
+from spec_parser.type import SpecType
+from spec_parser.vnnlib_parser import VNNLIBParser
 
 class Dataset:
     def __init__(self,
@@ -85,7 +89,8 @@ class Dataset:
     def _download_and_load_builtin(self, name):
         self._data_source = name
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.join(current_dir, '..')
+        verifier_dir = os.path.dirname(current_dir) 
+        project_root = os.path.dirname(verifier_dir)  
         data_root = os.path.join(project_root, 'data')
         data_root = os.path.abspath(data_root)
         

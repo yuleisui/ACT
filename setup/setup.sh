@@ -54,7 +54,7 @@ source eran_env_setup.sh
 
 # Step 5: Create empty config file for abcrown CLI parameter mode
 echo "[ACT] Creating empty_config.yaml for CLI-only abcrown runs..."
-echo "{}" > ../verifier/empty_config.yaml
+echo "{}" > ../verifier/abstract_constraint_solver/abcrown/empty_config.yaml
 
 # Step 6: Patch the abcrown module __init__.py
 ABCROWN_SUBMODULE_DIR="../modules/abcrown"

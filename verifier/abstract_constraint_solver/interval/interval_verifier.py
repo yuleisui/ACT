@@ -11,11 +11,16 @@
 
 import torch
 import torch.nn as nn
+import os
+import sys
 from typing import Tuple
-from base_verifier import BaseVerifier
-from dataset import Dataset
-from spec import Spec
-from type import VerificationStatus
+
+import path_config
+
+from abstract_constraint_solver.base_verifier import BaseVerifier
+from spec_parser.dataset import Dataset
+from spec_parser.spec import Spec
+from spec_parser.type import VerificationStatus
 from onnx2pytorch.operations.flatten import Flatten as OnnxFlatten
 from onnx2pytorch.operations.add import Add as OnnxAdd
 from onnx2pytorch.operations.div import Div as OnnxDiv

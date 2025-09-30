@@ -37,7 +37,7 @@ python main.py \
   --verifier hybridz --method hybridz \
   --model_path ../models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
   --dataset mnist --spec_type local_lp \
-  --start 0 --end 1 --epsilon 0.1 --norm inf \
+  --start 0 --end 1 --epsilon 0.03 --norm inf \
   --mean 0.1307 --std 0.3081
 
 # 6. Example output

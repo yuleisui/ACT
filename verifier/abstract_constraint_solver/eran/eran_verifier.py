@@ -10,11 +10,17 @@
 #########################################################################
 
 import os
-import subprocess
 import torch
-from base_verifier import BaseVerifier
-from dataset import Dataset
-from spec import Spec
+import sys
+import time
+import subprocess
+import tempfile
+import json
+import path_config
+
+from abstract_constraint_solver.base_verifier import BaseVerifier
+from spec_parser.dataset import Dataset
+from spec_parser.spec import Spec
 
 class ERANVerifier(BaseVerifier):
     def __init__(self, dataset : Dataset, method, spec : Spec, device: str = 'cpu'):
@@ -77,7 +83,9 @@ class ERANVerifier(BaseVerifier):
         
         # Dynamic path detection for ERAN runner
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.join(current_dir, '..')
+        solver_dir = os.path.dirname(current_dir) 
+        verifier_dir = os.path.dirname(solver_dir)  
+        project_root = os.path.dirname(verifier_dir)  
         eran_tf_verify_path = os.path.join(project_root, 'modules', 'eran', 'tf_verify')
         eran_tf_verify_path = os.path.abspath(eran_tf_verify_path)
 

@@ -13,15 +13,20 @@ import torch
 import torch.nn as nn
 import numpy as np
 import time
+import os
+import sys
 from typing import Optional, List
-from base_verifier import BaseVerifier, print_memory_usage
-from dataset import Dataset
-from spec import Spec
-from type import VerificationStatus
+
+import path_config
+
+from abstract_constraint_solver.base_verifier import BaseVerifier, print_memory_usage
+from spec_parser.dataset import Dataset
+from spec_parser.spec import Spec
+from spec_parser.type import VerificationStatus
 from onnx2pytorch.operations.flatten import Flatten as OnnxFlatten
 from onnx2pytorch.operations.base import OperatorWrapper
-from hybridz_transformers import HybridZonotopeGrid, HybridZonotopeElem
-from hybridz_operations import HybridZonotopeOps
+from abstract_constraint_solver.hybridz.hybridz_transformers import HybridZonotopeGrid, HybridZonotopeElem
+from abstract_constraint_solver.hybridz.hybridz_operations import HybridZonotopeOps
 
 try:
     from auto_LiRPA import BoundedModule, PerturbationLpNorm, BoundedTensor
@@ -35,7 +40,7 @@ class HybridZonotopeVerifier(BaseVerifier):
                  relaxation_ratio: float = 1.0, enable_generator_merging: bool = False, cosine_threshold: float = 0.95,
                  ci_mode: bool = False):
 
-        from hybridz_transformers import HybridZonotopeElem
+        from abstract_constraint_solver.hybridz.hybridz_transformers import HybridZonotopeElem
         self.HybridZonotopeElem = HybridZonotopeElem
 
         super().__init__(dataset, spec, device)

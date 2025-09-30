@@ -14,7 +14,8 @@ import time
 from typing import List, Tuple, Optional, Dict, Any
 from dataclasses import dataclass
 
-from type import VerificationStatus
+import path_config
+from spec_parser.type import VerificationStatus
 
 @dataclass
 class Counterexample:
@@ -376,7 +377,7 @@ class SpecRefinement:
             if hasattr(incomplete_verifier.spec.output_spec, 'labels') and incomplete_verifier.spec.output_spec.labels is not None:
                 true_label = incomplete_verifier.spec.output_spec.labels[0].item()
 
-            from base_verifier import BaseVerifier
+            from abstract_constraint_solver.base_verifier import BaseVerifier
             verdict = BaseVerifier._single_result_verdict(
                 concrete_output, concrete_output,
                 output_constraints,

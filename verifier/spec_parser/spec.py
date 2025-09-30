@@ -11,9 +11,14 @@
 
 from typing import Optional
 import torch
-from dataset import Dataset
-from model import Model
-from type import LPNormType, SpecType, VerificationStatus
+import sys
+
+# Setup ACT paths
+import path_config
+
+from spec_parser.dataset import Dataset
+from spec_parser.model import Model
+from spec_parser.type import LPNormType, SpecType, VerificationStatus
 
 class BaseSpec:
     def __init__(self, dataset : Dataset = None, model : Model = None, status: VerificationStatus = VerificationStatus.UNKNOWN):

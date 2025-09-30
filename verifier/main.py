@@ -25,23 +25,28 @@
 import argparse
 import sys
 import time
-from model import Model
-from dataset import Dataset
-from spec import Spec, InputSpec, OutputSpec
-from type import SpecType, VerificationStatus
-from eran_verifier import ERANVerifier
-from abcrown_verifier import abCrownVerifier
-from interval_verifier import IntervalVerifier
-from hybridz_verifier import HybridZonotopeVerifier
-import configparser
 import os
+import configparser
+
+# Setup ACT paths - this must be done before importing ACT modules
+import path_config
+
+# Import ACT modules
+from spec_parser.model import Model
+from spec_parser.dataset import Dataset
+from spec_parser.spec import Spec, InputSpec, OutputSpec
+from spec_parser.type import SpecType, VerificationStatus
+from abstract_constraint_solver.eran.eran_verifier import ERANVerifier
+from abstract_constraint_solver.abcrown.abcrown_verifier import abCrownVerifier
+from abstract_constraint_solver.interval.interval_verifier import IntervalVerifier
+from abstract_constraint_solver.hybridz.hybridz_verifier import HybridZonotopeVerifier
 
 def load_verifier_default_configs(verifier, method, dataset):
     if not verifier or not dataset:
         return {}
     
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.join(current_dir, '..')
+    project_root = os.path.dirname(current_dir)
     config_root = os.path.join(project_root, 'configs')
     config_root = os.path.abspath(config_root)
     

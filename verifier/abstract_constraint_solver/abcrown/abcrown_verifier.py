@@ -10,11 +10,20 @@
 #########################################################################
 
 import os
+import torch
+import sys
+import time
 import subprocess
-from base_verifier import BaseVerifier
-from dataset import Dataset
-from spec import Spec
-from type import SpecType
+import tempfile
+import yaml
+import json
+
+import path_config
+
+from abstract_constraint_solver.base_verifier import BaseVerifier
+from spec_parser.dataset import Dataset
+from spec_parser.spec import Spec
+from spec_parser.type import SpecType
 
 class abCrownVerifier(BaseVerifier):
     def __init__(self, dataset : Dataset, method, spec : Spec, device: str = 'cpu'):
@@ -22,12 +31,12 @@ class abCrownVerifier(BaseVerifier):
         self.method = method
 
     def verify(self, proof, public_inputs):
+        
         print(self.spec.input_spec.norm)
         if self.spec.spec_type == SpecType.LOCAL_LP:
             spec_type = 'lp'
         elif self.spec.spec_type == SpecType.SET_BOX:
             spec_type = 'box'
-
         elif self.spec.spec_type == SpecType.SET_VNNLIB or self.spec.spec_type == SpecType.LOCAL_VNNLIB:
             spec_type = 'bound'
         else:

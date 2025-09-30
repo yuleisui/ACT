@@ -15,11 +15,16 @@ import torch.nn as nn
 import numpy as np
 import psutil
 import os
-from model import Model
-from dataset import Dataset
-from spec import Spec, InputSpec, OutputSpec
-from type import SpecType, VerificationStatus
-from bab_spec_refinement import create_spec_refinement_core
+import sys
+
+
+import path_config
+
+from spec_parser.model import Model
+from spec_parser.dataset import Dataset
+from spec_parser.spec import Spec, InputSpec, OutputSpec
+from spec_parser.type import SpecType, VerificationStatus
+from bab_refinement.bab_spec_refinement import create_spec_refinement_core
 
 def print_memory_usage(stage_name=""):
     try:
