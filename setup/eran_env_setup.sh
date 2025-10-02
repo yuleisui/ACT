@@ -1,14 +1,12 @@
 #!/bin/bash
 set -e
-echo "[ERAN] Setting up ERAN environment..."
+echo "[ERAN] Setting up ERAN environment with conda dependencies..."
 
-# Initialize conda environment
 source "$(conda info --base)/etc/profile.d/conda.sh"
 
-# Create ERAN environment
 if ! conda env list | grep -q "^act-eran "; then
-    echo "[ERAN] Creating conda env: act-eran..."
-    conda create -y -n act-eran python=3.8 # use Python 3.8 to incorporate the ERAN requirements for onnx (1.8.0)
+    echo "[ERAN] Creating conda env 'act-eran'..."
+    conda create -y -n act-eran python=3.8
 else
     echo "[ERAN] Conda env 'act-eran' already exists."
 fi
@@ -16,107 +14,62 @@ fi
 echo "[ERAN] Activating ERAN environment..."
 conda activate act-eran
 
-# Install system-level dependencies (sudo)
-echo "[ERAN] Installing system-level dependencies..."
-# Update package list
-sudo apt-get update -y
+echo "[ERAN] Installing conda dependencies..."
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    conda install -y -c conda-forge \
+        gmp=6.2.1 \
+        mpfr=4.1.0 \
+        cmake \
+        make \
+        clang_osx-64 \
+        clangxx_osx-64 \
+        autoconf \
+        libtool \
+        m4 \
+        pkg-config
+else
+    conda install -y -c conda-forge \
+        gmp=6.2.1 \
+        mpfr=4.1.0 \
+        cmake \
+        make \
+        gcc_linux-64 \
+        gxx_linux-64 \
+        autoconf \
+        libtool \
+        m4 \
+        pkg-config
+fi
 
-# Note: Does not include libgmp-dev and libmpfr-dev, as ERAN install.sh will compile specific versions from source
-REQUIRED_APT_PACKAGES=(m4 build-essential autoconf libtool texlive-latex-base)
-for pkg in "${REQUIRED_APT_PACKAGES[@]}"; do
-    if ! dpkg -s "$pkg" &> /dev/null; then
-        echo "[ERAN] Installing $pkg..."
-        sudo apt-get install -y "$pkg"
-    else
-        echo "[ERAN] $pkg already installed."
-    fi
-done
-
+echo "[ERAN] Installing Python packages..."
+pip install -r eran_requirements.txt
 ERAN_DIR="$(cd ../modules/eran && pwd)"
 echo "[ERAN] Switching to $ERAN_DIR"
 pushd "$ERAN_DIR" > /dev/null
 
-# Install CMake (if missing)
-if ! command -v cmake &> /dev/null; then
-    echo "[ERAN] cmake not found. Installing..."
-    INSTALL_DIR="$(pwd)/cmake-3.19.7-Linux-x86_64"
-    wget -q -N https://github.com/Kitware/CMake/releases/download/v3.19.7/cmake-3.19.7-Linux-x86_64.sh
-    mkdir -p "$INSTALL_DIR" 
-    sudo bash ./cmake-3.19.7-Linux-x86_64.sh --skip-license --prefix="$INSTALL_DIR"
-    sudo rm -f /usr/bin/cmake
-    sudo ln -s "$INSTALL_DIR/bin/cmake" /usr/bin/cmake
-    echo "[ERAN] cmake installed..."
-    echo "[DEBUG] Where is cmake? $(which cmake)"
-    ls -l /usr/bin/cmake
+echo "[ERAN] Installing Gurobi from source (C++ support needed)..."
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    if [ ! -f "gurobi9.1.2_mac64.tar.gz" ]; then
+        wget -q https://packages.gurobi.com/9.1/gurobi9.1.2_mac64.tar.gz
+    fi
+    if [ ! -d "gurobi912" ]; then
+        tar -xf gurobi9.1.2_mac64.tar.gz
+        cd gurobi912/mac64/src/build
+        sed -ie 's/^C++FLAGS =.*$/& -fPIC/' Makefile
+        make -j$(nproc)
+        cp libgurobi_c++.a ../../lib/
+        cd ../../
+        cp lib/libgurobi91.dylib $CONDA_PREFIX/lib/
+        echo "[ERAN] Installing Gurobi Python interface..."
+        python setup.py install
+        cd ../../
+        echo "[ERAN] Gurobi installed successfully"
+        rm -f gurobi9.1.2_mac64.tar.gz
+        echo "[ERAN] Cleaned up Gurobi installation tarball"
+    else
+        echo "[ERAN] Gurobi directory already exists, skipping"
+    fi
 else
-    echo "[ERAN] cmake already available."
-fi
- 
-if [ -f "install.sh" ]; then
-    echo "[ERAN] Found install.sh, but using manual installation steps for better control..."
-    
-    # Manually execute ERAN dependency installation steps (based on official documentation)
-    echo "[ERAN] Installing GMP..."
-    if [ ! -f "gmp-6.1.2.tar.xz" ]; then
-        wget -q https://gmplib.org/download/gmp/gmp-6.1.2.tar.xz
-    fi
-    if [ ! -d "gmp-6.1.2" ]; then
-        tar -xf gmp-6.1.2.tar.xz
-        cd gmp-6.1.2
-        ./configure --enable-cxx
-        make -j$(nproc)
-        sudo make install
-        cd ..
-        echo "[ERAN] GMP installed successfully"
-        # Clean up installation files like official install.sh
-        rm -f gmp-6.1.2.tar.xz
-        rm -rf gmp-6.1.2
-        echo "[ERAN] Cleaned up GMP installation files"
-    else
-        echo "[ERAN] GMP directory already exists, skipping"
-    fi
-    
-    echo "[ERAN] Installing MPFR..."
-    if [ ! -f "mpfr-4.1.0.tar.xz" ]; then
-        wget -q https://files.sri.inf.ethz.ch/eran/mpfr/mpfr-4.1.0.tar.xz
-    fi
-    if [ ! -d "mpfr-4.1.0" ]; then
-        tar -xf mpfr-4.1.0.tar.xz
-        cd mpfr-4.1.0
-        ./configure --with-gmp=/usr/local
-        make -j$(nproc)
-        sudo make install
-        cd ..
-        echo "[ERAN] MPFR installed successfully"
-        # Clean up installation files like official install.sh
-        rm -f mpfr-4.1.0.tar.xz
-        rm -rf mpfr-4.1.0
-        echo "[ERAN] Cleaned up MPFR installation files"
-    else
-        echo "[ERAN] MPFR directory already exists, skipping"
-    fi
-    
-    echo "[ERAN] Installing cddlib..."
-    if [ ! -f "cddlib-0.94m.tar.gz" ]; then
-        wget -q https://github.com/cddlib/cddlib/releases/download/0.94m/cddlib-0.94m.tar.gz
-    fi
-    if [ ! -d "cddlib-0.94m" ]; then
-        tar -xf cddlib-0.94m.tar.gz
-        cd cddlib-0.94m
-        ./configure
-        make -j$(nproc)
-        sudo make install
-        cd ..
-        echo "[ERAN] cddlib installed successfully"
-        # Clean up installation files (note: official install.sh doesn't clean cddlib, but we add for consistency)
-        rm -f cddlib-0.94m.tar.gz
-        rm -rf cddlib-0.94m
-        echo "[ERAN] Cleaned up cddlib installation files"
-    else
-        echo "[ERAN] cddlib directory already exists, skipping"
-    fi
-    
-    echo "[ERAN] Installing Gurobi..."
     if [ ! -f "gurobi9.1.2_linux64.tar.gz" ]; then
         wget -q https://packages.gurobi.com/9.1/gurobi9.1.2_linux64.tar.gz
     fi
@@ -127,87 +80,91 @@ if [ -f "install.sh" ]; then
         make -j$(nproc)
         cp libgurobi_c++.a ../../lib/
         cd ../../
-        sudo cp lib/libgurobi91.so /usr/local/lib
-        # Install Gurobi Python interface using the correct Python environment (do not use sudo)
+        cp lib/libgurobi91.so $CONDA_PREFIX/lib/
         echo "[ERAN] Installing Gurobi Python interface..."
-        python setup.py install --user
+        python setup.py install
         cd ../../
         echo "[ERAN] Gurobi installed successfully"
-        # Clean up installation tarball like official install.sh
         rm -f gurobi9.1.2_linux64.tar.gz
         echo "[ERAN] Cleaned up Gurobi installation tarball"
     else
         echo "[ERAN] Gurobi directory already exists, skipping"
     fi
-    
-    # Set environment variables
-    export GUROBI_HOME="$(pwd)/gurobi912/linux64"
-    export PATH="${PATH}:${GUROBI_HOME}/bin"
-    export CPATH="${CPATH}:${GUROBI_HOME}/include"
-    export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/lib:${GUROBI_HOME}/lib"
-    
-    echo "[ERAN] Installing ELINA..."
-    if [ ! -d "ELINA" ]; then
-        git clone https://github.com/eth-sri/ELINA.git
-        cd ELINA
-        ./configure -use-deeppoly -use-gurobi -use-fconv
-        make -j$(nproc)
-        sudo make install
-        cd ..
-        echo "[ERAN] ELINA installed successfully"
-    else
-        echo "[ERAN] ELINA directory already exists, skipping"
-    fi
-    
-    echo "[ERAN] Installing DeepG..."
-    if [ ! -d "deepg" ]; then
-        git clone https://github.com/eth-sri/deepg.git
-        cd deepg/code
-        mkdir -p build
-        make shared_object
-        sudo cp ./build/libgeometric.so /usr/lib
-        cd ../..
-        echo "[ERAN] DeepG installed successfully"
-    else
-        echo "[ERAN] DeepG directory already exists, skipping"
-    fi
-    
-    # Update library path
-    sudo ldconfig
-    
-    echo "[ERAN] Manual installation completed successfully"
-    
-    # Set ELINA Python interface path (before popd)
-    echo "[ERAN] Configuring ELINA Python interface path..."
-    ELINA_PYTHON_PATH="$(pwd)/ELINA/python_interface"
-    echo "[ERAN] ELINA Python interface path: $ELINA_PYTHON_PATH"
-    
-else
-    echo "[ERAN] ERAN install.sh not found at $ERAN_DIR"
-    exit 1
 fi
+
+export CONDA_PREFIX=${CONDA_PREFIX}
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    export GUROBI_HOME="$ERAN_DIR/gurobi912/mac64"
+else
+    export GUROBI_HOME="$ERAN_DIR/gurobi912/linux64"
+fi
+export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${GUROBI_HOME}/lib:${LD_LIBRARY_PATH}"
+export PKG_CONFIG_PATH="${CONDA_PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH}"
+export CPPFLAGS="-I${CONDA_PREFIX}/include -I${GUROBI_HOME}/include ${CPPFLAGS}"
+export LDFLAGS="-L${CONDA_PREFIX}/lib -L${GUROBI_HOME}/lib ${LDFLAGS}"
+
+if [ ! -f "cddlib-0.94m.tar.gz" ]; then
+    echo "[ERAN] Downloading cddlib..."
+    wget -q https://github.com/cddlib/cddlib/releases/download/0.94m/cddlib-0.94m.tar.gz
+fi
+if [ ! -d "cddlib-0.94m" ]; then
+    echo "[ERAN] Installing cddlib from source..."
+    tar -xf cddlib-0.94m.tar.gz
+    cd cddlib-0.94m
+    ./configure --prefix=$CONDA_PREFIX
+    make -j$(nproc)
+    make install
+    cd ..
+    rm -f cddlib-0.94m.tar.gz
+    rm -rf cddlib-0.94m
+    echo "[ERAN] cddlib installation completed"
+fi
+
+if [ ! -d "ELINA" ]; then
+    echo "[ERAN] Cloning ELINA..."
+    git clone https://github.com/eth-sri/ELINA.git
+fi
+
+cd ELINA
+if [ ! -f "elina_installed" ]; then
+    echo "[ERAN] Installing ELINA..."
+    ./configure -use-deeppoly -use-gurobi -use-fconv -prefix $CONDA_PREFIX -gmp-prefix $CONDA_PREFIX -mpfr-prefix $CONDA_PREFIX -cdd-prefix $CONDA_PREFIX
+    make -j$(nproc)
+    make install
+    touch elina_installed
+    echo "[ERAN] ELINA installation completed"
+fi
+cd ..
+
+if [ ! -d "deepg" ]; then
+    echo "[ERAN] Cloning DeepG..."
+    git clone https://github.com/eth-sri/deepg.git
+fi
+
+cd deepg/code
+if [ ! -f "deepg_installed" ]; then
+    echo "[ERAN] Installing DeepG..."
+    mkdir -p build
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        export GUROBI_HOME="$ERAN_DIR/gurobi912/mac64"
+    else
+        export GUROBI_HOME="$ERAN_DIR/gurobi912/linux64"
+    fi
+    make shared_object
+    cp ./build/libgeometric.so $CONDA_PREFIX/lib/
+    touch deepg_installed
+    echo "[ERAN] DeepG installation completed"
+fi
+cd ../..
 
 popd > /dev/null
 
-# Install Python packages
-echo "[ERAN] Installing Python packages for ERAN..."
-pip install -r eran_requirements.txt
-
-# Install conda version of Gurobi (provides gurobipy module)
-echo "[ERAN] Installing Gurobi via conda for Python interface..."
-conda config --add channels http://conda.anaconda.org/gurobi
-conda install -y gurobi
-
-# Improve libstdc++ compatibility with varying conda envs for ELINA libraries
-echo "[ERAN] Installing compatible libstdc++ for ELINA libraries..."
+echo "[ERAN] Installing compatible libstdc++..."
 conda install -y -c conda-forge "libstdcxx-ng>=12.0.0"
 
-
-# Add ELINA Python interface to Python path
-echo "[ERAN] Configuring ELINA Python interface path..."
+echo "[ERAN] Configuring ELINA Python interface..."
 SITE_PACKAGES=$(python -c "import site; print(site.getsitepackages()[0])")
-echo "[ERAN] Using ELINA Python interface path: $ELINA_PYTHON_PATH"
+ELINA_PYTHON_PATH="$ERAN_DIR/ELINA/python_interface"
 echo "$ELINA_PYTHON_PATH" > "$SITE_PACKAGES/elina.pth"
-echo "[ERAN] Created elina.pth in: $SITE_PACKAGES"
 
-echo "[ERAN] ERAN environment setup complete."
+echo "[ERAN] ERAN environment setup completed!"
