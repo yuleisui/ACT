@@ -8,8 +8,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  hybridz:
-    name: HybridZ Relaxed
+  hybridz-linux:
+    name: HybridZ Relaxed (Linux)
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository with submodules
@@ -52,10 +52,53 @@ jobs:
             --mean 0.1307 --std 0.3081 \
             --ci
 
-  abcrown:
-    name: abCrown
+  hybridz-macos:
+    name: HybridZ Relaxed (macOS)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Miniconda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-update-conda: true
+          python-version: 3.9
+          miniforge-variant: Miniforge3
+          use-mamba: true
+
+      - name: Install system dependencies
+        run: |
+          brew install gmp mpfr
+
+      - name: Set up ACT environments
+        shell: bash -l {0}
+        run: |
+          cd .github/
+          source setup_ci_main.sh
+
+      - name: Run HybridZ verification
+        shell: bash -l {0}
+        run: |
+          source "$(conda info --base)/etc/profile.d/conda.sh"
+          conda activate act-main
+          cd verifier/
+          python main.py \
+            --verifier hybridz \
+            --method hybridz_relaxed \
+            --model_path ../models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
+            --dataset mnist --spec_type local_lp \
+            --start 0 --end 1 --epsilon 0.01 --norm inf \
+            --relaxation_ratio 1.0 \
+            --mean 0.1307 --std 0.3081 \
+            --ci
+
+  abcrown-linux:
+    name: abCrown (Linux)
     runs-on: ubuntu-22.04
-    needs: hybridz
+    needs: hybridz-linux
     steps:
       - name: Checkout repository with submodules
         uses: actions/checkout@v4
@@ -74,6 +117,55 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libgmp-dev libmpfr-dev
+
+      - name: Set up ACT environments
+        shell: bash -l {0}
+        run: |
+          cd .github/
+          source setup_ci_abcrown.sh
+
+      - name: Patch abCrown submodule
+        run: |
+          INIT_FULL_PATH="modules/abcrown/complete_verifier/__init__.py"
+          if grep -q "^from abcrown import abCrown" "$INIT_FULL_PATH"; then
+            sed -i 's/^from abcrown import abCrown/# from abcrown import abCrown/' "$INIT_FULL_PATH"
+          fi
+
+      - name: Run abCrown verification
+        shell: bash -l {0}
+        run: |
+          source "$(conda info --base)/etc/profile.d/conda.sh"
+          conda activate act-abcrown
+          cd verifier/
+          python main.py \
+            --verifier abcrown \
+            --method alpha_beta \
+            --model_path ../models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
+            --dataset mnist --spec_type local_lp \
+            --start 0 --end 1 --epsilon 0.1 --norm inf \
+            --mean 0.1307 --std 0.3081
+
+  abcrown-macos:
+    name: abCrown (macOS)
+    runs-on: macos-latest
+    needs: hybridz-macos
+    steps:
+      - name: Checkout repository with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Miniconda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-update-conda: true
+          python-version: 3.9
+          miniforge-variant: Miniforge3
+          use-mamba: true
+
+      - name: Install system dependencies
+        run: |
+          brew install gmp mpfr
 
       - name: Set up ACT environments
         shell: bash -l {0}
