@@ -16,9 +16,9 @@ import sys
 # Setup ACT paths
 import path_config
 
-from spec_parser.dataset import Dataset
-from spec_parser.model import Model
-from spec_parser.type import LPNormType, SpecType, VerificationStatus
+from input_parser.dataset import Dataset
+from input_parser.model import Model
+from input_parser.type import LPNormType, SpecType, VerificationStatus
 
 class BaseSpec:
     def __init__(self, dataset : Dataset = None, model : Model = None, status: VerificationStatus = VerificationStatus.UNKNOWN):

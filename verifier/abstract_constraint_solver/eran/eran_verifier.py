@@ -19,8 +19,8 @@ import json
 import path_config
 
 from abstract_constraint_solver.base_verifier import BaseVerifier
-from spec_parser.dataset import Dataset
-from spec_parser.spec import Spec
+from input_parser.dataset import Dataset
+from input_parser.spec import Spec
 
 class ERANVerifier(BaseVerifier):
     def __init__(self, dataset : Dataset, method, spec : Spec, device: str = 'cpu'):

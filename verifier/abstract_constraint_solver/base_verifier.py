@@ -20,10 +20,10 @@ import sys
 
 import path_config
 
-from spec_parser.model import Model
-from spec_parser.dataset import Dataset
-from spec_parser.spec import Spec, InputSpec, OutputSpec
-from spec_parser.type import SpecType, VerificationStatus
+from input_parser.model import Model
+from input_parser.dataset import Dataset
+from input_parser.spec import Spec, InputSpec, OutputSpec
+from input_parser.type import SpecType, VerificationStatus
 from bab_refinement.bab_spec_refinement import create_spec_refinement_core
 
 def print_memory_usage(stage_name=""):

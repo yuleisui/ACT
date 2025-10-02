@@ -23,8 +23,8 @@ import os
 
 import path_config
 
-from spec_parser.type import SpecType
-from spec_parser.vnnlib_parser import VNNLIBParser
+from input_parser.type import SpecType
+from input_parser.vnnlib_parser import VNNLIBParser
 
 class Dataset:
     def __init__(self,

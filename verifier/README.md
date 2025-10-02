@@ -28,7 +28,7 @@ verifier/
 │   └── interval/                   # ACT Interval verification module
 │       └── interval_verifier.py    # Interval arithmetic verification
 │
-├── spec_parser/                    # Specification parsing and data handling
+├── input_parser/                    # Specification parsing and data handling
 │   ├── dataset.py                  # Dataset loading and preprocessing
 │   ├── model.py                    # Neural network model parsing
 │   ├── spec.py                     # Specification handling and processing
@@ -108,7 +108,7 @@ verifier/
   - Fast but potentially loose bound computation
   - Baseline verification method for comparison
 
-### **`spec_parser/` - Specification and Data Handling**
+### **`input_parser/` - Specification and Data Handling**
 - **`dataset.py`**: Dataset loading and preprocessing utilities
   - MNIST and CIFAR-10 dataset handlers with automatic download
   - CSV file processing for batch verification scenarios

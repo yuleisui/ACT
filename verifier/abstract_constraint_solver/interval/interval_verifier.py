@@ -18,9 +18,9 @@ from typing import Tuple
 import path_config
 
 from abstract_constraint_solver.base_verifier import BaseVerifier
-from spec_parser.dataset import Dataset
-from spec_parser.spec import Spec
-from spec_parser.type import VerificationStatus
+from input_parser.dataset import Dataset
+from input_parser.spec import Spec
+from input_parser.type import VerificationStatus
 from onnx2pytorch.operations.flatten import Flatten as OnnxFlatten
 from onnx2pytorch.operations.add import Add as OnnxAdd
 from onnx2pytorch.operations.div import Div as OnnxDiv

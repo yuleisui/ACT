@@ -20,9 +20,9 @@ from typing import Optional, List
 import path_config
 
 from abstract_constraint_solver.base_verifier import BaseVerifier, print_memory_usage
-from spec_parser.dataset import Dataset
-from spec_parser.spec import Spec
-from spec_parser.type import VerificationStatus
+from input_parser.dataset import Dataset
+from input_parser.spec import Spec
+from input_parser.type import VerificationStatus
 from onnx2pytorch.operations.flatten import Flatten as OnnxFlatten
 from onnx2pytorch.operations.base import OperatorWrapper
 from abstract_constraint_solver.hybridz.hybridz_transformers import HybridZonotopeGrid, HybridZonotopeElem
