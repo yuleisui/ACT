@@ -15,31 +15,17 @@ echo "[ERAN] Activating ERAN environment..."
 conda activate act-eran
 
 echo "[ERAN] Installing conda dependencies..."
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    conda install -y -c conda-forge \
-        gmp=6.2.1 \
-        mpfr=4.1.0 \
-        cmake \
-        make \
-        clang_osx-64 \
-        clangxx_osx-64 \
-        autoconf \
-        libtool \
-        m4 \
-        pkg-config
-else
-    conda install -y -c conda-forge \
-        gmp=6.2.1 \
-        mpfr=4.1.0 \
-        cmake \
-        make \
-        gcc_linux-64 \
-        gxx_linux-64 \
-        autoconf \
-        libtool \
-        m4 \
-        pkg-config
-fi
+conda install -y -c conda-forge \
+    gmp=6.2.1 \
+    mpfr=4.1.0 \
+    cmake \
+    make \
+    gcc_linux-64 \
+    gxx_linux-64 \
+    autoconf \
+    libtool \
+    m4 \
+    pkg-config
 
 echo "[ERAN] Installing Python packages..."
 pip install -r eran_requirements.txt
@@ -48,56 +34,29 @@ echo "[ERAN] Switching to $ERAN_DIR"
 pushd "$ERAN_DIR" > /dev/null
 
 echo "[ERAN] Installing Gurobi from source (C++ support needed)..."
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    if [ ! -f "gurobi9.1.2_mac64.tar.gz" ]; then
-        wget -q https://packages.gurobi.com/9.1/gurobi9.1.2_mac64.tar.gz
-    fi
-    if [ ! -d "gurobi912" ]; then
-        tar -xf gurobi9.1.2_mac64.tar.gz
-        cd gurobi912/mac64/src/build
-        sed -ie 's/^C++FLAGS =.*$/& -fPIC/' Makefile
-        make -j$(nproc)
-        cp libgurobi_c++.a ../../lib/
-        cd ../../
-        cp lib/libgurobi91.dylib $CONDA_PREFIX/lib/
-        echo "[ERAN] Installing Gurobi Python interface..."
-        python setup.py install
-        cd ../../
-        echo "[ERAN] Gurobi installed successfully"
-        rm -f gurobi9.1.2_mac64.tar.gz
-        echo "[ERAN] Cleaned up Gurobi installation tarball"
-    else
-        echo "[ERAN] Gurobi directory already exists, skipping"
-    fi
+if [ ! -f "gurobi9.1.2_linux64.tar.gz" ]; then
+    wget -q https://packages.gurobi.com/9.1/gurobi9.1.2_linux64.tar.gz
+fi
+if [ ! -d "gurobi912" ]; then
+    tar -xf gurobi9.1.2_linux64.tar.gz
+    cd gurobi912/linux64/src/build
+    sed -ie 's/^C++FLAGS =.*$/& -fPIC/' Makefile
+    make -j$(nproc)
+    cp libgurobi_c++.a ../../lib/
+    cd ../../
+    cp lib/libgurobi91.so $CONDA_PREFIX/lib/
+    echo "[ERAN] Installing Gurobi Python interface..."
+    python setup.py install
+    cd ../../
+    echo "[ERAN] Gurobi installed successfully"
+    rm -f gurobi9.1.2_linux64.tar.gz
+    echo "[ERAN] Cleaned up Gurobi installation tarball"
 else
-    if [ ! -f "gurobi9.1.2_linux64.tar.gz" ]; then
-        wget -q https://packages.gurobi.com/9.1/gurobi9.1.2_linux64.tar.gz
-    fi
-    if [ ! -d "gurobi912" ]; then
-        tar -xf gurobi9.1.2_linux64.tar.gz
-        cd gurobi912/linux64/src/build
-        sed -ie 's/^C++FLAGS =.*$/& -fPIC/' Makefile
-        make -j$(nproc)
-        cp libgurobi_c++.a ../../lib/
-        cd ../../
-        cp lib/libgurobi91.so $CONDA_PREFIX/lib/
-        echo "[ERAN] Installing Gurobi Python interface..."
-        python setup.py install
-        cd ../../
-        echo "[ERAN] Gurobi installed successfully"
-        rm -f gurobi9.1.2_linux64.tar.gz
-        echo "[ERAN] Cleaned up Gurobi installation tarball"
-    else
-        echo "[ERAN] Gurobi directory already exists, skipping"
-    fi
+    echo "[ERAN] Gurobi directory already exists, skipping"
 fi
 
 export CONDA_PREFIX=${CONDA_PREFIX}
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    export GUROBI_HOME="$ERAN_DIR/gurobi912/mac64"
-else
-    export GUROBI_HOME="$ERAN_DIR/gurobi912/linux64"
-fi
+export GUROBI_HOME="$ERAN_DIR/gurobi912/linux64"
 export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${GUROBI_HOME}/lib:${LD_LIBRARY_PATH}"
 export PKG_CONFIG_PATH="${CONDA_PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH}"
 export CPPFLAGS="-I${CONDA_PREFIX}/include -I${GUROBI_HOME}/include ${CPPFLAGS}"
@@ -145,11 +104,7 @@ cd deepg/code
 if [ ! -f "deepg_installed" ]; then
     echo "[ERAN] Installing DeepG..."
     mkdir -p build
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        export GUROBI_HOME="$ERAN_DIR/gurobi912/mac64"
-    else
-        export GUROBI_HOME="$ERAN_DIR/gurobi912/linux64"
-    fi
+    export GUROBI_HOME="$ERAN_DIR/gurobi912/linux64"
     make shared_object
     cp ./build/libgeometric.so $CONDA_PREFIX/lib/
     touch deepg_installed
