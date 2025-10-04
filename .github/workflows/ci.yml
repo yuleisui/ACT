@@ -193,3 +193,46 @@ jobs:
             --dataset mnist --spec_type local_lp \
             --start 0 --end 1 --epsilon 0.1 --norm inf \
             --mean 0.1307 --std 0.3081
+
+  eran-linux:
+    name: ERAN (Linux)
+    runs-on: ubuntu-22.04
+    needs: abcrown-linux
+    steps:
+      - name: Checkout repository with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Miniconda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-update-conda: true
+          python-version: 3.9
+          miniforge-variant: Miniforge3
+          use-mamba: true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libgmp-dev libmpfr-dev
+
+      - name: Set up ACT ERAN environment
+        shell: bash -l {0}
+        run: |
+          cd .github/
+          source setup_ci_eran.sh
+
+      - name: Run ERAN verification
+        shell: bash -l {0}
+        run: |
+          source "$(conda info --base)/etc/profile.d/conda.sh"
+          conda activate act-eran
+          cd verifier/
+          python main.py \
+            --verifier eran \
+            --method deepzono \
+            --model_path ../models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
+            --dataset mnist --spec_type local_lp \
+            --start 0 --end 5 --epsilon 0.01 --norm inf \
+            --mean 0.1307 --std 0.3081

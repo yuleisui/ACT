@@ -9,3 +9,8 @@ torch
 torchvision
 mpmath
 pillow>=8.1.0
+git+https://github.com/doctormeee/onnx2pytorch.git
+onnxoptimizer>=0.3
+skl2onnx>=1.14
+pyyaml>=6.0
+psutil>=5.9.5
