@@ -1,6 +1,14 @@
 #!/bin/bash
 set -e
-echo "[ERAN] Setting up ERAN environment with conda dependencies..."
+
+# Configuration flags
+ACT_CI_MODE=${ACT_CI_MODE:-false}
+
+if [ "$ACT_CI_MODE" = "true" ]; then
+    echo "[ERAN-CI] Setting up ERAN environment with conda dependencies for CI..."
+else
+    echo "[ERAN] Setting up ERAN environment with conda dependencies..."
+fi
 
 source "$(conda info --base)/etc/profile.d/conda.sh"
 
@@ -70,13 +78,20 @@ if [ ! -d "cddlib-0.94m" ]; then
     echo "[ERAN] Installing cddlib from source..."
     tar -xf cddlib-0.94m.tar.gz
     cd cddlib-0.94m
-    ./configure --prefix=$CONDA_PREFIX
+    autoreconf -i
+    ./configure --prefix=$CONDA_PREFIX --disable-static --enable-shared
     make -j$(nproc)
     make install
     cd ..
     rm -f cddlib-0.94m.tar.gz
     rm -rf cddlib-0.94m
+
+    if [ "$ACT_CI_MODE" = "true" ]; then
+        ln -sf $CONDA_PREFIX/include/cddlib/* $CONDA_PREFIX/include/
+    fi
     echo "[ERAN] cddlib installation completed"
+else
+    echo "[ERAN] cddlib already installed, skipping"
 fi
 
 if [ ! -d "ELINA" ]; then
@@ -87,6 +102,16 @@ fi
 cd ELINA
 if [ ! -f "elina_installed" ]; then
     echo "[ERAN] Installing ELINA..."
+    export CDD_PREFIX=$CONDA_PREFIX
+    export CPPFLAGS="-I$CDD_PREFIX/include -I$CDD_PREFIX/include/cddlib $CPPFLAGS"
+    export LDFLAGS="-L$CDD_PREFIX/lib $LDFLAGS"
+
+    if [ "$ACT_CI_MODE" = "true" ]; then
+        echo "[ERAN] Setting relaxed compiler flags for ELINA compilation..."
+        export CFLAGS="-Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types $CFLAGS"
+        export CXXFLAGS="-Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types $CXXFLAGS"
+    fi
+
     ./configure -use-deeppoly -use-gurobi -use-fconv -prefix $CONDA_PREFIX -gmp-prefix $CONDA_PREFIX -mpfr-prefix $CONDA_PREFIX -cdd-prefix $CONDA_PREFIX
     make -j$(nproc)
     make install
