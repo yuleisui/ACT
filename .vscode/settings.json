@@ -1,4 +1,5 @@
 {
     "python.defaultInterpreterPath": "/srv/scratch/PAG/ysui/miniconda3/envs/act-main/bin/python",
-    "python.terminal.activateEnvironment": true
+    "python.terminal.activateEnvironment": true,
+    "python.debugging.debugpyPath": "/srv/scratch/PAG/ysui/miniconda3/lib/python3.13/site-packages/debugpy"
 }
