@@ -18,7 +18,7 @@ import os
 import sys
 
 
-import verifier.path_config
+import path_config
 
 from input_parser.model import Model
 from input_parser.dataset import Dataset
