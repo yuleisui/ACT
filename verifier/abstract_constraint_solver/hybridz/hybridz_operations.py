@@ -10,15 +10,13 @@
 #########################################################################
 
 import torch
-import torch.nn.functional as F
 import os
-import sys
 import psutil
 import time
 import numpy as np
 from scipy.optimize import linprog
 
-import path_config
+import util.path_config as path_config
 
 try:
     import gurobipy as gp

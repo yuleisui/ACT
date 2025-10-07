@@ -27,9 +27,6 @@ import time
 import os
 import configparser
 
-# Setup ACT paths - this must be done before importing ACT modules
-import path_config
-
 # Import commendline paser
 from util.options import get_parser
 
@@ -37,7 +34,7 @@ from util.options import get_parser
 from input_parser.model import Model
 from input_parser.dataset import Dataset
 from input_parser.spec import Spec, InputSpec, OutputSpec
-from input_parser.type import SpecType, VerificationStatus
+from input_parser.type import VerificationStatus
 from abstract_constraint_solver.eran.eran_verifier import ERANVerifier
 from abstract_constraint_solver.abcrown.abcrown_verifier import abCrownVerifier
 from abstract_constraint_solver.interval.interval_verifier import IntervalVerifier

@@ -18,8 +18,6 @@ import tempfile
 import yaml
 import json
 
-import path_config
-
 from abstract_constraint_solver.base_verifier import BaseVerifier
 from input_parser.dataset import Dataset
 from input_parser.spec import Spec

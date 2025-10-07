@@ -18,10 +18,7 @@ import json
 
 import torchvision
 import torchvision.transforms as transforms
-import sys
 import os
-
-import path_config
 
 from input_parser.type import SpecType
 from input_parser.vnnlib_parser import VNNLIBParser

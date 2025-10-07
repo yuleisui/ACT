@@ -11,12 +11,7 @@
 
 import os
 import torch
-import sys
-import time
 import subprocess
-import tempfile
-import json
-import path_config
 
 from abstract_constraint_solver.base_verifier import BaseVerifier
 from input_parser.dataset import Dataset

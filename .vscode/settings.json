@@ -12,10 +12,11 @@
     "python.testing.pytestEnabled": true,
     "python.testing.unittestEnabled": false,
     "python.testing.pytestArgs": [
+        "-v",
+        "-s",
         "unit-tests"
     ],
-    "python.testing.pytestArgs": [
-        "-v"
-    ],
-    "python.testing.pytestArgs": ["-s"]
+    "terminal.integrated.env.linux": {
+        "PYTHONPATH": "${workspaceFolder}"
+    }
 }
