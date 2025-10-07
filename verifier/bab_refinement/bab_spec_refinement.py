@@ -14,7 +14,6 @@ import time
 from typing import List, Tuple, Optional, Dict, Any
 from dataclasses import dataclass
 
-import path_config
 from input_parser.type import VerificationStatus
 
 @dataclass

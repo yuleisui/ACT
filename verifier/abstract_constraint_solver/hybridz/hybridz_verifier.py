@@ -13,11 +13,8 @@ import torch
 import torch.nn as nn
 import numpy as np
 import time
-import os
-import sys
 from typing import Optional, List
 
-import path_config
 
 from abstract_constraint_solver.base_verifier import BaseVerifier, print_memory_usage
 from input_parser.dataset import Dataset

@@ -13,9 +13,6 @@ from typing import Optional
 import torch
 import sys
 
-# Setup ACT paths
-import path_config
-
 from input_parser.dataset import Dataset
 from input_parser.model import Model
 from input_parser.type import LPNormType, SpecType, VerificationStatus

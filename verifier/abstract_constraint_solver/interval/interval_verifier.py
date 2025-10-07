@@ -11,11 +11,7 @@
 
 import torch
 import torch.nn as nn
-import os
-import sys
 from typing import Tuple
-
-import path_config
 
 from abstract_constraint_solver.base_verifier import BaseVerifier
 from input_parser.dataset import Dataset

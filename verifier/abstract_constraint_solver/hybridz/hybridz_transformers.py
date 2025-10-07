@@ -16,8 +16,6 @@ import sys
 import psutil
 import time
 
-import path_config
-
 from abstract_constraint_solver.hybridz.hybridz_operations import HybridZonotopeOps
 
 def setup_gurobi_license():

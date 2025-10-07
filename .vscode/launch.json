@@ -4,12 +4,11 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-        
         {
             "name": "verifier_tensorised",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/verifier/verifier_tensorised.py",
+            "program": "${workspaceFolder}/verifier/main.py",
             "env":{"GRB_LICENSE_FILE": "${workspaceFolder}/gurobi/gurobi.lic"},
             "cwd": "${workspaceFolder}",
             "args": [ "--verifier", "hybridz",
