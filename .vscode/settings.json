@@ -18,5 +18,10 @@
     ],
     "terminal.integrated.env.linux": {
         "PYTHONPATH": "${workspaceFolder}"
-    }
+    },
+    "github.copilot.chat.commitMessageGeneration.instructions": [
+        {
+            "text": "read the changes and summarize and also add mojis where necessary."
+        }
+    ]
 }
