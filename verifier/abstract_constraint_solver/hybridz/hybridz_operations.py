@@ -11,12 +11,12 @@
 
 import torch
 import os
-import psutil
 import time
 import numpy as np
 from scipy.optimize import linprog
 
 import util.path_config as path_config
+from util.stats import ACTStats
 
 try:
     import gurobipy as gp
@@ -56,22 +56,6 @@ torch.set_printoptions(
     sci_mode=False,
     precision=4
 )
-
-def print_memory_usage(stage_name=""):
-    process = psutil.Process(os.getpid())
-    memory_info = process.memory_info()
-    memory_mb = memory_info.rss / 1024 / 1024
-
-    system_memory = psutil.virtual_memory()
-    total_mb = system_memory.total / 1024 / 1024
-    available_mb = system_memory.available / 1024 / 1024
-    used_percent = (memory_mb / total_mb) * 100
-
-    if torch.cuda.is_available():
-        gpu_memory_mb = torch.cuda.memory_allocated() / 1024 / 1024
-        gpu_cached_mb = torch.cuda.memory_reserved() / 1024 / 1024
-
-    return memory_mb
 
 class HybridZonotopeOps:
 
@@ -930,7 +914,7 @@ class HybridZonotopeOps:
 
     @staticmethod
     def GetLayerWiseBounds(flat_center, flat_G_c, flat_G_b, A_c_tensor, A_b_tensor, b_tensor, method='hybridz', time_limit=500, num_workers=4, ci_mode=False):
-        print_memory_usage("GetLayerWiseBounds Start")
+        ACTStats.print_memory_usage("GetLayerWiseBounds Start")
         N = flat_center.shape[0]
         print(f"Processing {N} neurons with method={method}")
 
@@ -1462,7 +1446,7 @@ class HybridZonotopeOps:
     def ActivationOutputIntersectionElemMemoryOptimized(abstract_transormer_hz : "HybridZonotopeElem", input_hz : "HybridZonotopeElem"):
         dim = input_hz.n
 
-        print_memory_usage("Intersection start")
+        ACTStats.print_memory_usage("Intersection start")
 
         print("Computing permutation indices...")
         perm_indices = list(range(0, 2*dim, 2)) + list(range(1, 2*dim, 2))
@@ -1487,7 +1471,7 @@ class HybridZonotopeOps:
         Z_nb, Y_nb = abstract_transormer_hz.nb, input_hz.nb
         Z_nc, Y_nc = abstract_transormer_hz.nc, input_hz.nc
 
-        print_memory_usage("After P matrix operations")
+        ACTStats.print_memory_usage("After P matrix operations")
 
         if Y_ng > 0:
 
@@ -1509,7 +1493,7 @@ class HybridZonotopeOps:
 
         del Z_G_c, Z_G_b
         torch.cuda.empty_cache() if torch.cuda.is_available() else None
-        print_memory_usage("After Gc/Gb construction and cleanup")
+        ACTStats.print_memory_usage("After Gc/Gb construction and cleanup")
 
         print("Step 4: Constructing Ac_bottom without storing intermediate R_Z_Gc...")
 
@@ -1535,7 +1519,7 @@ class HybridZonotopeOps:
         del temp_R_Z_center
         print(f"Step 6 completed, new_b shape: {new_b.shape}")
 
-        print_memory_usage("After optimized R matrix operations")
+        ACTStats.print_memory_usage("After optimized R matrix operations")
 
         print("Step 7: Constructing constraint matrices with minimal memory footprint...")
 
@@ -1570,7 +1554,7 @@ class HybridZonotopeOps:
         del Ac_bottom, Ab_bottom
         torch.cuda.empty_cache() if torch.cuda.is_available() else None
 
-        print_memory_usage("After constraint matrix construction")
+        ACTStats.print_memory_usage("After constraint matrix construction")
 
         print("Step 8: Applying output filter (taking second half)...")
 
@@ -1583,7 +1567,7 @@ class HybridZonotopeOps:
         del Z_A_c, Z_A_b, Y_A_c, Y_A_b
         torch.cuda.empty_cache() if torch.cuda.is_available() else None
 
-        print_memory_usage("Intersection completed")
+        ACTStats.print_memory_usage("Intersection completed")
 
         
         from abstract_constraint_solver.hybridz.hybridz_transformers import HybridZonotopeElem

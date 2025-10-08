@@ -16,7 +16,8 @@ import time
 from typing import Optional, List
 
 
-from abstract_constraint_solver.base_verifier import BaseVerifier, print_memory_usage
+from abstract_constraint_solver.base_verifier import BaseVerifier
+from util.stats import ACTStats
 from input_parser.dataset import Dataset
 from input_parser.spec import Spec
 from input_parser.type import VerificationStatus
@@ -1415,7 +1416,7 @@ class HybridZonotopeVerifier(BaseVerifier):
             print(f"❌ Verification core returned abnormal value")
             return VerificationStatus.UNKNOWN
 
-        self.apply_relu_constraints_to_bounds()
+        self.enforce_neuron_activation_constraints()
 
         if output_hz is not None:
             verdict = self._single_result_verdict_hz(
@@ -1434,7 +1435,7 @@ class HybridZonotopeVerifier(BaseVerifier):
 
     def verify(self, proof=None, public_inputs=None):
 
-        print_memory_usage("HybridZonotopeVerifier Start")
+        ACTStats.print_memory_usage("HybridZonotopeVerifier Start")
         print("Starting complete verification process - conforming to theoretical architecture design")
 
         if self.input_center is None:
@@ -1448,12 +1449,12 @@ class HybridZonotopeVerifier(BaseVerifier):
 
         results = []
         for idx in range(num_samples):
-            print_memory_usage(f"Sample {idx+1}")
+            ACTStats.print_memory_usage(f"Sample {idx+1}")
             print(f"\n🔍 Processing sample {idx+1}/{num_samples}")
             print("="*80)
 
-            center_input, true_label = self.get_sample_center_and_label(idx)
-            if not self.check_clean_prediction(center_input, true_label, idx):
+            center_input, true_label = self.extract_sample_input_and_label(idx)
+            if not self.validate_unperturbed_prediction(center_input, true_label, idx):
 
                 print(f"⏭️  Skipping verification for sample {idx+1}")
                 results.append(VerificationStatus.CLEAN_FAILURE)
@@ -1530,4 +1531,4 @@ class HybridZonotopeVerifier(BaseVerifier):
                 print("⚠️  BaB not enabled, returning initial verdict")
                 results.append(initial_verdict)
 
-        return self._all_results_verdict(results)
+        return ACTStats.print_final_verification_summary(results)

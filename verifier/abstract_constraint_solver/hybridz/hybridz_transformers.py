@@ -17,6 +17,7 @@ import psutil
 import time
 
 from abstract_constraint_solver.hybridz.hybridz_operations import HybridZonotopeOps
+from util.stats import ACTStats
 
 def setup_gurobi_license():
     if 'GRB_LICENSE_FILE' not in os.environ:
@@ -50,22 +51,6 @@ torch.set_printoptions(
     sci_mode=False,
     precision=4
 )
-
-def print_memory_usage(stage_name=""):
-    process = psutil.Process(os.getpid())
-    memory_info = process.memory_info()
-    memory_mb = memory_info.rss / 1024 / 1024
-
-    system_memory = psutil.virtual_memory()
-    total_mb = system_memory.total / 1024 / 1024
-    available_mb = system_memory.available / 1024 / 1024
-    used_percent = (memory_mb / total_mb) * 100
-
-    if torch.cuda.is_available():
-        gpu_memory_mb = torch.cuda.memory_allocated() / 1024 / 1024
-        gpu_cached_mb = torch.cuda.memory_reserved() / 1024 / 1024
-
-    return memory_mb
 
 class HybridZonotopeElem:
 
@@ -318,7 +303,7 @@ class HybridZonotopeElem:
 
     def _relu_standard(self):
 
-        print_memory_usage("Elem ReLU Start")
+        ACTStats.print_memory_usage("Elem ReLU Start")
 
         lb, ub = HybridZonotopeOps.GetLayerWiseBounds(
             self.center, self.G_c, self.G_b, self.A_c, self.A_b, self.b,
@@ -641,7 +626,7 @@ class HybridZonotopeGrid:
         return new_hz_grid
 
     def _relu_standard(self):
-        print_memory_usage("Grid ReLU Start")
+        ACTStats.print_memory_usage("Grid ReLU Start")
 
         flat_center, flat_G_c, flat_G_b = self.PreActivationGetFlattenedTensor()
 
@@ -668,7 +653,7 @@ class HybridZonotopeGrid:
             batch_ub = ub[batch_start:batch_end]
 
             print(f"Processing batch {batch_start//batch_size + 1}/{(n_neurons + batch_size - 1)//batch_size}: neurons {batch_start}-{batch_end-1}")
-            print_memory_usage(f"Batch {batch_start//batch_size + 1}")
+            ACTStats.print_memory_usage(f"Batch {batch_start//batch_size + 1}")
 
             batch_center_list, batch_G_c_list, batch_G_b_list, batch_A_c_list, batch_A_b_list, batch_b_list = HybridZonotopeOps.ReLUStandard(
                 (batch_lb, batch_ub), self.dtype, self.device, method=self.method, relaxation_ratio=self.relaxation_ratio

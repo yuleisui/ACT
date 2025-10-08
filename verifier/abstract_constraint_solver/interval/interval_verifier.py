@@ -17,6 +17,7 @@ from abstract_constraint_solver.base_verifier import BaseVerifier
 from input_parser.dataset import Dataset
 from input_parser.spec import Spec
 from input_parser.type import VerificationStatus
+from util.stats import ACTStats
 from onnx2pytorch.operations.flatten import Flatten as OnnxFlatten
 from onnx2pytorch.operations.add import Add as OnnxAdd
 from onnx2pytorch.operations.div import Div as OnnxDiv
@@ -261,8 +262,8 @@ class IntervalVerifier(BaseVerifier):
             print(f"\n🔍 Processing sample {idx+1}/{num_samples}")
             print("="*80)
 
-            center_input, true_label = self.get_sample_center_and_label(idx)
-            if not self.check_clean_prediction(center_input, true_label, idx):
+            center_input, true_label = self.extract_sample_input_and_label(idx)
+            if not self.validate_unperturbed_prediction(center_input, true_label, idx):
                 print(f"⏭️  Skipping verification for sample {idx+1}")
                 results.append(VerificationStatus.CLEAN_FAILURE)
                 continue
@@ -310,5 +311,5 @@ class IntervalVerifier(BaseVerifier):
                 print("⚠️  BaB disabled, returning initial verdict")
                 results.append(initial_verdict)
 
-        self.print_verification_stats()
-        return self._all_results_verdict(results)
+        ACTStats.print_verification_stats(self.clean_prediction_stats)
+        return ACTStats.print_final_verification_summary(results)
