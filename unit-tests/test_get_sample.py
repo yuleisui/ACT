@@ -31,20 +31,20 @@ class TestGetSampleCenterAndLabel(unittest.TestCase):
                 
         self.verifier.dataset = DummyDataset()
 
-    def test_get_sample_center_and_label(self):
+    def test_extract_sample_input_and_label(self):
         # Test normal case
-        center, label = self.verifier.get_sample_center_and_label(sample_idx=0)
+        center, label = self.verifier.extract_sample_input_and_label(sample_index=0)
         self.assertEqual(label, 1)
         self.assertTrue(torch.equal(center, torch.tensor([[1.0, 2.0]])))
         
-    def test_get_sample_center_and_label_invalid_index(self):
+    def test_extract_sample_input_and_label_invalid_index(self):
         # Test invalid index case
         with self.assertRaises(IndexError):
-            self.verifier.get_sample_center_and_label(sample_idx=1)
+            self.verifier.extract_sample_input_and_label(sample_index=1)
             
-    def test_get_sample_center_and_label_shape(self):
+    def test_extract_sample_input_and_label_shape(self):
         # Test output tensor shape
-        center, _ = self.verifier.get_sample_center_and_label(sample_idx=0)
+        center, _ = self.verifier.extract_sample_input_and_label(sample_index=0)
         self.assertEqual(len(center.shape), 2)  # Should be 2D tensor
         self.assertEqual(center.shape[0], 1)    # Batch dimension should be 1
         self.assertEqual(center.shape[1], 2)    # Feature dimension should match input
