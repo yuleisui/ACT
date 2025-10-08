@@ -33,7 +33,7 @@ from input_parser.dataset import Dataset
 from input_parser.spec import Spec
 from input_parser.type import VerificationStatus
 from bab_refinement.bab_spec_refinement import create_spec_refinement_core
-from util.stats import ACTStats, ACTLog
+from util.stats import ACTLog
 
 class BaseVerifier:
     def __init__(self, dataset: Dataset, spec: Spec, device: str = 'cpu'):

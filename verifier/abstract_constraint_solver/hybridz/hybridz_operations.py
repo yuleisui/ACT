@@ -11,7 +11,6 @@
 
 import torch
 import os
-import psutil
 import time
 import numpy as np
 from scipy.optimize import linprog
