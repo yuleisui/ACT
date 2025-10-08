@@ -443,52 +443,6 @@ class BaseVerifier:
         else:
             ACTLog.log_constraint_error(f"Unknown constraint type: {constraint_type}", self.verbose)
 
-    def _single_result_verdict(self, lb: torch.Tensor, ub: torch.Tensor,
-                             output_constraints: Optional[List[List[float]]],
-                             true_label: Optional[int]) -> VerificationStatus:
-        """
-        Determine verification result from output bounds.
-        
-        For output constraints: checks if any constraint is violated (UNSAT/SAT).
-        For classification: checks if any other class can exceed true label (UNSAT/SAT).
-        
-        Args:
-            lb: Lower bounds tensor
-            ub: Upper bounds tensor  
-            output_constraints: Linear constraint matrix (optional)
-            true_label: Ground truth class index (optional)
-            
-        Returns:
-            VerificationStatus (SAT/UNSAT/UNKNOWN)
-        """
-        if output_constraints is not None:
-            for row in output_constraints:
-                a = torch.tensor(row[:-1], device=lb.device)
-                b = row[-1]
-                worst = torch.sum(torch.where(a >= 0, a * lb, a * ub)) + b
-                if worst < 0:
-                    return VerificationStatus.UNSAT
-            return VerificationStatus.SAT
-
-        if true_label is not None:
-            ACTLog.log_verification_info(f"Checking classification for true_label: {true_label}")
-            
-            if true_label < 0 or true_label >= lb.shape[0]:
-                ACTLog.log_verification_warning(f"true_label {true_label} out of bounds")
-                return VerificationStatus.UNKNOWN
-
-            if torch.any(torch.isnan(lb)) or torch.any(torch.isnan(ub)):
-                ACTLog.log_verification_warning("Found NaN values in output bounds")
-                return VerificationStatus.UNKNOWN
-
-            ACTLog.log_verification_info("Using traditional bounds comparison")
-            for j in range(lb.shape[0]):
-                if j != true_label and ub[j] >= lb[true_label]:
-                    return VerificationStatus.UNSAT
-            return VerificationStatus.SAT
-
-        return VerificationStatus.UNKNOWN
-
     def _spec_refinement_verification(self, input_lb: torch.Tensor, input_ub: torch.Tensor, 
                                     sample_idx: int = 0) -> VerificationStatus:
         """

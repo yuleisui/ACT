@@ -11,13 +11,13 @@
 
 import torch
 import torch.nn as nn
-from typing import Tuple
+from typing import Tuple, Optional, List
 
 from abstract_constraint_solver.base_verifier import BaseVerifier
 from input_parser.dataset import Dataset
 from input_parser.spec import Spec
 from input_parser.type import VerificationStatus
-from util.stats import ACTStats
+from util.stats import ACTStats, ACTLog
 from onnx2pytorch.operations.flatten import Flatten as OnnxFlatten
 from onnx2pytorch.operations.add import Add as OnnxAdd
 from onnx2pytorch.operations.div import Div as OnnxDiv
@@ -243,7 +243,7 @@ class IntervalVerifier(BaseVerifier):
             self.spec.model.pytorch_model, input_lb, input_ub
         )
 
-        verdict = self._single_result_verdict(
+        verdict = self._evaluate_output_bounds(
             output_lb, output_ub,
             self.spec.output_spec.output_constraints if self.spec.output_spec.output_constraints is not None else None,
             self.spec.output_spec.labels[sample_idx].item() if self.spec.output_spec.labels is not None else None
@@ -313,3 +313,76 @@ class IntervalVerifier(BaseVerifier):
 
         ACTStats.print_verification_stats(self.clean_prediction_stats)
         return ACTStats.print_final_verification_summary(results)
+
+    def _evaluate_output_bounds(self, lb: torch.Tensor, ub: torch.Tensor,
+                             output_constraints: Optional[List[List[float]]],
+                             true_label: Optional[int]) -> VerificationStatus:
+        """
+        Evaluate output bounds to determine verification result.
+        
+        For output constraints: checks if any constraint is violated (UNSAT/SAT).
+        For classification: checks if any other class can exceed true label (UNSAT/SAT).
+        
+        Args:
+            lb: Lower bounds tensor
+            ub: Upper bounds tensor  
+            output_constraints: Linear constraint matrix (optional)
+            true_label: Ground truth class index (optional)
+            
+        Returns:
+            VerificationStatus (SAT/UNSAT/UNKNOWN)
+        """
+        if output_constraints is not None:
+            # Check each linear constraint: coefficients·outputs + bias ≥ 0
+            for row in output_constraints:
+                # Split constraint: [coeff1, coeff2, ..., coeffN, bias]
+                coeffs = torch.tensor(row[:-1], device=lb.device)  # All except last
+                bias = row[-1]  # Last element
+                
+                # Interval arithmetic: find worst-case (minimum) constraint value
+                # Positive coefficients use lower bounds, negative coefficients use upper bounds
+                terms = torch.where(coeffs >= 0, coeffs * lb, coeffs * ub)
+                worst_case = torch.sum(terms) + bias
+                
+                # If worst case is negative, constraint is definitely violated
+                if worst_case < 0:
+                    return VerificationStatus.UNSAT
+            
+            # All constraints passed worst-case check - potentially satisfiable
+            return VerificationStatus.SAT
+
+        if true_label is not None:
+            ACTLog.log_verification_info(f"Checking classification robustness for true_label: {true_label}")
+            
+            # Validate true_label is within valid output class range
+            num_classes = lb.shape[0]
+            if true_label < 0 or true_label >= num_classes:
+                ACTLog.log_verification_warning(f"true_label {true_label} out of bounds (valid range: 0-{num_classes-1})")
+                return VerificationStatus.UNKNOWN
+
+            # Check for numerical instability in output bounds
+            if torch.any(torch.isnan(lb)) or torch.any(torch.isnan(ub)):
+                ACTLog.log_verification_warning("Found NaN values in output bounds - numerical instability detected")
+                return VerificationStatus.UNKNOWN
+
+            # Core adversarial robustness check: verify no other class can exceed true class
+            ACTLog.log_verification_info("Performing adversarial robustness verification via interval comparison")
+            correct_min = lb[true_label]  # Minimum possible output for correct class
+            
+            for other_idx in range(num_classes):
+                if other_idx != true_label:
+                    other_max = ub[other_idx]  # Maximum possible output for other class
+                    
+                    # If any other class can achieve higher output than true class minimum,
+                    # then adversarial examples exist within the input perturbation region
+                    if other_max >= correct_min:
+                        ACTLog.log_verification_info(f"Adversarial vulnerability detected: class {other_idx} "
+                                                   f"(max: {other_max:.4f}) can exceed true class {true_label} "
+                                                   f"(min: {correct_min:.4f})")
+                        return VerificationStatus.UNSAT
+            
+            # All other classes have maximum outputs below true class minimum - robustness proven
+            ACTLog.log_verification_info("Classification robustness verified: no adversarial examples possible")
+            return VerificationStatus.SAT
+
+        return VerificationStatus.UNKNOWN

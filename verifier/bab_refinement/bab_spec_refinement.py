@@ -376,8 +376,10 @@ class SpecRefinement:
             if hasattr(incomplete_verifier.spec.output_spec, 'labels') and incomplete_verifier.spec.output_spec.labels is not None:
                 true_label = incomplete_verifier.spec.output_spec.labels[0].item()
 
-            from abstract_constraint_solver.base_verifier import BaseVerifier
-            verdict = BaseVerifier._single_result_verdict(
+            from abstract_constraint_solver.interval.interval_verifier import IntervalVerifier
+            # Create a temporary IntervalVerifier instance to access the method
+            temp_verifier = IntervalVerifier(incomplete_verifier.dataset, 'interval', incomplete_verifier.spec, incomplete_verifier.device)
+            verdict = temp_verifier._evaluate_output_bounds(
                 concrete_output, concrete_output,
                 output_constraints,
                 true_label
