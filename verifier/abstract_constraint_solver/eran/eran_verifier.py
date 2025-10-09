@@ -14,24 +14,23 @@ import torch
 import subprocess
 
 from abstract_constraint_solver.base_verifier import BaseVerifier
-from input_parser.dataset import Dataset
 from input_parser.spec import Spec
 
 class ERANVerifier(BaseVerifier):
-    def __init__(self, dataset : Dataset, method, spec : Spec, device: str = 'cpu'):
-        super().__init__(dataset, spec, device)
+    def __init__(self, method, spec : Spec, device: str = 'cpu'):
+        super().__init__(spec, device)
 
         self.method = method
 
         print(f"🔍 [ERAN DEBUG] Input bounds info:")
-        print(f"input_lb shape: {self.input_lb.shape}")
-        print(f"input_ub shape: {self.input_ub.shape}")
-        print(f"input_lb unique values: {len(torch.unique(self.input_lb.view(-1)))}")
-        print(f"input_ub unique values: {len(torch.unique(self.input_ub.view(-1)))}")
-        print(f"input_lb range: [{self.input_lb.min():.6f}, {self.input_lb.max():.6f}]")
-        print(f"input_ub range: [{self.input_ub.min():.6f}, {self.input_ub.max():.6f}]")
-        print(f"input_lb first 10 values: {self.input_lb.view(-1)[:10].tolist()}")
-        print(f"input_ub first 10 values: {self.input_ub.view(-1)[:10].tolist()}")
+        print(f"input_lb shape: {self.spec.input_spec.input_lb.shape}")
+        print(f"input_ub shape: {self.spec.input_spec.input_ub.shape}")
+        print(f"input_lb unique values: {len(torch.unique(self.spec.input_spec.input_lb.view(-1)))}")
+        print(f"input_ub unique values: {len(torch.unique(self.spec.input_spec.input_ub.view(-1)))}")
+        print(f"input_lb range: [{self.spec.input_spec.input_lb.min():.6f}, {self.spec.input_spec.input_lb.max():.6f}]")
+        print(f"input_ub range: [{self.spec.input_spec.input_ub.min():.6f}, {self.spec.input_spec.input_ub.max():.6f}]")
+        print(f"input_lb first 10 values: {self.spec.input_spec.input_lb.view(-1)[:10].tolist()}")
+        print(f"input_ub first 10 values: {self.spec.input_spec.input_ub.view(-1)[:10].tolist()}")
         print(f"Dataset input center shape: {self.dataset.input_center.shape if hasattr(self.dataset, 'input_center') and self.dataset.input_center is not None else 'None'}")
         if hasattr(self.dataset, 'input_center') and self.dataset.input_center is not None:
             print(f"Dataset input center unique values: {len(torch.unique(self.dataset.input_center.view(-1)))}")

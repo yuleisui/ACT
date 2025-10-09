@@ -244,7 +244,6 @@ def test_baseVerifier_inheritance():
     
     # Test instantiation with ACT components
     verifier = TestVerifier(
-        dataset=components['dataset'],
         spec=components['spec'],
         device='cpu'
     )
