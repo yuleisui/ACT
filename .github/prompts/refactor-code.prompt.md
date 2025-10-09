@@ -6,7 +6,7 @@ Refactor the following Python code while fully preserving its external behaviour
 
 Requirements:
 - Improve **readability**, **structure**, and **maintainability**.  
-- Change functions or variables names if necessary to enhance clarity.
+- Make functions or variables names concise to enhance clarity.
 - Apply **consistent naming**, **type hints**, and **Google-style docstrings**.  
 - Remove **duplication**, **deep nesting**, and **unused variables/imports**.  
 - Update or add **function/method-level comments** at the beginning, summarising purpose and behaviour.  

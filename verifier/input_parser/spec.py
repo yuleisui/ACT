@@ -15,10 +15,10 @@ import sys
 
 from input_parser.dataset import Dataset
 from input_parser.model import Model
-from input_parser.type import LPNormType, SpecType, VerificationStatus
+from input_parser.type import LPNormType, SpecType, VerifyResult
 
 class BaseSpec:
-    def __init__(self, dataset : Dataset = None, model : Model = None, status: VerificationStatus = VerificationStatus.UNKNOWN):
+    def __init__(self, dataset : Dataset = None, model : Model = None, status: VerifyResult = VerifyResult.UNKNOWN):
         self.dataset = dataset
         self.model = model
 
