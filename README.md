@@ -2,7 +2,7 @@
 
 [![Continuous Integration (CI) Status](https://github.com/doctormeeee/Abstract-Constraint-Transformer/actions/workflows/ci.yml/badge.svg)](https://github.com/doctormeeee/Abstract-Constraint-Transformer/actions/workflows/ci.yml)
 
-A unified neural network verification framework that integrates multiple state-of-the-art verifiers including ERAN, αβ-CROWN, and the novel Hybrid Zonotope methods.
+An end-to-end neural network verification platform that supports refinement-based precision, diverse models, input formats, and specification types.
 
 ## Documentation
 
@@ -46,7 +46,4 @@ The verifier will run with the full-precision MILP Hybrid Zonotope and report SA
 
 ## License
 
-This project integrates multiple tools with different licenses:
-- ACT Framework: BSD 3-Clause
-- ERAN: Apache 2.0
-- αβ-CROWN: BSD 3-Clause
+ACT is licensed under GNU Affero General Public License v3.0 (AGPL-3.0).

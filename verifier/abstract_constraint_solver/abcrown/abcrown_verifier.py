@@ -18,14 +18,13 @@ import tempfile
 import yaml
 import json
 
-from abstract_constraint_solver.base_verifier import BaseVerifier
-from input_parser.dataset import Dataset
+from abstract_constraint_solver.interval.base_verifier import BaseVerifier
 from input_parser.spec import Spec
 from input_parser.type import SpecType
 
 class abCrownVerifier(BaseVerifier):
-    def __init__(self, dataset : Dataset, method, spec : Spec, device: str = 'cpu'):
-        super().__init__(dataset, spec, device)
+    def __init__(self, method, spec : Spec, device: str = 'cpu'):
+        super().__init__(spec, device)
         self.method = method
 
     def verify(self, proof, public_inputs):

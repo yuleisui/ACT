@@ -16,9 +16,9 @@ import time
 from typing import Optional, List
 
 
-from abstract_constraint_solver.base_verifier import BaseVerifier
+from abstract_constraint_solver.interval.base_verifier import BaseVerifier
 from util.stats import ACTStats
-from input_parser.dataset import Dataset
+from util.inference import perform_model_inference
 from input_parser.spec import Spec
 from input_parser.type import VerifyResult
 from onnx2pytorch.operations.flatten import Flatten as OnnxFlatten
@@ -34,14 +34,14 @@ except ImportError:
     AUTOLIRPA_AVAILABLE = False
 
 class HybridZonotopeVerifier(BaseVerifier):
-    def __init__(self, dataset: Dataset, method : str, spec: Spec, device: str = 'cpu',
+    def __init__(self, method : str, spec: Spec, device: str = 'cpu',
                  relaxation_ratio: float = 1.0, enable_generator_merging: bool = False, cosine_threshold: float = 0.95,
                  ci_mode: bool = False):
 
         from abstract_constraint_solver.hybridz.hybridz_transformers import HybridZonotopeElem
         self.HybridZonotopeElem = HybridZonotopeElem
 
-        super().__init__(dataset, spec, device)
+        super().__init__(spec, device)
 
         self.method = method
         self.device = device
@@ -92,7 +92,7 @@ class HybridZonotopeVerifier(BaseVerifier):
             print("Setting up auto_LiRPA BoundedModule...")
 
             self.bounded_model = BoundedModule(
-                self.model.pytorch_model,
+                self.spec.model.pytorch_model,
                 input_example,
                 device=self.device
             )
@@ -1445,7 +1445,7 @@ class HybridZonotopeVerifier(BaseVerifier):
         num_samples = self.input_center.shape[0] if self.input_center.ndim > 1 else 1
         print(f"Total samples: {num_samples}")
         print(f"Input center shape: {self.input_center.shape}")
-        print(f"Input boundary shapes: {self.input_lb.shape}, {self.input_ub.shape}")
+        print(f"Input boundary shapes: {self.spec.input_spec.input_lb.shape}, {self.spec.input_spec.input_ub.shape}")
 
         results = []
         for idx in range(num_samples):
@@ -1453,8 +1453,16 @@ class HybridZonotopeVerifier(BaseVerifier):
             print(f"\n🔍 Processing sample {idx+1}/{num_samples}")
             print("="*80)
 
-            center_input, true_label = self.extract_sample_input_and_label(idx)
-            if not self.validate_unperturbed_prediction(center_input, true_label, idx):
+            center_input, true_label = self.get_sample_label_pair(idx)
+            if not perform_model_inference(
+                model=self.spec.model.pytorch_model,
+                sample_tensor=center_input,
+                ground_truth_label=true_label,
+                input_adaptor=self.input_adaptor,
+                prediction_stats=self.clean_prediction_stats,
+                sample_index=idx,
+                verbose=self.verbose
+            ):
 
                 print(f"⏭️  Skipping verification for sample {idx+1}")
                 results.append(VerifyResult.CLEAN_FAILURE)
@@ -1463,15 +1471,15 @@ class HybridZonotopeVerifier(BaseVerifier):
             self.clean_prediction_stats['verification_attempted'] += 1
 
 
-            if self.input_lb.shape[0] == 1:
-                lb_i = self.input_lb[0] if self.input_lb.ndim > 1 else self.input_lb
-                ub_i = self.input_ub[0] if self.input_ub.ndim > 1 else self.input_ub
-            elif self.input_lb.shape[0] > idx:
-                lb_i = self.input_lb[idx]
-                ub_i = self.input_ub[idx]
+            if self.spec.input_spec.input_lb.shape[0] == 1:
+                lb_i = self.spec.input_spec.input_lb[0] if self.spec.input_spec.input_lb.ndim > 1 else self.spec.input_spec.input_lb
+                ub_i = self.spec.input_spec.input_ub[0] if self.spec.input_spec.input_ub.ndim > 1 else self.spec.input_spec.input_ub
+            elif self.spec.input_spec.input_lb.shape[0] > idx:
+                lb_i = self.spec.input_spec.input_lb[idx]
+                ub_i = self.spec.input_spec.input_ub[idx]
             else:
-                lb_i = self.input_lb[0] if self.input_lb.ndim > 1 else self.input_lb
-                ub_i = self.input_ub[0] if self.input_ub.ndim > 1 else self.input_ub
+                lb_i = self.spec.input_spec.input_lb[0] if self.spec.input_spec.input_lb.ndim > 1 else self.spec.input_spec.input_lb
+                ub_i = self.spec.input_spec.input_ub[0] if self.spec.input_spec.input_ub.ndim > 1 else self.spec.input_spec.input_ub
 
             if self.use_auto_lirpa:
                 input_example = (lb_i + ub_i) / 2.0

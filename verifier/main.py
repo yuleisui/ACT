@@ -37,7 +37,7 @@ from input_parser.spec import Spec, InputSpec, OutputSpec
 from input_parser.type import VerifyResult
 from abstract_constraint_solver.eran.eran_verifier import ERANVerifier
 from abstract_constraint_solver.abcrown.abcrown_verifier import abCrownVerifier
-from abstract_constraint_solver.interval.interval_verifier import IntervalVerifier
+from abstract_constraint_solver.interval.base_verifier import BaseVerifier
 from abstract_constraint_solver.hybridz.hybridz_verifier import HybridZonotopeVerifier
 
 def load_verifier_default_configs(verifier, method, dataset):
@@ -179,7 +179,7 @@ def main():
                              Please use \'mnist\', \'cifar10\' or \'acasxu\'.")
         if args_dict["enable_spec_refinement"]:
             print("⚠️  ERAN verifier is an external verifier, does not support specification refinement BaB, automatically disabled")
-        verifier = ERANVerifier(dataset, method, spec)
+        verifier = ERANVerifier(method, spec)
         verifier.verify(proof=None, public_inputs=None)
 
     elif verifier_type == 'abcrown' and method in ['alpha', 'beta', 'alpha_beta']: # TODO
@@ -194,13 +194,13 @@ def main():
 
         if args_dict["enable_spec_refinement"]:
             print("⚠️  abCrown verifier is an external verifier, does not support native specification refinement BaB, automatically disabled")
-        verifier = abCrownVerifier(dataset, method, spec)
+        verifier = abCrownVerifier(method, spec)
         verifier.verify(proof=None, public_inputs=None)
 
     elif verifier_type == 'interval':
         if method != 'interval':
             raise ValueError(f"Interval verifier only supports 'interval' method, got {method}.")
-        verifier = IntervalVerifier(dataset, method, spec)
+        verifier = BaseVerifier(spec)
 
         if args_dict["enable_spec_refinement"]:
             print("Enabling specification refinement BaB verification")
@@ -245,7 +245,7 @@ def main():
             if method == 'hybridz_relaxed':
                 print(f"hybridz_relaxed method using relaxation_ratio={relaxation_ratio}")
 
-        verifier = HybridZonotopeVerifier(dataset, method, spec, args_dict["device"],
+        verifier = HybridZonotopeVerifier(method, spec, args_dict["device"],
                                           relaxation_ratio,
                                           args_dict["enable_generator_merging"],
                                           args_dict["cosine_threshold"],
