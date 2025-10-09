@@ -26,7 +26,9 @@ verifier/
 │   │   └── hybridz_operations.py   # MILP/LP operations and optimization
 │   │
 │   └── interval/                   # ACT Interval verification module
-│       └── interval_verifier.py    # Interval arithmetic verification
+│       ├── bounds_propagation.py   # Interval bound propagation
+│       ├── outputs_evaluation.py   # Output bounds evaluation
+│       └── base_verifier.py        # Base verifier with interval verification
 │
 ├── input_parser/                    # Specification parsing and data handling
 │   ├── dataset.py                  # Dataset loading and preprocessing
@@ -103,10 +105,12 @@ verifier/
   - Gurobi license management and solver integration
 
 #### **`interval/` - ACT Interval Verification**
-- **`interval_verifier.py`**: Interval arithmetic verification
+- **`base_verifier.py`**: Base verifier class with interval verification
   - Standard interval arithmetic for neural network verification
   - Fast but potentially loose bound computation
   - Baseline verification method for comparison
+- **`bounds_propagation.py`**: Interval bound propagation implementation
+- **`outputs_evaluation.py`**: Output bounds evaluation utilities
 
 ### **`input_parser/` - Specification and Data Handling**
 - **`dataset.py`**: Dataset loading and preprocessing utilities

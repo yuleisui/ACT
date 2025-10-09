@@ -37,7 +37,7 @@ from input_parser.spec import Spec, InputSpec, OutputSpec
 from input_parser.type import VerifyResult
 from abstract_constraint_solver.eran.eran_verifier import ERANVerifier
 from abstract_constraint_solver.abcrown.abcrown_verifier import abCrownVerifier
-from abstract_constraint_solver.interval.interval_verifier import IntervalVerifier
+from abstract_constraint_solver.interval.base_verifier import BaseVerifier
 from abstract_constraint_solver.hybridz.hybridz_verifier import HybridZonotopeVerifier
 
 def load_verifier_default_configs(verifier, method, dataset):
@@ -200,7 +200,7 @@ def main():
     elif verifier_type == 'interval':
         if method != 'interval':
             raise ValueError(f"Interval verifier only supports 'interval' method, got {method}.")
-        verifier = IntervalVerifier(method, spec)
+        verifier = BaseVerifier(spec)
 
         if args_dict["enable_spec_refinement"]:
             print("Enabling specification refinement BaB verification")

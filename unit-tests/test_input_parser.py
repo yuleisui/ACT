@@ -22,7 +22,7 @@ def load_real_act_components():
     from input_parser.model import Model
     from input_parser.dataset import Dataset  
     from input_parser.spec import Spec, InputSpec, OutputSpec
-    from abstract_constraint_solver.base_verifier import BaseVerifier
+    from abstract_constraint_solver.interval.base_verifier import BaseVerifier
     
     # Exact parameters from main.py pattern
     args_dict = {

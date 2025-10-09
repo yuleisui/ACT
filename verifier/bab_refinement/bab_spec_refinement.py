@@ -452,11 +452,9 @@ class BaBRefinement:
             if hasattr(incomplete_verifier.spec.output_spec, 'labels') and incomplete_verifier.spec.output_spec.labels is not None:
                 true_label = incomplete_verifier.spec.output_spec.labels[0].item()
 
-            # Use temporary verifier to evaluate output bounds
-            from abstract_constraint_solver.interval.interval_verifier import IntervalVerifier
-            temp_verifier = IntervalVerifier('interval', 
-                                           incomplete_verifier.spec, incomplete_verifier.device)
-            verdict = temp_verifier._evaluate_output_bounds(
+            # Use output evaluation directly without temporary verifier
+            from abstract_constraint_solver.interval.outputs_evaluation import OutputsEvaluate
+            verdict = OutputsEvaluate.evaluate_output_bounds(
                 concrete_output, concrete_output, output_constraints, true_label
             )
 

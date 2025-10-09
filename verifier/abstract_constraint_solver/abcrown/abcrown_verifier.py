@@ -18,7 +18,7 @@ import tempfile
 import yaml
 import json
 
-from abstract_constraint_solver.base_verifier import BaseVerifier
+from abstract_constraint_solver.interval.base_verifier import BaseVerifier
 from input_parser.spec import Spec
 from input_parser.type import SpecType
 

@@ -16,8 +16,9 @@ import time
 from typing import Optional, List
 
 
-from abstract_constraint_solver.base_verifier import BaseVerifier
+from abstract_constraint_solver.interval.base_verifier import BaseVerifier
 from util.stats import ACTStats
+from util.inference import perform_model_inference
 from input_parser.spec import Spec
 from input_parser.type import VerifyResult
 from onnx2pytorch.operations.flatten import Flatten as OnnxFlatten
@@ -1453,7 +1454,15 @@ class HybridZonotopeVerifier(BaseVerifier):
             print("="*80)
 
             center_input, true_label = self.get_sample_label_pair(idx)
-            if not self.perform_model_inference(center_input, true_label, idx):
+            if not perform_model_inference(
+                model=self.spec.model.pytorch_model,
+                sample_tensor=center_input,
+                ground_truth_label=true_label,
+                input_adaptor=self.input_adaptor,
+                prediction_stats=self.clean_prediction_stats,
+                sample_index=idx,
+                verbose=self.verbose
+            ):
 
                 print(f"⏭️  Skipping verification for sample {idx+1}")
                 results.append(VerifyResult.CLEAN_FAILURE)
