@@ -31,8 +31,8 @@ import numpy as np
 
 from input_parser.dataset import Dataset
 from input_parser.spec import Spec
-from input_parser.type import VerificationStatus
-from bab_refinement.bab_spec_refinement import create_spec_refinement_core
+from input_parser.type import VerifyResult
+from bab_refinement.bab_spec_refinement import create_bab_refinement
 from util.stats import ACTLog
 
 class BaseVerifier:
@@ -443,8 +443,8 @@ class BaseVerifier:
         else:
             ACTLog.log_constraint_error(f"Unknown constraint type: {constraint_type}", self.verbose)
 
-    def _spec_refinement_verification(self, input_lb: torch.Tensor, input_ub: torch.Tensor, 
-                                    sample_idx: int = 0) -> VerificationStatus:
+    def _spec_refinement(self, input_lb: torch.Tensor, input_ub: torch.Tensor, 
+                        sample_idx: int = 0) -> VerifyResult:
         """
         Perform branch-and-bound verification using specification refinement.
         
@@ -454,11 +454,11 @@ class BaseVerifier:
             sample_idx: Sample index for logging (default: 0)
             
         Returns:
-            VerificationStatus from branch-and-bound search
+            VerifyResult from branch-and-bound search
         """
         ACTLog.log_bab_start(sample_idx)
 
-        spec_refinement = create_spec_refinement_core(
+        spec_refinement = create_bab_refinement(
             max_depth=self.bab_config['max_depth'],
             max_subproblems=self.bab_config['max_subproblems'],
             time_limit=self.bab_config['time_limit'],
@@ -476,6 +476,6 @@ class BaseVerifier:
             return result.status
         except Exception as e:
             ACTLog.log_bab_error(e)
-            return VerificationStatus.UNKNOWN
+            return VerifyResult.UNKNOWN
 
 

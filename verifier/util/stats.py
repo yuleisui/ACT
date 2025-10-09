@@ -141,7 +141,7 @@ class ACTStats:
         
         # Display verification result statistics if available
         if verification_result_stat_dict:
-            print("\n🔍 Verification Status Distribution:")
+            print("\n🔍 Verification VerifyResult Distribution:")
             for status, count in verification_result_stat_dict.items():
                 print(f"  {status}: {count}")
         
@@ -153,13 +153,13 @@ class ACTStats:
         Print final verification results summary and return the overall verdict.
         
         Args:
-            results: List of VerificationStatus for all verified samples
+            results: List of VerifyResult for all verified samples
             
         Returns:
-            Overall VerificationStatus (SAT if all safe, UNSAT if any unsafe, UNKNOWN otherwise)
+            Overall VerifyResult (SAT if all safe, UNSAT if any unsafe, UNKNOWN otherwise)
         """
-        # Import VerificationStatus locally to avoid circular imports
-        from abstract_constraint_solver.base_verifier import VerificationStatus
+        # Import VerifyResult locally to avoid circular imports
+        from input_parser.type import VerifyResult
         
         print("\n" + "🏆" + "="*70 + "🏆")
         print("📊 Final verification results summary")
@@ -170,10 +170,10 @@ class ACTStats:
 
         print("-" * 60)
 
-        sat_count = sum(1 for r in results if r == VerificationStatus.SAT)
-        unsat_count = sum(1 for r in results if r == VerificationStatus.UNSAT)
-        clean_failure_count = sum(1 for r in results if r == VerificationStatus.CLEAN_FAILURE)
-        unknown_count = sum(1 for r in results if r == VerificationStatus.UNKNOWN)
+        sat_count = sum(1 for r in results if r == VerifyResult.SAT)
+        unsat_count = sum(1 for r in results if r == VerifyResult.UNSAT)
+        clean_failure_count = sum(1 for r in results if r == VerifyResult.CLEAN_FAILURE)
+        unknown_count = sum(1 for r in results if r == VerifyResult.UNKNOWN)
         total_count = len(results)
 
         valid_count = total_count - clean_failure_count
@@ -204,14 +204,14 @@ class ACTStats:
 
         print("-" * 60)
 
-        if all(r == VerificationStatus.SAT for r in results):
-            final_result = VerificationStatus.SAT
+        if all(r == VerifyResult.SAT for r in results):
+            final_result = VerifyResult.SAT
             print("✅ Final Result: SAT - all samples verified safe")
-        elif any(r == VerificationStatus.UNSAT for r in results):
-            final_result = VerificationStatus.UNSAT
+        elif any(r == VerifyResult.UNSAT for r in results):
+            final_result = VerifyResult.UNSAT
             print("❌ Final Result: UNSAT - at least one sample violates the property")
         else:
-            final_result = VerificationStatus.UNKNOWN
+            final_result = VerifyResult.UNKNOWN
             print("❓ Final Result: UNKNOWN - inconclusive")
 
         print("🏆" + "="*70 + "🏆")

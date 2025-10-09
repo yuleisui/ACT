@@ -34,7 +34,7 @@ from util.options import get_parser
 from input_parser.model import Model
 from input_parser.dataset import Dataset
 from input_parser.spec import Spec, InputSpec, OutputSpec
-from input_parser.type import VerificationStatus
+from input_parser.type import VerifyResult
 from abstract_constraint_solver.eran.eran_verifier import ERANVerifier
 from abstract_constraint_solver.abcrown.abcrown_verifier import abCrownVerifier
 from abstract_constraint_solver.interval.interval_verifier import IntervalVerifier
@@ -221,9 +221,9 @@ def main():
             verifier.bab_config['enabled'] = False
 
         result = verifier.verify()
-        if result == VerificationStatus.SAT:
+        if result == VerifyResult.SAT:
             print("✅ The property is satisfied.")
-        elif result == VerificationStatus.UNSAT:
+        elif result == VerifyResult.UNSAT:
             print("❌ The property is not satisfied.")
         else:
             print("❓ The property status is unknown.")
@@ -277,9 +277,9 @@ def main():
         result = verifier.verify()
         end_time = time.time()
         print(f"⏱️  Total verification time: {end_time - start_time:.2f} seconds")
-        if result == VerificationStatus.SAT:
+        if result == VerifyResult.SAT:
             print("✅ The property is satisfied.")
-        elif result == VerificationStatus.UNSAT:
+        elif result == VerifyResult.UNSAT:
             print("❌ The property is not satisfied.")
         else:
             print("❓ The property status is unknown.")

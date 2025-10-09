@@ -19,7 +19,7 @@ class SplitType(Enum):
     RELU_SR = "relu_babsr"
     RELU_CE = "relu_ce"
 
-class VerificationStatus(Enum):
+class VerifyResult(Enum):
     SAT = "satisfiable"
     UNSAT = "unsatisfiable"
     CLEAN_FAILURE = "clean_failure"
@@ -30,7 +30,6 @@ class VerificationStatus(Enum):
 class SpecType(Enum):
     LOCAL_LP = "local_lp"
     LOCAL_VNNLIB = "local_vnnlib"
-
     SET_VNNLIB = "set_vnnlib"
     SET_BOX = "set_box"
 

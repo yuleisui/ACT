@@ -20,7 +20,7 @@ from abstract_constraint_solver.base_verifier import BaseVerifier
 from util.stats import ACTStats
 from input_parser.dataset import Dataset
 from input_parser.spec import Spec
-from input_parser.type import VerificationStatus
+from input_parser.type import VerifyResult
 from onnx2pytorch.operations.flatten import Flatten as OnnxFlatten
 from onnx2pytorch.operations.base import OperatorWrapper
 from abstract_constraint_solver.hybridz.hybridz_transformers import HybridZonotopeGrid, HybridZonotopeElem
@@ -1300,7 +1300,7 @@ class HybridZonotopeVerifier(BaseVerifier):
                                   output_lbs: torch.Tensor,
                                   output_ubs: torch.Tensor,
                                   output_constraints: Optional[List[List[float]]],
-                                  true_label: Optional[int]) -> VerificationStatus:
+                                  true_label: Optional[int]) -> VerifyResult:
 
         if output_constraints is not None:
             print(f"HZ verification: processing linear constraints ({len(output_constraints)} constraints)")
@@ -1309,20 +1309,20 @@ class HybridZonotopeVerifier(BaseVerifier):
                 b = row[-1]
                 worst = torch.sum(torch.where(a>=0, a*output_lbs, a*output_ubs)) + b
                 if worst < 0:
-                    return VerificationStatus.UNSAT
-            return VerificationStatus.SAT
+                    return VerifyResult.UNSAT
+            return VerifyResult.SAT
 
         if true_label is not None:
             print(f"HZ verification: using two-stage verification strategy (conservative judgment first, then precise difference)")
             return self._classify_with_two_stage_strategy_hz(output_hz, output_lbs, output_ubs, true_label)
 
-        return VerificationStatus.UNKNOWN
+        return VerifyResult.UNKNOWN
 
-    def _classify_with_two_stage_strategy_hz(self, output_hz, output_lbs: torch.Tensor, output_ubs: torch.Tensor, true_label: int) -> VerificationStatus:
+    def _classify_with_two_stage_strategy_hz(self, output_hz, output_lbs: torch.Tensor, output_ubs: torch.Tensor, true_label: int) -> VerifyResult:
 
         if len(output_lbs) <= true_label:
             print(f"❌ true_label {true_label} exceeds output dimension {len(output_lbs)}")
-            return VerificationStatus.UNKNOWN
+            return VerifyResult.UNKNOWN
 
         num_outputs = len(output_lbs)
         print(f"🔍 Starting two-stage HZ verification: true_label={true_label}, num_outputs={num_outputs}")
@@ -1344,16 +1344,16 @@ class HybridZonotopeVerifier(BaseVerifier):
 
         if conservative_safe:
             print(f"✅ Stage 1 success: true_label lower bound greater than all other neuron upper bounds, directly judged robust")
-            return VerificationStatus.SAT
+            return VerifyResult.SAT
 
         print(f"🔍 Stage 2: Precise difference verification (ERAN style)")
         return self._classify_with_difference_bounds_hz(output_hz, true_label)
 
-    def _classify_with_difference_bounds_hz(self, output_hz, true_label: int) -> VerificationStatus:
+    def _classify_with_difference_bounds_hz(self, output_hz, true_label: int) -> VerifyResult:
 
         if output_hz.G_c.shape[0] <= true_label:
             print(f"❌ true_label {true_label} exceeds output dimension {output_hz.G_c.shape[0]}")
-            return VerificationStatus.UNKNOWN
+            return VerifyResult.UNKNOWN
 
         num_outputs = output_hz.G_c.shape[0]
         print(f"🔍 Starting HZ difference verification: true_label={true_label}, num_outputs={num_outputs}")
@@ -1381,19 +1381,19 @@ class HybridZonotopeVerifier(BaseVerifier):
 
                 if diff_lb_val <= 0:
                     print(f"❌ Difference output[{true_label}] - output[{j}] lower bound <= 0: {diff_lb_val:.6f}")
-                    return VerificationStatus.UNSAT
+                    return VerifyResult.UNSAT
                 else:
                     print(f"✅ Difference output[{true_label}] - output[{j}] lower bound > 0: {diff_lb_val:.6f}")
 
             except Exception as e:
                 print(f"⚠️  Error constructing difference zonotope: {e}")
                 print(f"Cannot complete HZ difference verification, returning UNKNOWN")
-                return VerificationStatus.UNKNOWN
+                return VerifyResult.UNKNOWN
 
         print(f"✅ All HZ difference verifications passed")
-        return VerificationStatus.SAT
+        return VerifyResult.SAT
 
-    def _abstract_constraint_solving(self, input_lb: torch.Tensor, input_ub: torch.Tensor, sample_idx: int) -> VerificationStatus:
+    def _abstract_constraint_solving(self, input_lb: torch.Tensor, input_ub: torch.Tensor, sample_idx: int) -> VerifyResult:
 
         print(f"Creating HybridZonotope abstract domain")
         self.input_hz = HybridZonotopeGrid(
@@ -1414,7 +1414,7 @@ class HybridZonotopeVerifier(BaseVerifier):
         else:
 
             print(f"❌ Verification core returned abnormal value")
-            return VerificationStatus.UNKNOWN
+            return VerifyResult.UNKNOWN
 
         self.enforce_neuron_activation_constraints()
 
@@ -1428,7 +1428,7 @@ class HybridZonotopeVerifier(BaseVerifier):
             )
         else:
 
-            verdict = VerificationStatus.UNKNOWN
+            verdict = VerifyResult.UNKNOWN
 
         print(f"📊 Verification result: {verdict.name}")
         return verdict
@@ -1457,7 +1457,7 @@ class HybridZonotopeVerifier(BaseVerifier):
             if not self.validate_unperturbed_prediction(center_input, true_label, idx):
 
                 print(f"⏭️  Skipping verification for sample {idx+1}")
-                results.append(VerificationStatus.CLEAN_FAILURE)
+                results.append(VerifyResult.CLEAN_FAILURE)
                 continue
 
             self.clean_prediction_stats['verification_attempted'] += 1
@@ -1504,18 +1504,18 @@ class HybridZonotopeVerifier(BaseVerifier):
             print("Step 1: HybridZonotope abstract constraint solving")
             initial_verdict = self._abstract_constraint_solving(lb_i, ub_i, idx)
 
-            if initial_verdict == VerificationStatus.SAT:
+            if initial_verdict == VerifyResult.SAT:
                 self.clean_prediction_stats['verification_sat'] += 1
 
                 print(f"✅ HybridZonotope verification successful - sample {idx+1} is safe")
                 results.append(initial_verdict)
                 continue
-            elif initial_verdict == VerificationStatus.UNSAT:
+            elif initial_verdict == VerifyResult.UNSAT:
                 self.clean_prediction_stats['verification_unsat'] += 1
             else:
                 self.clean_prediction_stats['verification_unknown'] += 1
 
-            if initial_verdict == VerificationStatus.UNSAT:
+            if initial_verdict == VerifyResult.UNSAT:
                 print(f"❌ HybridZonotope found potential violation - sample {idx+1}")
             else:
                 print(f"❓ HybridZonotope result uncertain - sample {idx+1}")
@@ -1525,7 +1525,7 @@ class HybridZonotopeVerifier(BaseVerifier):
 
             if self.bab_config['enabled']:
 
-                refinement_verdict = self._spec_refinement_verification(lb_i, ub_i, idx)
+                refinement_verdict = self._spec_refinement(lb_i, ub_i, idx)
                 results.append(refinement_verdict)
             else:
                 print("⚠️  BaB not enabled, returning initial verdict")
