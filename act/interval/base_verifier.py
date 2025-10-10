@@ -1,4 +1,4 @@
-#===- verifier.base_verifier.py the basic verification class --------------#
+#===- act.interval.base_verifier.py - Base Verifier ----#
 #
 #                 ACT: Abstract Constraints Transformer
 #
@@ -32,7 +32,7 @@ import numpy as np
 from input_parser.spec import Spec
 from input_parser.type import VerifyResult
 from input_parser.adaptor import InputAdaptor
-from bab_refinement.bab_spec_refinement import create_bab_refinement
+from refinement.bab_spec_refinement import create_bab_refinement
 from util.stats import ACTLog, ACTStats
 from util.inference import perform_model_inference
 from .bounds_propagation import BoundsPropagate

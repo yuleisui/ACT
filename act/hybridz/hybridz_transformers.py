@@ -16,7 +16,7 @@ import sys
 import psutil
 import time
 
-from abstract_constraint_solver.hybridz.hybridz_operations import HybridZonotopeOps
+from hybridz.hybridz_operations import HybridZonotopeOps
 from util.stats import ACTStats
 
 def setup_gurobi_license():

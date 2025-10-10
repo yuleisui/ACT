@@ -1205,7 +1205,7 @@ class HybridZonotopeOps:
     @staticmethod
     def DoubleTangentsHybridZ(activation : str, x1 : float, x2 : float, dtype=torch.float32, device='cpu'):
         
-        from abstract_constraint_solver.hybridz.hybridz_transformers import HybridZonotopeElem
+        from hybridz.hybridz_transformers import HybridZonotopeElem
 
         if activation == 'tanh':
             f_x1 = torch.tanh(torch.tensor(x1))
@@ -1247,13 +1247,13 @@ class HybridZonotopeOps:
         new_G_c = torch.tensor([[G_x11, G_x21], [G_x12, G_x22]], dtype=dtype, device=device)
 
         
-        from abstract_constraint_solver.hybridz.hybridz_transformers import HybridZonotopeElem
+        from hybridz.hybridz_transformers import HybridZonotopeElem
         return HybridZonotopeElem(new_center, new_G_c, method='hybridz', dtype=dtype, device=device)
 
     @staticmethod
     def SingleTangentHybridZ(activation : str, x1 : float, x2 : float, dtype=torch.float32, device='cpu'):
         
-        from abstract_constraint_solver.hybridz.hybridz_transformers import HybridZonotopeElem
+        from hybridz.hybridz_transformers import HybridZonotopeElem
 
         if activation == 'tanh':
             f_x1 = torch.tanh(torch.tensor(x1))
@@ -1283,7 +1283,7 @@ class HybridZonotopeOps:
         new_G_c = torch.tensor([[G_x11, G_x21], [G_x12, G_x22]], dtype=dtype, device=device)
 
           
-        from abstract_constraint_solver.hybridz.hybridz_transformers import HybridZonotopeElem
+        from hybridz.hybridz_transformers import HybridZonotopeElem
         return HybridZonotopeElem(new_center, new_G_c, method='hybridz', dtype=dtype, device=device)
 
     @staticmethod
@@ -1350,7 +1350,7 @@ class HybridZonotopeOps:
         else:
             raise ValueError(f"Unsupported center_grid shape: {hz.center_grid.shape}. Expected 4D or 5D tensor.")
 
-        from abstract_constraint_solver.hybridz.hybridz_transformers import HybridZonotopeElem
+        from hybridz.hybridz_transformers import HybridZonotopeElem
         return HybridZonotopeElem(flat_center, flat_G_c, flat_G_b, hz.A_c_tensor, hz.A_b_tensor, hz.b_tensor,
                                   method=hz.method, time_limit=hz.time_limit, relaxation_ratio=hz.relaxation_ratio,
                                   dtype=hz.dtype, device=hz.device)
@@ -1437,7 +1437,7 @@ class HybridZonotopeOps:
         new_Gb = output_filter @ new_Gb
 
         
-        from abstract_constraint_solver.hybridz.hybridz_transformers import HybridZonotopeElem
+        from hybridz.hybridz_transformers import HybridZonotopeElem
         return HybridZonotopeElem(new_center, new_Gc, new_Gb, new_Ac, new_Ab, new_b,
                                   method=input_hz.method, time_limit=input_hz.time_limit,
                                   dtype=input_hz.dtype, device=input_hz.device)
@@ -1570,7 +1570,7 @@ class HybridZonotopeOps:
         ACTStats.print_memory_usage("Intersection completed")
 
         
-        from abstract_constraint_solver.hybridz.hybridz_transformers import HybridZonotopeElem
+        from hybridz.hybridz_transformers import HybridZonotopeElem
         return HybridZonotopeElem(new_center, new_Gc, new_Gb, new_Ac, new_Ab, new_b,
                                   method=input_hz.method, time_limit=input_hz.time_limit,
                                   dtype=input_hz.dtype, device=input_hz.device)
@@ -1602,7 +1602,7 @@ class HybridZonotopeOps:
         )
 
         
-        from abstract_constraint_solver.hybridz.hybridz_transformers import HybridZonotopeGrid
+        from hybridz.hybridz_transformers import HybridZonotopeGrid
         return HybridZonotopeGrid(center_grid, G_c_grid, G_b_grid, new_Ac, new_Ab, new_b,
                                   method=input_hz.method, time_limit=input_hz.time_limit, relaxation_ratio=input_hz.relaxation_ratio,
                                   dtype=input_hz.dtype, device=input_hz.device)

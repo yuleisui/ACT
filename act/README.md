@@ -1,15 +1,15 @@
-# Verifier Directory
+# ACT Directory
 
 This directory contains the core verification framework and interfaces for the Abstract Constraint Transformer (ACT) system. It provides unified access to multiple verification backends including ACT native methods, ERAN, and αβ-CROWN through a hierarchical modular architecture.
 
 ## Directory Structure
 
 ```
-verifier/
+act/
 ├── main.py                         # Main unified verification interface
 ├── path_config.py                  # Centralized path configuration
 │
-├── abstract_constraint_solver/     # Verification algorithm implementations
+├── wrapper_external_verifiers/     # Verification algorithm implementations
 │   ├── base_verifier.py            # Base verifier class and common functionality
 │   │
 │   ├── abcrown/                    # αβ-CROWN integration module
@@ -37,7 +37,7 @@ verifier/
 │   ├── type.py                     # Type definitions and data structures
 │   └── vnnlib_parser.py            # VNNLIB format parser
 │
-└── bab_refinement/                 # Advanced refinement algorithms
+└── refinement/                     # Advanced refinement algorithms
     └── bab_spec_refinement.py      # Branch-and-bound specification refinement
 ```
 
@@ -55,7 +55,7 @@ verifier/
   - Provides consistent import resolution for hierarchical structure
   - Enables clean absolute imports throughout the codebase
 
-### **`abstract_constraint_solver/` - Verification Algorithms**
+### **`wrapper_external_verifiers/` - Verification Algorithms**
 
 #### **Base Framework**
 - **`base_verifier.py`**: Base verifier class and common functionality
@@ -143,7 +143,7 @@ verifier/
   - Integration bridge for external verification tool compatibility
   - Comprehensive error handling for malformed specifications
 
-### **`bab_refinement/` - Advanced Refinement**
+### **`refinement/` - Advanced Refinement**
 - **`bab_spec_refinement.py`**: Branch-and-bound specification refinement
   - Prototype BaB-based specification refinement system
   - Automatic refinement when initial verification returns UNKNOWN/UNSAT
@@ -158,7 +158,7 @@ The hierarchical modular architecture provides several key advantages:
 ### **Modular Design**
 - **Clear Separation**: Each verification algorithm isolated in dedicated modules
 - **Independent Development**: Modules can be developed, tested, and maintained separately
-- **Easy Extension**: Add new verifiers by creating new modules in `abstract_constraint_solver/`
+- **Easy Extension**: Add new verifiers by creating new modules in `wrapper_external_verifiers/`
 - **Clean Dependencies**: Centralized path management eliminates import complexity
 
 ### **Configuration Management**

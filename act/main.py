@@ -1,27 +1,45 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-##############################################################################
-##   Abstract Constraint Transformer (ACT) - Main Entry Point               ##
-##                                                                          ##
-##   doctormeeee (https://github.com/doctormeeee) and contributors          ##
-##   Copyright (C) 2024-2025                                                ##
-##                                                                          ##
-##   This program integrates multiple neural network verification           ##
-##   tools and provides novel hybrid zonotope verification methods.         ##
-##                                                                          ##
-##   External tool compatibility parameters are adapted from:               ##
-##   - α,β-CROWN: https://github.com/Verified-Intelligence/alpha-beta-CROWN ##
-##     Copyright (C) 2021-2025 The α,β-CROWN Team                           ##
-##     Licensed under BSD 3-Clause License                                  ##
-##   - ERAN: https://github.com/eth-sri/eran                                ##
-##     Copyright ETH Zurich, Licensed under Apache 2.0 License              ##
-##                                                                          ##
-##   This integration enables unified command-line interface across         ##
-##   different verification backends while maintaining ACT's native         ##
-##   capabilities and novel contributions.                                  ##
-##                                                                          ##
-##############################################################################
+#===- act.main.py - ACT Main Entry Point -----------------------------====#
+#
+#                 ACT: Abstract Constraints Transformer
+#
+# Copyright (C) <2025->  ACT Team
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Main unified verification framework via the Abstract Constraint Transformer
+#   (ACT) system. 
+#   Supports multiple front-ends (to process models, inputs, specs) and 
+#   backends for ACT's verifications and optimizations.
+#
+# External tool compatibility:
+#   - α,β-CROWN: https://github.com/Verified-Intelligence/alpha-beta-CROWN
+#     Copyright (C) 2021-2025 The α,β-CROWN Team
+#     Licensed under BSD 3-Clause License
+#   - ERAN: https://github.com/eth-sri/eran
+#     Copyright ETH Zurich, Licensed under Apache 2.0 License
+#
+# This integration enables unified command-line interface across different
+# verification backends while maintaining ACT's native capabilities and
+# contributions.
+#
+#===---------------------------------------------------------------------===#
 import sys
 import time
 import os
@@ -35,10 +53,10 @@ from input_parser.model import Model
 from input_parser.dataset import Dataset
 from input_parser.spec import Spec, InputSpec, OutputSpec
 from input_parser.type import VerifyResult
-from abstract_constraint_solver.eran.eran_verifier import ERANVerifier
-from abstract_constraint_solver.abcrown.abcrown_verifier import abCrownVerifier
-from abstract_constraint_solver.interval.base_verifier import BaseVerifier
-from abstract_constraint_solver.hybridz.hybridz_verifier import HybridZonotopeVerifier
+from wrapper_external_verifiers.eran.eran_verifier import ERANVerifier
+from wrapper_external_verifiers.abcrown.abcrown_verifier import abCrownVerifier
+from interval.base_verifier import BaseVerifier
+from hybridz.hybridz_verifier import HybridZonotopeVerifier
 
 def load_verifier_default_configs(verifier, method, dataset):
     if not verifier or not dataset:
