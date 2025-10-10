@@ -1,0 +1,68 @@
+[
+  {
+    "operation_name": "linear_small",
+    "input_size": 50,
+    "iterations": 1000,
+    "total_time_ms": 74.27114696474746,
+    "avg_time_per_operation_ms": 0.07427114696474746,
+    "memory_peak_mb": 0.0,
+    "memory_cleanups": 9,
+    "numerical_warnings": 0,
+    "stability_issues": 0
+  },
+  {
+    "operation_name": "linear_medium",
+    "input_size": 100,
+    "iterations": 500,
+    "total_time_ms": 38.81145501509309,
+    "avg_time_per_operation_ms": 0.07762291003018618,
+    "memory_peak_mb": 0.0,
+    "memory_cleanups": 4,
+    "numerical_warnings": 0,
+    "stability_issues": 0
+  },
+  {
+    "operation_name": "linear_large",
+    "input_size": 200,
+    "iterations": 100,
+    "total_time_ms": 1879.0851529920474,
+    "avg_time_per_operation_ms": 18.790851529920474,
+    "memory_peak_mb": 0.0,
+    "memory_cleanups": 0,
+    "numerical_warnings": 0,
+    "stability_issues": 0
+  },
+  {
+    "operation_name": "relu_small",
+    "input_size": 50,
+    "iterations": 2000,
+    "total_time_ms": 84.87701299600303,
+    "avg_time_per_operation_ms": 0.042438506498001516,
+    "memory_peak_mb": 0.0,
+    "memory_cleanups": 19,
+    "numerical_warnings": 4000,
+    "stability_issues": 0
+  },
+  {
+    "operation_name": "relu_medium",
+    "input_size": 100,
+    "iterations": 1000,
+    "total_time_ms": 44.23048801254481,
+    "avg_time_per_operation_ms": 0.04423048801254481,
+    "memory_peak_mb": 0.0,
+    "memory_cleanups": 9,
+    "numerical_warnings": 2000,
+    "stability_issues": 0
+  },
+  {
+    "operation_name": "relu_large",
+    "input_size": 200,
+    "iterations": 500,
+    "total_time_ms": 21.433265006635338,
+    "avg_time_per_operation_ms": 0.042866530013270676,
+    "memory_peak_mb": 0.0,
+    "memory_cleanups": 4,
+    "numerical_warnings": 1000,
+    "stability_issues": 0
+  }
+]

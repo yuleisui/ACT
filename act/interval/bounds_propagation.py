@@ -29,9 +29,10 @@ import torch
 import torch.nn as nn
 from typing import Tuple, Optional
 
-from util.stats import ACTLog
-from util.device import DeviceManager
-from interval.bounds_prop_helper import (
+from act.util.stats import ACTLog
+from act.util.device import DeviceManager
+from act.util.bounds import Bounds, WeightDecomposer
+from act.interval.bounds_prop_helper import (
     BoundsPropMetadata, 
     BoundsPropagationMetadata, 
     IntervalPropagationError,
@@ -74,8 +75,14 @@ class BoundsPropagate:
         
         # Always keep device manager available for essential functionality
         self.device_manager = DeviceManager()
+        
+        # Track ReLU layers for constraint application  
+        self.relu_layer_index = 0
+        
+        # Weight decomposition cache for performance optimization
+        self.weight_decomposer = WeightDecomposer()
     
-    def propagate_bounds(self, model: nn.Module, input_lb: torch.Tensor, input_ub: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, BoundsPropagationMetadata]:
+    def propagate_bounds(self, model: nn.Module, input_lb: torch.Tensor, input_ub: torch.Tensor) -> Tuple[Bounds, BoundsPropagationMetadata]:
         """
         Propagate interval bounds through the neural network model.
         
@@ -88,9 +95,8 @@ class BoundsPropagate:
             input_ub: Upper bounds for input (same shape as model input)
             
         Returns:
-            Tuple of (output_lb, output_ub, metadata):
-                - output_lb: Lower bounds of model output
-                - output_ub: Upper bounds of model output  
+            Tuple of (output_bounds, metadata):
+                - output_bounds: Bounds object containing output lower and upper bounds
                 - metadata: Detailed propagation metadata from BoundsPropMetadata
                 
         Raises:
@@ -106,48 +112,44 @@ class BoundsPropagate:
         self.metadata_tracker.start_propagation()
         
         # Ensure device consistency and create working copies (always needed)
-        lb, ub = self.device_manager.ensure_device_consistency(model, input_lb.clone(), input_ub.clone())
+        input_lb_clean, input_ub_clean = self.device_manager.ensure_device_consistency(model, input_lb.clone(), input_ub.clone())
+        
+        # Create initial bounds object
+        bounds = Bounds(input_lb_clean, input_ub_clean)
         
         ACTLog.log_verification_info("Starting interval bound propagation through network layers")
         
-        # Track ReLU layers separately for constraint application
-        relu_count = 0
+        # Reset ReLU layer index for this propagation
+        self.relu_layer_index = 0
         
         for idx, layer in enumerate(model.children()):
             ACTLog.log_verification_info(f"Processing layer {idx}: {type(layer).__name__}")
             
             try:
                 # Perform essential bounds validation and optional tracking
-                self.metadata_tracker.validate_bounds_essential(lb, ub, idx)
-                self.metadata_tracker.process_layer(layer, idx, lb, ub)
+                self.metadata_tracker.validate_bounds_essential(bounds.lb, bounds.ub, idx)
+                self.metadata_tracker.process_layer(layer, idx, bounds.lb, bounds.ub)
                 
                 if isinstance(layer, nn.Linear):
-                    lb, ub = self._handle_linear(layer, lb, ub, idx)
-                    self.metadata_tracker.validate_layer_output(lb, ub, idx, "Linear")
+                    bounds = self._handle_linear(layer, bounds, idx)
                 elif isinstance(layer, nn.Conv2d):
-                    lb, ub = self._handle_conv2d(layer, lb, ub, idx)
-                    self.metadata_tracker.validate_layer_output(lb, ub, idx, "Conv2d")
-                elif isinstance(layer, nn.ReLU):
-                    lb, ub = self._handle_relu(layer, lb, ub, relu_count)
-                    self.metadata_tracker.validate_layer_output(lb, ub, idx, "ReLU")
-                    relu_count += 1
-                    # Track ReLU constraints application
-                    if relu_count <= len(self.current_relu_constraints):
-                        self.metadata_tracker.track_constraint_application()
-                elif isinstance(layer, (nn.Sigmoid, nn.MaxPool2d)):
-                    lb, ub = self._handle_activation(layer, lb, ub)
-                    self.metadata_tracker.validate_layer_output(lb, ub, idx, f"Activation({type(layer).__name__})")
+                    bounds = self._handle_conv2d(layer, bounds, idx)
+                elif isinstance(layer, (nn.ReLU, nn.Sigmoid, nn.MaxPool2d)):
+                    bounds = self._handle_activation(layer, bounds)
                 elif isinstance(layer, (nn.Flatten, OnnxFlatten, OnnxReshape, OnnxSqueeze, OnnxUnsqueeze, OnnxTranspose)):
-                    lb, ub = self._handle_structural(layer, lb, ub)
-                    self.metadata_tracker.validate_layer_output(lb, ub, idx, f"Structural({type(layer).__name__})")
+                    bounds = self._handle_structural(layer, bounds)
                 elif isinstance(layer, nn.BatchNorm2d):
-                    lb, ub = self._handle_batchnorm(layer, lb, ub)
-                    self.metadata_tracker.validate_layer_output(lb, ub, idx, "BatchNorm2d")
+                    bounds = self._handle_batchnorm(layer, bounds)
                 elif isinstance(layer, (OnnxAdd, OnnxDiv, OnnxClip, OperatorWrapper)):
-                    lb, ub = self._handle_onnx_op(layer, lb, ub)
-                    self.metadata_tracker.validate_layer_output(lb, ub, idx, f"ONNX({type(layer).__name__})")
+                    bounds = self._handle_onnx_op(layer, bounds)
                 else:
                     raise UnsupportedLayerError(f"Layer type {type(layer)} not supported in interval propagation")
+                
+                # Validate layer output once for all layer types (determines category internally)
+                self.metadata_tracker.validate_layer_output(bounds.lb, bounds.ub, idx, layer)
+                
+                # Finalize layer processing for timing and memory tracking
+                self.metadata_tracker.finalize_layer_processing(idx)
                     
             except (NumericalInstabilityError, InvalidBoundsError) as e:
                 self.metadata_tracker.track_numerical_warning(f"Layer {idx} error: {e}")
@@ -157,20 +159,21 @@ class BoundsPropagate:
             
             # Log progress periodically
             if idx % 10 == 0 or idx < 5:
-                ACTLog.log_verification_info(f"Layer {idx} completed: bounds shape {lb.shape}")
+                ACTLog.log_verification_info(f"Layer {idx} completed: bounds shape {bounds.shape}")
         
         ACTLog.log_verification_info("Interval bound propagation completed successfully")
         
         # Finalize propagation and collect comprehensive metadata
-        metadata = self.metadata_tracker.finalize_propagation(lb)
-        return lb, ub, metadata
+        metadata = self.metadata_tracker.finalize_propagation(bounds.lb)
+        return bounds, metadata
 
     # =============================================================================
     # LAYER HANDLING METHODS - NEURAL NETWORK LAYERS
     # =============================================================================
 
-    def _handle_linear(self, layer: nn.Linear, lb: torch.Tensor, ub: torch.Tensor, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _handle_linear(self, layer: nn.Linear, bounds: Bounds, idx: int) -> Bounds:
         """Handle linear layer using weight decomposition for tight interval arithmetic."""
+        # Direct weight decomposition for optimal performance
         weight = layer.weight
         bias = layer.bias
         
@@ -178,117 +181,122 @@ class BoundsPropagate:
         w_pos = torch.clamp(weight, min=0)
         w_neg = torch.clamp(weight, max=0)
         
+        # Cache attribute access for performance
+        lb = bounds.lb
+        ub = bounds.ub
+        
         # Apply interval arithmetic: W+ uses same-sign bounds, W- uses opposite-sign bounds
-        next_lb = torch.matmul(w_pos, lb) + torch.matmul(w_neg, ub)
-        next_ub = torch.matmul(w_pos, ub) + torch.matmul(w_neg, lb)
+        new_lb = torch.matmul(w_pos, lb) + torch.matmul(w_neg, ub)
+        new_ub = torch.matmul(w_pos, ub) + torch.matmul(w_neg, lb)
         
         if bias is not None:
-            next_lb += bias
-            next_ub += bias
+            new_lb += bias
+            new_ub += bias
         
-        ACTLog.log_verification_info(f"Linear layer processed: output shape {next_lb.shape}")
-        return next_lb, next_ub
+        result_bounds = Bounds(new_lb, new_ub, validate=False)
+        ACTLog.log_verification_info(f"Linear layer processed: output shape {result_bounds.shape}")
+        return result_bounds
 
-    def _handle_conv2d(self, layer: nn.Conv2d, lb: torch.Tensor, ub: torch.Tensor, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _handle_conv2d(self, layer: nn.Conv2d, bounds: Bounds, idx: int) -> Bounds:
         """Handle 2D convolution layer with interval arithmetic using weight decomposition."""
-        weight = layer.weight
-        bias = layer.bias
-        stride = layer.stride
-        padding = layer.padding
+        # Use cached weight decomposition for performance
+        w_pos, w_neg = self.weight_decomposer.decompose(layer.weight)
         
-        w_pos = torch.clamp(weight, min=0)
-        w_neg = torch.clamp(weight, max=0)
+        # Inline convolution with interval arithmetic
+        weight, bias = layer.weight, layer.bias
+        stride, padding = layer.stride, layer.padding
         
-        # Apply convolution with interval bounds (add batch dimension)
-        next_lb = (
-            nn.functional.conv2d(lb.unsqueeze(0), w_pos, None, stride, padding) +
-            nn.functional.conv2d(ub.unsqueeze(0), w_neg, None, stride, padding)
-        ).squeeze(0)
+        # Ensure input has batch dimension for conv2d
+        lb_input = bounds.lb if bounds.lb.dim() == 4 else bounds.lb.unsqueeze(0)
+        ub_input = bounds.ub if bounds.ub.dim() == 4 else bounds.ub.unsqueeze(0)
         
-        next_ub = (
-            nn.functional.conv2d(ub.unsqueeze(0), w_pos, None, stride, padding) +
-            nn.functional.conv2d(lb.unsqueeze(0), w_neg, None, stride, padding)
-        ).squeeze(0)
+        # Apply convolution with interval bounds
+        new_lb = (
+            nn.functional.conv2d(lb_input, w_pos, None, stride, padding) +
+            nn.functional.conv2d(ub_input, w_neg, None, stride, padding)
+        )
+        
+        new_ub = (
+            nn.functional.conv2d(ub_input, w_pos, None, stride, padding) +
+            nn.functional.conv2d(lb_input, w_neg, None, stride, padding)
+        )
+        
+        # Remove batch dimension if it was added
+        if bounds.lb.dim() == 3:
+            new_lb = new_lb.squeeze(0)
+            new_ub = new_ub.squeeze(0)
         
         if bias is not None:
-            next_lb += bias.view(-1, 1, 1)
-            next_ub += bias.view(-1, 1, 1)
+            bias_shape = [-1] + [1] * (new_lb.dim() - 1)
+            new_lb += bias.view(*bias_shape)
+            new_ub += bias.view(*bias_shape)
         
-        ACTLog.log_verification_info(f"Conv2d layer processed: output shape {next_lb.shape}")
-        return next_lb, next_ub
+        result_bounds = Bounds(new_lb, new_ub, validate=False)
+        ACTLog.log_verification_info(f"Conv2d layer processed: output shape {result_bounds.shape}")
+        return result_bounds
 
-    def _handle_relu(self, layer: nn.ReLU, lb: torch.Tensor, ub: torch.Tensor, relu_idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Handle ReLU layer with max(0, x) transformation and optional BaB constraints."""
-        layer_name = f"relu_{relu_idx}"
-        constraints = []
-        
-        # Apply neuron-specific constraints from BaB refinement if available
-        if hasattr(self, 'current_relu_constraints') and self.current_relu_constraints:
-            for constraint in self.current_relu_constraints:
-                if constraint['layer'] == layer_name:
-                    neuron_idx = constraint['neuron_idx']
-                    constraint_type = constraint['constraint_type']
-                    
-                    if neuron_idx < lb.numel():
-                        flat_lb = lb.view(-1)
-                        flat_ub = ub.view(-1)
-                        
-                        if constraint_type == 'inactive':
-                            # Force neuron output to 0: upper bound ≤ 0
-                            flat_ub[neuron_idx] = min(flat_ub[neuron_idx], 0.0)
-                            constraints.append(f"ReLU[{neuron_idx}]=inactive")
-                        elif constraint_type == 'active':
-                            # Force neuron to pass-through: lower bound ≥ 0
-                            flat_lb[neuron_idx] = max(flat_lb[neuron_idx], 0.0)
-                            constraints.append(f"ReLU[{neuron_idx}]=active")
-                        
-                        lb = flat_lb.view(lb.shape)
-                        ub = flat_ub.view(ub.shape)
-        
-        if constraints:
-            ACTLog.log_verification_info(f"Applied {layer_name} constraints: {constraints}")
-        
-        # Apply standard ReLU transformation: max(0, x)
-        return torch.clamp(lb, min=0), torch.clamp(ub, min=0)
-
-    def _handle_batchnorm(self, layer: nn.BatchNorm2d, lb: torch.Tensor, ub: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _handle_batchnorm(self, layer: nn.BatchNorm2d, bounds: Bounds) -> Bounds:
         """Handle batch normalization layer with running statistics."""
-        mean = layer.running_mean
-        var = layer.running_var
-        eps = layer.eps
-        weight = layer.weight
-        bias = layer.bias
+        # Inline batch normalization with interval arithmetic
+        running_mean, running_var = layer.running_mean, layer.running_var
+        weight, bias, eps = layer.weight, layer.bias, layer.eps
         
         # Apply batch norm transformation with numerical stability check
-        sqrt_var_eps = torch.sqrt(var[None, :, None, None] + eps)
+        sqrt_var_eps = torch.sqrt(running_var[None, :, None, None] + eps)
         
         # Validate numerical stability
         if torch.any(sqrt_var_eps < 1e-10):
-            raise NumericalInstabilityError("BatchNorm variance too small, potential division by zero")
+            raise ValueError("BatchNorm variance too small, potential division by zero")
         
         norm_factor = weight[None, :, None, None] / sqrt_var_eps
-        offset = bias[None, :, None, None] - mean[None, :, None, None] * norm_factor
+        offset = bias[None, :, None, None] - running_mean[None, :, None, None] * norm_factor
         
-        return lb * norm_factor + offset, ub * norm_factor + offset
+        return Bounds(
+            bounds.lb * norm_factor + offset,
+            bounds.ub * norm_factor + offset,
+            validate=False
+        )
 
     # =============================================================================
     # LAYER HANDLING METHODS - ACTIVATION FUNCTIONS
     # =============================================================================
 
-    def _handle_activation(self, layer: nn.Module, lb: torch.Tensor, ub: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Handle activation layers with element-wise monotonic functions."""
-        if isinstance(layer, nn.Sigmoid):
-            return torch.sigmoid(lb), torch.sigmoid(ub)
+    def _handle_activation(self, layer: nn.Module, bounds: Bounds) -> Bounds:
+        """Handle activation layers with element-wise monotonic functions and BaB constraints."""
+        if isinstance(layer, nn.ReLU):
+            # Handle ReLU layer with max(0, x) transformation and optional BaB constraints
+            layer_name = f"relu_{self.relu_layer_index}"
+            
+            # Apply neuron-specific constraints from BaB refinement if available
+            if hasattr(self, 'current_relu_constraints') and self.current_relu_constraints:
+                constrained_bounds = bounds.apply_relu_constraints(self.current_relu_constraints, layer_name)
+                
+                # Log applied constraints if any
+                if hasattr(constrained_bounds, '_applied_constraints') and constrained_bounds._applied_constraints:
+                    ACTLog.log_verification_info(f"Applied {layer_name} constraints: {constrained_bounds._applied_constraints}")
+                
+                # Apply ReLU transformation to constrained bounds
+                result_bounds = constrained_bounds.clamp_relu()
+            else:
+                # No constraints - apply standard ReLU
+                result_bounds = bounds.clamp_relu()
+            
+            # Increment ReLU layer index and track constraints application
+            self.relu_layer_index += 1
+            if self.relu_layer_index <= len(self.current_relu_constraints):
+                self.metadata_tracker.track_constraint_application()
+            
+            return result_bounds
+            
+        elif isinstance(layer, nn.Sigmoid):
+            return bounds.apply_sigmoid()
         elif isinstance(layer, nn.MaxPool2d):
-            return (
-                nn.functional.max_pool2d(
-                    lb, kernel_size=layer.kernel_size, 
-                    stride=layer.stride, padding=layer.padding
-                ),
-                nn.functional.max_pool2d(
-                    ub, kernel_size=layer.kernel_size,
-                    stride=layer.stride, padding=layer.padding
-                )
+            # Inline max pooling operation
+            kernel_size, stride, padding = layer.kernel_size, layer.stride, layer.padding
+            return Bounds(
+                nn.functional.max_pool2d(bounds.lb, kernel_size, stride, padding),
+                nn.functional.max_pool2d(bounds.ub, kernel_size, stride, padding),
+                validate=False
             )
         else:
             raise NotImplementedError(f"Activation layer {type(layer)} not supported")
@@ -297,11 +305,11 @@ class BoundsPropagate:
     # LAYER HANDLING METHODS - STRUCTURAL OPERATIONS
     # =============================================================================
 
-    def _handle_structural(self, layer: nn.Module, lb: torch.Tensor, ub: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _handle_structural(self, layer: nn.Module, bounds: Bounds) -> Bounds:
         """Handle structural layers that manipulate tensor shape without computation."""
         if isinstance(layer, (nn.Flatten, OnnxFlatten)):
             ACTLog.log_verification_info("Processing flatten layer")
-            return torch.flatten(lb, start_dim=0), torch.flatten(ub, start_dim=0)
+            return bounds.flatten(start_dim=0)
         
         elif isinstance(layer, OnnxReshape):
             # Extract shape dimensions from ONNX reshape layer
@@ -314,15 +322,13 @@ class BoundsPropagate:
             if shape is None:
                 raise AttributeError(f"Cannot find shape attribute in Reshape layer. Available: {dir(layer)}")
             
-            return lb.reshape(list(shape)), ub.reshape(list(shape))
+            return bounds.reshape(list(shape))
         
         elif isinstance(layer, OnnxSqueeze):
-            dim = layer.dim
-            return lb.squeeze(dim), ub.squeeze(dim)
+            return bounds.squeeze(layer.dim)
         
         elif isinstance(layer, OnnxUnsqueeze):
-            dim = layer.dim
-            return lb.unsqueeze(dim), ub.unsqueeze(dim)
+            return bounds.unsqueeze(layer.dim)
         
         elif isinstance(layer, OnnxTranspose):
             # Extract permutation dimensions from ONNX transpose layer
@@ -335,7 +341,7 @@ class BoundsPropagate:
             if perm is None:
                 raise AttributeError(f"Cannot find permutation attribute in Transpose layer. Available: {dir(layer)}")
             
-            return lb.permute(*perm), ub.permute(*perm)
+            return bounds.permute(*perm)
         
         else:
             raise NotImplementedError(f"Structural layer {type(layer)} not supported")
@@ -344,57 +350,58 @@ class BoundsPropagate:
     # LAYER HANDLING METHODS - ONNX OPERATIONS
     # =============================================================================
 
-    def _handle_onnx_op(self, layer: nn.Module, lb: torch.Tensor, ub: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _handle_onnx_op(self, layer: nn.Module, bounds: Bounds) -> Bounds:
         """Handle ONNX operation layers with proper interval arithmetic."""
         if isinstance(layer, OnnxAdd):
-            return layer(lb), layer(ub)
+            return Bounds(layer(bounds.lb), layer(bounds.ub), validate=False)
         
         elif isinstance(layer, OnnxDiv):
-            new_lb = layer(lb)
-            new_ub = layer(ub)
+            new_lb = layer(bounds.lb)
+            new_ub = layer(bounds.ub)
             # Division can flip bound ordering depending on divisor sign
-            return torch.min(new_lb, new_ub), torch.max(new_lb, new_ub)
+            return Bounds(torch.min(new_lb, new_ub), torch.max(new_lb, new_ub), validate=False)
         
         elif isinstance(layer, OnnxClip):
             min_val = layer.min
             max_val = layer.max
-            return (
-                torch.clamp(lb, min=min_val, max=max_val),
-                torch.clamp(ub, min=min_val, max=max_val)
+            return Bounds(
+                torch.clamp(bounds.lb, min=min_val, max=max_val),
+                torch.clamp(bounds.ub, min=min_val, max=max_val),
+                validate=False
             )
         
         elif isinstance(layer, OperatorWrapper):
-            return self._handle_operator(layer, lb, ub)
+            return self._handle_operator(layer, bounds)
         
         else:
             raise NotImplementedError(f"ONNX operation layer {type(layer)} not supported")
 
-    def _handle_operator(self, layer: OperatorWrapper, lb: torch.Tensor, ub: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _handle_operator(self, layer: OperatorWrapper, bounds: Bounds) -> Bounds:
         """Handle generic operator wrapper with interval arithmetic for constant operations."""
         if not (hasattr(layer, 'op_type') and layer.op_type in ["Add", "Sub", "Mul", "Div"]):
             # Generic operator without specific interval handling
-            return layer(lb), layer(ub)
+            return Bounds(layer(bounds.lb), layer(bounds.ub), validate=False)
         
         other = getattr(layer, 'other', None)
         if other is None:
             # No constant operand - apply layer directly
-            return layer(lb), layer(ub)
+            return Bounds(layer(bounds.lb), layer(bounds.ub), validate=False)
         
         # Apply interval arithmetic with constant operand
         if layer.op_type == "Add":
-            return lb + other, ub + other
+            return Bounds(bounds.lb + other, bounds.ub + other, validate=False)
         elif layer.op_type == "Sub":
-            return lb - other, ub - other
+            return Bounds(bounds.lb - other, bounds.ub - other, validate=False)
         elif layer.op_type == "Mul":
             # Multiplication can flip bounds depending on sign of constant
-            new_lb = torch.min(lb * other, ub * other)
-            new_ub = torch.max(lb * other, ub * other)
-            return new_lb, new_ub
+            new_lb = torch.min(bounds.lb * other, bounds.ub * other)
+            new_ub = torch.max(bounds.lb * other, bounds.ub * other)
+            return Bounds(new_lb, new_ub, validate=False)
         elif layer.op_type == "Div":
             # Validate no division by zero
             if torch.any(other == 0):
                 raise ValueError("Division by zero encountered in OperatorWrapper")
             # Division can flip bounds depending on sign of divisor
-            new_lb = torch.min(lb / other, ub / other)
-            new_ub = torch.max(lb / other, ub / other)
-            return new_lb, new_ub
+            new_lb = torch.min(bounds.lb / other, bounds.ub / other)
+            new_ub = torch.max(bounds.lb / other, bounds.ub / other)
+            return Bounds(new_lb, new_ub, validate=False)

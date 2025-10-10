@@ -104,6 +104,70 @@ class ACTStats:
             return 0.0
     
     @classmethod
+    def get_current_memory_usage(cls) -> float:
+        """
+        Get current memory usage in MB (GPU if available, otherwise CPU).
+        
+        This is an enhanced version that automatically detects the best memory
+        source (GPU vs CPU) for tracking during bounds propagation.
+        
+        Returns:
+            float: Current memory usage in MB
+        """
+        try:
+            if torch.cuda.is_available() and torch.cuda.device_count() > 0:
+                # Get GPU memory usage
+                gpu_memory_bytes = torch.cuda.memory_allocated()
+                return gpu_memory_bytes / (1024 * 1024)  # Convert to MB
+            elif PSUTIL_AVAILABLE:
+                # Get CPU memory usage for current process
+                process = psutil.Process(os.getpid())
+                cpu_memory_bytes = process.memory_info().rss
+                return cpu_memory_bytes / (1024 * 1024)  # Convert to MB
+            else:
+                # Fallback if psutil not available
+                return 0.0
+        except Exception:
+            # Fallback if memory monitoring fails
+            return 0.0
+    
+    @classmethod
+    def get_gpu_memory_info(cls) -> tuple[float, float]:
+        """
+        Get GPU memory info (available, total) in MB.
+        
+        Returns:
+            tuple: (available_memory_mb, total_memory_mb) - (0.0, 0.0) if no GPU
+        """
+        try:
+            if torch.cuda.is_available() and torch.cuda.device_count() > 0:
+                total_memory = torch.cuda.get_device_properties(0).total_memory
+                allocated_memory = torch.cuda.memory_allocated()
+                available_memory = total_memory - allocated_memory
+                return available_memory / (1024 * 1024), total_memory / (1024 * 1024)
+            else:
+                return 0.0, 0.0
+        except Exception:
+            return 0.0, 0.0
+    
+    @classmethod
+    def get_cpu_memory_usage(cls) -> float:
+        """
+        Get CPU memory usage for current process in MB.
+        
+        Returns:
+            float: CPU memory usage in MB, or 0.0 if psutil unavailable
+        """
+        try:
+            if PSUTIL_AVAILABLE:
+                process = psutil.Process(os.getpid())
+                return process.memory_info().rss / (1024 * 1024)
+            else:
+                return 0.0
+        except Exception:
+            return 0.0
+    
+    @classmethod
     def is_psutil_available(cls) -> bool:
         """
         Check if psutil is available for memory monitoring.

@@ -26,12 +26,30 @@
 
 import time
 import torch
+import torch.nn as nn
 import gc
-from typing import List, Tuple
+import os
+from typing import List, Tuple, Union
+from onnx2pytorch.operations.flatten import Flatten as OnnxFlatten
+
+# Optional import for memory monitoring
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+from onnx2pytorch.operations.add import Add as OnnxAdd
+from onnx2pytorch.operations.div import Div as OnnxDiv
+from onnx2pytorch.operations.clip import Clip as OnnxClip
+from onnx2pytorch.operations.reshape import Reshape as OnnxReshape
+from onnx2pytorch.operations.squeeze import Squeeze as OnnxSqueeze
+from onnx2pytorch.operations.unsqueeze import Unsqueeze as OnnxUnsqueeze
+from onnx2pytorch.operations.transpose import Transpose as OnnxTranspose
+from onnx2pytorch.operations.base import OperatorWrapper
 from dataclasses import dataclass
 
-from util.stats import ACTLog
-from util.device import DeviceManager, DeviceConsistencyError
+from act.util.stats import ACTLog, ACTStats
+from act.util.device import DeviceManager, DeviceConsistencyError
 
 
 # =============================================================================
@@ -72,6 +90,18 @@ class BoundsPropagationMetadata:
     layer_types_processed: List[str]
     final_bounds_shape: Tuple[int, ...]
     processing_time_ms: float
+    
+    # Enhanced time and memory statistics for BoundsPropagate
+    start_time_ms: float
+    end_time_ms: float
+    layer_processing_times_ms: List[float]
+    peak_memory_usage_mb: float
+    initial_memory_usage_mb: float
+    final_memory_usage_mb: float
+    memory_usage_per_layer_mb: List[float]
+    total_memory_allocated_mb: float
+    gpu_memory_available_mb: float
+    cpu_memory_usage_mb: float
 
 
 # =============================================================================
@@ -105,13 +135,34 @@ class BoundsPropMetadata:
         self._numerical_warnings = []
         self._layer_types_processed = []
         self._start_time = None
+        
+        # Enhanced time and memory tracking
+        self._start_time_ms = None
+        self._end_time_ms = None
+        self._layer_processing_times_ms = []
+        self._layer_start_time = None
+        self._peak_memory_usage_mb = 0.0
+        self._initial_memory_usage_mb = 0.0
+        self._final_memory_usage_mb = 0.0
+        self._memory_usage_per_layer_mb = []
+        self._total_memory_allocated_mb = 0.0
     
     def start_propagation(self):
         """Initialize for a new propagation run."""
         if self.enable_tracking:
             self._reset_metadata()
-            self._start_time = time.time()
-            ACTLog.log_verification_info("Starting bounds propagation with metadata tracking")
+            current_time = time.time()
+            self._start_time = current_time
+            self._start_time_ms = current_time * 1000
+            
+            # Capture initial memory usage
+            self._initial_memory_usage_mb = ACTStats.get_memory_usage_mb()
+            self._peak_memory_usage_mb = self._initial_memory_usage_mb
+            
+            ACTLog.log_verification_info(
+                f"Starting bounds propagation with metadata tracking. "
+                f"Initial memory: {self._initial_memory_usage_mb:.1f}MB"
+            )
         else:
             ACTLog.log_verification_info("Starting bounds propagation (metadata tracking disabled)")
     
@@ -131,6 +182,10 @@ class BoundsPropMetadata:
         """
         layer_type = type(layer).__name__
         
+        # Start timing for this layer if tracking enabled
+        if self.enable_tracking:
+            self._layer_start_time = time.time()
+        
         # Always validate bounds for correctness (performed by caller)
         # self._validate_bounds(lb, ub, layer_idx)  # Moved to caller for efficiency
         
@@ -149,6 +204,23 @@ class BoundsPropMetadata:
                 self._memory_cleanups += 1
         
         return layer_type, stability_warnings
+    
+    def finalize_layer_processing(self, layer_idx: int):
+        """Finalize processing for a layer (call after layer processing is complete)."""
+        if self.enable_tracking and self._layer_start_time is not None:
+            # Record processing time for this layer
+            layer_time_ms = (time.time() - self._layer_start_time) * 1000
+            self._layer_processing_times_ms.append(layer_time_ms)
+            
+            # Record memory usage after processing this layer
+            current_memory = ACTStats.get_memory_usage_mb()
+            self._memory_usage_per_layer_mb.append(current_memory)
+            
+            # Update peak memory if needed
+            if current_memory > self._peak_memory_usage_mb:
+                self._peak_memory_usage_mb = current_memory
+            
+            self._layer_start_time = None
     
     def _validate_bounds(self, lb: torch.Tensor, ub: torch.Tensor, layer_idx: int):
         """Validate interval bounds for numerical stability and consistency."""
@@ -247,10 +319,34 @@ class BoundsPropMetadata:
                 numerical_warnings=[],
                 layer_types_processed=[],
                 final_bounds_shape=tuple(final_bounds.shape),
-                processing_time_ms=0.0
+                processing_time_ms=0.0,
+                start_time_ms=0.0,
+                end_time_ms=0.0,
+                layer_processing_times_ms=[],
+                peak_memory_usage_mb=0.0,
+                initial_memory_usage_mb=0.0,
+                final_memory_usage_mb=0.0,
+                memory_usage_per_layer_mb=[],
+                total_memory_allocated_mb=0.0,
+                gpu_memory_available_mb=0.0,
+                cpu_memory_usage_mb=0.0
             )
         
-        processing_time_ms = (time.time() - self._start_time) * 1000 if self._start_time else 0.0
+        # Capture final state
+        current_time = time.time()
+        self._end_time_ms = current_time * 1000
+        processing_time_ms = (current_time - self._start_time) * 1000 if self._start_time else 0.0
+        self._final_memory_usage_mb = ACTStats.get_memory_usage_mb()
+        
+        # Get additional memory info
+        gpu_available_mb, gpu_total_mb = ACTStats.get_gpu_memory_info()
+        cpu_memory_mb = ACTStats.get_cpu_memory_usage()
+        
+        # Calculate total memory allocated during propagation
+        if torch.cuda.is_available():
+            self._total_memory_allocated_mb = torch.cuda.max_memory_allocated() / (1024 * 1024)
+        else:
+            self._total_memory_allocated_mb = self._peak_memory_usage_mb
         
         metadata = BoundsPropagationMetadata(
             layers_processed=self._layers_processed,
@@ -259,16 +355,27 @@ class BoundsPropMetadata:
             numerical_warnings=self._numerical_warnings.copy(),
             layer_types_processed=self._layer_types_processed.copy(),
             final_bounds_shape=tuple(final_bounds.shape),
-            processing_time_ms=processing_time_ms
+            processing_time_ms=processing_time_ms,
+            start_time_ms=self._start_time_ms or 0.0,
+            end_time_ms=self._end_time_ms,
+            layer_processing_times_ms=self._layer_processing_times_ms.copy(),
+            peak_memory_usage_mb=self._peak_memory_usage_mb,
+            initial_memory_usage_mb=self._initial_memory_usage_mb,
+            final_memory_usage_mb=self._final_memory_usage_mb,
+            memory_usage_per_layer_mb=self._memory_usage_per_layer_mb.copy(),
+            total_memory_allocated_mb=self._total_memory_allocated_mb,
+            gpu_memory_available_mb=gpu_available_mb,
+            cpu_memory_usage_mb=cpu_memory_mb
         )
         
         ACTLog.log_verification_info(
             f"Propagation complete: {metadata.layers_processed} layers, "
-            f"{metadata.processing_time_ms:.1f}ms, {metadata.memory_cleanups} cleanups"
+            f"{metadata.processing_time_ms:.1f}ms, {metadata.memory_cleanups} cleanups, "
+            f"peak memory: {metadata.peak_memory_usage_mb:.1f}MB"
         )
         return metadata
     
-    def validate_layer_output(self, lb: torch.Tensor, ub: torch.Tensor, layer_idx: int, layer_name: str):
+    def validate_layer_output(self, lb: torch.Tensor, ub: torch.Tensor, layer_idx: int, layer_or_name: Union[nn.Module, str]):
         """
         Validate bounds after layer processing to catch issues immediately.
         
@@ -276,12 +383,32 @@ class BoundsPropMetadata:
             lb: Lower bounds tensor
             ub: Upper bounds tensor
             layer_idx: Index of the processed layer
-            layer_name: Name/type of the processed layer
+            layer_or_name: Layer object or name/type string of the processed layer
             
         Raises:
             NumericalInstabilityError: If NaN or infinite values detected
             InvalidBoundsError: If bounds are inconsistent
         """
+        # Determine layer name/category from layer object or use provided string
+        if isinstance(layer_or_name, str):
+            layer_name = layer_or_name
+        else:
+            layer = layer_or_name
+            if isinstance(layer, nn.Linear):
+                layer_name = "Linear"
+            elif isinstance(layer, nn.Conv2d):
+                layer_name = "Conv2d"
+            elif isinstance(layer, (nn.ReLU, nn.Sigmoid, nn.MaxPool2d)):
+                layer_name = f"Activation({type(layer).__name__})"
+            elif isinstance(layer, (nn.Flatten, OnnxFlatten, OnnxReshape, OnnxSqueeze, OnnxUnsqueeze, OnnxTranspose)):
+                layer_name = f"Structural({type(layer).__name__})"
+            elif isinstance(layer, nn.BatchNorm2d):
+                layer_name = "BatchNorm2d"
+            elif isinstance(layer, (OnnxAdd, OnnxDiv, OnnxClip, OperatorWrapper)):
+                layer_name = f"ONNX({type(layer).__name__})"
+            else:
+                layer_name = f"Unknown({type(layer).__name__})"
+        
         if torch.any(torch.isnan(lb)) or torch.any(torch.isnan(ub)):
             raise NumericalInstabilityError(f"NaN detected after {layer_name} layer {layer_idx}")
         
