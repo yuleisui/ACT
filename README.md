@@ -31,8 +31,8 @@ source setup.sh
 # 4. Activate environment
 conda activate act-main
 
-# 5. Run verification (inside verifier/)
-cd ../verifier
+# 5. Run verification (inside act/)
+cd ../act
 python main.py \
   --verifier hybridz --method hybridz \
   --model_path ../models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \

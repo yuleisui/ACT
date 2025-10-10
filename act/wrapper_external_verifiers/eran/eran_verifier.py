@@ -13,7 +13,7 @@ import os
 import torch
 import subprocess
 
-from abstract_constraint_solver.interval.base_verifier import BaseVerifier
+from interval.base_verifier import BaseVerifier
 from input_parser.spec import Spec
 
 class ERANVerifier(BaseVerifier):

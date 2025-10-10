@@ -6,7 +6,7 @@ ACT is a unified neural network verification framework integrating multiple stat
 ## Architecture Essentials
 
 ### Verifier Plugin Pattern
-All verifiers inherit from `BaseVerifier` in `verifier/abstract_constraint_solver/interval/base_verifier.py`:
+All verifiers inherit from `BaseVerifier` in `act/interval/base_verifier.py`:
 - **Core method**: `verify(proof, public_inputs)` - main entry point
 - **Shared workflow**: Input validation → Abstract solving → BaB refinement (optional) → Result aggregation
 - **Standard result types**: `VerifyResult.{SAT, UNSAT, UNKNOWN, TIMEOUT}`

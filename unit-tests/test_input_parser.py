@@ -8,9 +8,14 @@ exactly as main.py does, without any mock fallbacks.
 import torch
 import sys
 import os
-
-# Add verifier to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'verifier'))
+# Import real ACT components
+from input_parser.model import Model
+from input_parser.dataset import Dataset  
+from input_parser.spec import Spec, InputSpec, OutputSpec
+from interval.base_verifier import BaseVerifier
+    
+# Add act to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'act'))
 
 def load_real_act_components():
     """
@@ -18,12 +23,7 @@ def load_real_act_components():
     """
     print("🔧 Loading real ACT components (main.py pattern)...")
     
-    # Import real ACT components
-    from input_parser.model import Model
-    from input_parser.dataset import Dataset  
-    from input_parser.spec import Spec, InputSpec, OutputSpec
-    from abstract_constraint_solver.interval.base_verifier import BaseVerifier
-    
+   
     # Exact parameters from main.py pattern
     args_dict = {
         'model_path': './models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx',

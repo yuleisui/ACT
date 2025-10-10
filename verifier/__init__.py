@@ -1,1 +1,0 @@
-# This file marks the verifier directory as a Python package.

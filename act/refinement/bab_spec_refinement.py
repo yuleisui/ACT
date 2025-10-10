@@ -1,4 +1,4 @@
-#===- verifier.bab_refinement.bab_spec_refinement.py - BaB Refinement ----#
+#===- act.refinement.bab_spec_refinement.py - BaB Refinement ----#
 #
 #                 ACT: Abstract Constraints Transformer
 #
@@ -453,7 +453,7 @@ class BaBRefinement:
                 true_label = incomplete_verifier.spec.output_spec.labels[0].item()
 
             # Use output evaluation directly without temporary verifier
-            from abstract_constraint_solver.interval.outputs_evaluation import OutputsEvaluate
+            from interval.outputs_evaluation import OutputsEvaluate
             verdict = OutputsEvaluate.evaluate_output_bounds(
                 concrete_output, concrete_output, output_constraints, true_label
             )

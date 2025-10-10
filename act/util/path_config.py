@@ -29,9 +29,9 @@ import sys
 
 def setup_act_paths():
     current_file = os.path.abspath(__file__)
-    verifier_root = os.path.dirname(current_file)
-    if verifier_root not in sys.path:
-        sys.path.insert(0, verifier_root)
-    return verifier_root
+    act_root = os.path.dirname(current_file)
+    if act_root not in sys.path:
+        sys.path.insert(0, act_root)
+    return act_root
 
-verifier_root = setup_act_paths()
+act_root = setup_act_paths()
