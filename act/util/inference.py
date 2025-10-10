@@ -27,7 +27,7 @@
 from typing import Dict
 import torch
 
-from util.stats import ACTLog
+from act.util.stats import ACTLog
 
 
 def perform_model_inference(

@@ -16,15 +16,15 @@ import time
 from typing import Optional, List
 
 
-from interval.base_verifier import BaseVerifier
-from util.stats import ACTStats
-from util.inference import perform_model_inference
-from input_parser.spec import Spec
-from input_parser.type import VerifyResult
+from act.interval.base_verifier import BaseVerifier
+from act.util.stats import ACTStats
+from act.util.inference import perform_model_inference
+from act.input_parser.spec import Spec
+from act.input_parser.type import VerifyResult
 from onnx2pytorch.operations.flatten import Flatten as OnnxFlatten
 from onnx2pytorch.operations.base import OperatorWrapper
-from hybridz.hybridz_transformers import HybridZonotopeGrid, HybridZonotopeElem
-from hybridz.hybridz_operations import HybridZonotopeOps
+from act.hybridz.hybridz_transformers import HybridZonotopeGrid, HybridZonotopeElem
+from act.hybridz.hybridz_operations import HybridZonotopeOps
 
 try:
     from auto_LiRPA import BoundedModule, PerturbationLpNorm, BoundedTensor
@@ -38,7 +38,7 @@ class HybridZonotopeVerifier(BaseVerifier):
                  relaxation_ratio: float = 1.0, enable_generator_merging: bool = False, cosine_threshold: float = 0.95,
                  ci_mode: bool = False):
 
-        from hybridz.hybridz_transformers import HybridZonotopeElem
+        from act.hybridz.hybridz_transformers import HybridZonotopeElem
         self.HybridZonotopeElem = HybridZonotopeElem
 
         super().__init__(spec, device)

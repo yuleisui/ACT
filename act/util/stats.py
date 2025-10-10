@@ -223,7 +223,7 @@ class ACTStats:
             Overall VerifyResult (SAT if all safe, UNSAT if any unsafe, UNKNOWN otherwise)
         """
         # Import VerifyResult locally to avoid circular imports
-        from input_parser.type import VerifyResult
+        from act.input_parser.type import VerifyResult
         
         print("\n" + "🏆" + "="*70 + "🏆")
         print("📊 Final verification results summary")

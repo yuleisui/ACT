@@ -54,9 +54,6 @@ from onnx2pytorch.operations.base import OperatorWrapper
 class BoundsPropagate:
     """
     Interval bound propagation through neural network layers using interval arithmetic.
-    
-    Supports comprehensive layer types including linear, convolutional, activation,
-    structural, and ONNX operations with tight interval arithmetic computations.
     """
     
     def __init__(self, relu_constraints: Optional[list] = None, enable_metadata_tracking: bool = True):
@@ -85,26 +82,8 @@ class BoundsPropagate:
     def propagate_bounds(self, model: nn.Module, input_lb: torch.Tensor, input_ub: torch.Tensor) -> Tuple[Bounds, BoundsPropagationMetadata]:
         """
         Propagate interval bounds through the neural network model.
-        
-        This method performs forward propagation of interval bounds through each layer
-        of the model, handling different layer types with appropriate interval arithmetic.
-        
-        Args:
-            model: PyTorch neural network model
-            input_lb: Lower bounds for input (same shape as model input)
-            input_ub: Upper bounds for input (same shape as model input)
-            
-        Returns:
-            Tuple of (output_bounds, metadata):
-                - output_bounds: Bounds object containing output lower and upper bounds
-                - metadata: Detailed propagation metadata from BoundsPropMetadata
-                
-        Raises:
-            IntervalPropagationError: Base exception for propagation errors
-            NumericalInstabilityError: When numerical instability detected
-            InvalidBoundsError: When bounds become invalid or inconsistent
-            UnsupportedLayerError: When encountering unsupported layer type
         """
+
         # Comprehensive input validation using metadata tracker
         self.metadata_tracker.validate_input_bounds(input_lb, input_ub)
         

@@ -28,8 +28,8 @@
 import torch
 from typing import List, Optional
 
-from input_parser.type import VerifyResult
-from util.stats import ACTLog
+from act.input_parser.type import VerifyResult
+from act.util.stats import ACTLog
 
 
 class OutputsEvaluate:

@@ -29,12 +29,12 @@ from typing import Dict, List, Optional, Any, Tuple
 import torch
 import numpy as np
 
-from input_parser.spec import Spec
-from input_parser.type import VerifyResult
-from input_parser.adaptor import InputAdaptor
-from refinement.bab_spec_refinement import create_bab_refinement
-from util.stats import ACTLog, ACTStats
-from util.inference import perform_model_inference
+from act.input_parser.spec import Spec
+from act.input_parser.type import VerifyResult
+from act.input_parser.adaptor import InputAdaptor
+from act.refinement.bab_spec_refinement import create_bab_refinement
+from act.util.stats import ACTLog, ACTStats
+from act.util.inference import perform_model_inference
 from .bounds_propagation import BoundsPropagate
 from .outputs_evaluation import OutputsEvaluate
 
