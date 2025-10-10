@@ -32,12 +32,6 @@ import os
 from typing import List, Tuple, Union
 from onnx2pytorch.operations.flatten import Flatten as OnnxFlatten
 
-# Optional import for memory monitoring
-try:
-    import psutil
-    PSUTIL_AVAILABLE = True
-except ImportError:
-    PSUTIL_AVAILABLE = False
 from onnx2pytorch.operations.add import Add as OnnxAdd
 from onnx2pytorch.operations.div import Div as OnnxDiv
 from onnx2pytorch.operations.clip import Clip as OnnxClip

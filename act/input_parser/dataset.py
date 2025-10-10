@@ -117,8 +117,12 @@ class Dataset:
         images = images[self.start:self.end]
         labels = labels[self.start:self.end]
 
-        self.input_center = torch.tensor(images, dtype=torch.float32).to(self.device)
-        self.labels = torch.tensor(labels, dtype=torch.long).to(self.device)
+        # Convert to numpy arrays first to avoid PyTorch performance warning
+        images_array = np.array(images, dtype=np.float32)
+        labels_array = np.array(labels, dtype=np.int64)
+        
+        self.input_center = torch.from_numpy(images_array).to(self.device)
+        self.labels = torch.from_numpy(labels_array).to(self.device)
         self.spec_type = SpecType.LOCAL_LP
 
         print("Loaded dataset:", name)
@@ -222,13 +226,13 @@ class Dataset:
                     continue
 
                 if re.search(r"Y_\d+", line):
-                    match = re.match("\(assert \(([><=]+) (.*)\)\)", line)
+                    match = re.match(r"\(assert \(([><=]+) (.*)\)\)", line)
                     if not match:
                         continue
                     relation, expr = match.group(1), match.group(2)
 
-                    first_term = re.match("\((.*)\) .*", expr).group(1) if expr.startswith("(") else expr.split()[0]
-                    second_term = re.match(".* \((.*)\)", expr).group(1) if expr.endswith(")") else expr.split()[-1]
+                    first_term = re.match(r"\((.*)\) .*", expr).group(1) if expr.startswith("(") else expr.split()[0]
+                    second_term = re.match(r".* \((.*)\)", expr).group(1) if expr.endswith(")") else expr.split()[-1]
 
                     greater_terms = VNNLIBParser.parse_term(first_term if relation == ">=" else second_term)
                     lesser_terms = VNNLIBParser.parse_term(second_term if relation == ">=" else first_term)
@@ -274,13 +278,13 @@ class Dataset:
             if eps_match and eps_scalar_match:
                 raise ValueError("Cannot define both per-dimension eps and set-based eps in the same vnnlib file.")
 
-            match = re.match("\(assert \(([><=]+) (.*)\)\)", line)
+            match = re.match(r"\(assert \(([><=]+) (.*)\)\)", line)
             if not match:
                 continue
             relation, expr = match.group(1), match.group(2)
 
-            first_term = re.match("\((.*)\) .*", expr).group(1) if expr.startswith("(") else expr.split()[0]
-            second_term = re.match(".* \((.*)\)", expr).group(1) if expr.endswith(")") else expr.split()[-1]
+            first_term = re.match(r"\((.*)\) .*", expr).group(1) if expr.startswith("(") else expr.split()[0]
+            second_term = re.match(r".* \((.*)\)", expr).group(1) if expr.endswith(")") else expr.split()[-1]
 
             greater_terms = VNNLIBParser.parse_term(first_term if relation == ">=" else second_term)
             lesser_terms = VNNLIBParser.parse_term(second_term if relation == ">=" else first_term)

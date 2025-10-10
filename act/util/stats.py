@@ -25,13 +25,7 @@
 
 import os
 import torch
-from typing import Dict, Any, List
-
-try:
-    import psutil
-    PSUTIL_AVAILABLE = True
-except ImportError:
-    PSUTIL_AVAILABLE = False
+from typing import Dict, Any, List, Tuple
 
 
 class ACTStats:
@@ -56,11 +50,8 @@ class ACTStats:
         Returns:
             float: Process memory usage in MB, or 0 if psutil is unavailable
         """
-        if not PSUTIL_AVAILABLE:
-            print(f"⚠️ [{stage_name}] psutil not available, cannot monitor memory")
-            return 0.0
-            
         try:
+            import psutil
             process = psutil.Process(os.getpid())
             memory_info = process.memory_info()
             memory_mb = memory_info.rss / 1024 / 1024
@@ -81,6 +72,9 @@ class ACTStats:
 
             return memory_mb
             
+        except ImportError:
+            print(f"⚠️ [{stage_name}] psutil not available, cannot monitor memory")
+            return 0.0
         except Exception as e:
             print(f"⚠️ [{stage_name}] Error monitoring memory: {e}")
             return 0.0
@@ -93,14 +87,12 @@ class ACTStats:
         Returns:
             float: Process memory usage in MB, or 0 if psutil is unavailable
         """
-        if not PSUTIL_AVAILABLE:
-            return 0.0
-            
         try:
+            import psutil
             process = psutil.Process(os.getpid())
             memory_info = process.memory_info()
             return memory_info.rss / 1024 / 1024
-        except Exception:
+        except (ImportError, Exception):
             return 0.0
     
     @classmethod
@@ -119,20 +111,18 @@ class ACTStats:
                 # Get GPU memory usage
                 gpu_memory_bytes = torch.cuda.memory_allocated()
                 return gpu_memory_bytes / (1024 * 1024)  # Convert to MB
-            elif PSUTIL_AVAILABLE:
+            else:
                 # Get CPU memory usage for current process
+                import psutil
                 process = psutil.Process(os.getpid())
                 cpu_memory_bytes = process.memory_info().rss
                 return cpu_memory_bytes / (1024 * 1024)  # Convert to MB
-            else:
-                # Fallback if psutil not available
-                return 0.0
-        except Exception:
-            # Fallback if memory monitoring fails
+        except (ImportError, Exception):
+            # Fallback if psutil unavailable or memory monitoring fails
             return 0.0
     
     @classmethod
-    def get_gpu_memory_info(cls) -> tuple[float, float]:
+    def get_gpu_memory_info(cls) -> Tuple[float, float]:
         """
         Get GPU memory info (available, total) in MB.
         
@@ -159,23 +149,11 @@ class ACTStats:
             float: CPU memory usage in MB, or 0.0 if psutil unavailable
         """
         try:
-            if PSUTIL_AVAILABLE:
-                process = psutil.Process(os.getpid())
-                return process.memory_info().rss / (1024 * 1024)
-            else:
-                return 0.0
-        except Exception:
+            import psutil
+            process = psutil.Process(os.getpid())
+            return process.memory_info().rss / (1024 * 1024)
+        except (ImportError, Exception):
             return 0.0
-    
-    @classmethod
-    def is_psutil_available(cls) -> bool:
-        """
-        Check if psutil is available for memory monitoring.
-        
-        Returns:
-            bool: True if psutil is available, False otherwise
-        """
-        return PSUTIL_AVAILABLE
     
     @staticmethod
     def print_verification_stats(prediction_stats: Dict[str, Any]) -> None:
