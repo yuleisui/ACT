@@ -7,38 +7,41 @@ This directory contains the core verification framework and interfaces for the A
 ```
 act/
 ├── main.py                         # Main unified verification interface
-├── path_config.py                  # Centralized path configuration
+├── __init__.py                     # Package initialization
 │
-├── wrapper_external_verifiers/     # Verification algorithm implementations
+├── hybridz/                        # ACT Hybrid Zonotope module
+│   ├── hybridz_verifier.py         # Hybrid Zonotope verification engine
+│   ├── hybridz_transformers.py     # Hybrid Zonotope transformer classes
+│   └── hybridz_operations.py       # MILP/LP operations and optimization
+│
+├── interval/                       # ACT Interval verification module
 │   ├── base_verifier.py            # Base verifier class and common functionality
-│   │
-│   ├── abcrown/                    # αβ-CROWN integration module
-│   │   ├── abcrown_verifier.py     # αβ-CROWN wrapper and interface
-│   │   ├── abcrown_runner.py       # αβ-CROWN backend execution script
-│   │   └── empty_config.yaml       # Required αβ-CROWN configuration
-│   │
-│   ├── eran/                       # ERAN integration module
-│   │   └── eran_verifier.py        # ERAN wrapper and interface
-│   │
-│   ├── hybridz/                    # ACT Hybrid Zonotope module
-│   │   ├── hybridz_verifier.py     # Hybrid Zonotope verification engine
-│   │   ├── hybridz_transformers.py # Hybrid Zonotope transformer classes
-│   │   └── hybridz_operations.py   # MILP/LP operations and optimization
-│   │
-│   └── interval/                   # ACT Interval verification module
-│       ├── bounds_propagation.py   # Interval bound propagation
-│       ├── outputs_evaluation.py   # Output bounds evaluation
-│       └── base_verifier.py        # Base verifier with interval verification
+│   ├── bounds_propagation.py       # Interval bound propagation
+│   └── outputs_evaluation.py       # Output bounds evaluation
 │
-├── input_parser/                    # Specification parsing and data handling
+├── input_parser/                   # Specification parsing and data handling
 │   ├── dataset.py                  # Dataset loading and preprocessing
 │   ├── model.py                    # Neural network model parsing
 │   ├── spec.py                     # Specification handling and processing
 │   ├── type.py                     # Type definitions and data structures
-│   └── vnnlib_parser.py            # VNNLIB format parser
+│   ├── vnnlib_parser.py            # VNNLIB format parser
+│   └── adaptor.py                  # Input/output adaptors
 │
-└── refinement/                     # Advanced refinement algorithms
-    └── bab_spec_refinement.py      # Branch-and-bound specification refinement
+├── refinement/                     # Advanced refinement algorithms
+│   └── bab_spec_refinement.py      # Branch-and-bound specification refinement
+│
+├── util/                           # Utility modules
+│   ├── options.py                  # Command-line argument parsing
+│   ├── path_config.py              # Centralized path configuration
+│   ├── stats.py                    # Statistics and performance tracking
+│   └── inference.py                # Model inference utilities
+│
+└── wrapper_external_verifiers/     # External verifier integrations
+    ├── abcrown/                    # αβ-CROWN integration module
+    │   ├── abcrown_verifier.py     # αβ-CROWN wrapper and interface
+    │   └── abcrown_runner.py       # αβ-CROWN backend execution script
+    └── eran/                       # ERAN integration module
+        └── eran_verifier.py        # ERAN wrapper and interface
 ```
 
 ## Module Documentation
@@ -50,44 +53,7 @@ act/
   - Comprehensive argument compatibility across different verification tools
   - Integration with configuration defaults from `../configs/`
 
-- **`path_config.py`**: Centralized module path configuration
-  - Eliminates redundant sys.path manipulations across files
-  - Provides consistent import resolution for hierarchical structure
-  - Enables clean absolute imports throughout the codebase
-
-### **`wrapper_external_verifiers/` - Verification Algorithms**
-
-#### **Base Framework**
-- **`base_verifier.py`**: Base verifier class and common functionality
-  - Abstract interface for all verification backends
-  - Common parameter validation and preprocessing
-  - Unified result formatting and error handling
-  - Shared utility methods for model and specification processing
-
-#### **`abcrown/` - αβ-CROWN Integration**
-- **`abcrown_verifier.py`**: αβ-CROWN wrapper and interface
-  - Translates ACT parameters to αβ-CROWN format
-  - Manages conda environment isolation for αβ-CROWN execution
-  - Handles subprocess communication and result parsing
-  - Provides error handling and comprehensive logging
-
-- **`abcrown_runner.py`**: αβ-CROWN backend execution script
-  - Contains code adapted from the open-source αβ-CROWN project with enhancements for ACT framework integration
-  - Executes within isolated `act-abcrown` conda environment
-  - Direct interface to αβ-CROWN complete verification engine
-  - Independent execution without ACT path dependencies
-
-- **`empty_config.yaml`**: Required αβ-CROWN configuration template
-  - Enables αβ-CROWN CLI execution within ACT framework
-  - Provides default parameter structure for αβ-CROWN backend
-
-#### **`eran/` - ERAN Integration**
-- **`eran_verifier.py`**: ERAN wrapper and interface
-  - Integration with ERAN abstract interpretation methods
-  - Support for DeepPoly, DeepZono, and other ERAN domains
-  - Parameter translation for ERAN backend compatibility
-
-#### **`hybridz/` - ACT Hybrid Zonotope Verification**
+### **`hybridz/` - ACT Hybrid Zonotope Verification**
 - **`hybridz_verifier.py`**: Hybrid Zonotope verification engine
   - Novel tensorised hybrid verification method
   - Integration with Gurobi MILP solver for exact optimization
@@ -104,13 +70,20 @@ act/
   - Three core configurations: Full-precision MILP, Fully-relaxed LP, Partially-relaxed MILP+LP
   - Gurobi license management and solver integration
 
-#### **`interval/` - ACT Interval Verification**
-- **`base_verifier.py`**: Base verifier class with interval verification
+### **`interval/` - ACT Interval Verification**
+- **`base_verifier.py`**: Base verifier class and common functionality
+  - Abstract interface for all verification backends
+  - Common parameter validation and preprocessing
+  - Unified result formatting and error handling
+  - Shared utility methods for model and specification processing
   - Standard interval arithmetic for neural network verification
-  - Fast but potentially loose bound computation
-  - Baseline verification method for comparison
+
 - **`bounds_propagation.py`**: Interval bound propagation implementation
+  - Fast but potentially loose bound computation
+  - Layer-by-layer propagation of interval bounds through neural networks
+
 - **`outputs_evaluation.py`**: Output bounds evaluation utilities
+  - Final output bound analysis and verification result determination
 
 ### **`input_parser/` - Specification and Data Handling**
 - **`dataset.py`**: Dataset loading and preprocessing utilities
@@ -143,6 +116,10 @@ act/
   - Integration bridge for external verification tool compatibility
   - Comprehensive error handling for malformed specifications
 
+- **`adaptor.py`**: Input/output adaptors
+  - Data format conversion utilities
+  - Interface adaptors between different verification backends
+
 ### **`refinement/` - Advanced Refinement**
 - **`bab_spec_refinement.py`**: Branch-and-bound specification refinement
   - Prototype BaB-based specification refinement system
@@ -150,24 +127,79 @@ act/
   - Configurable depth limits, subproblem constraints, and time bounds
   - Seamless integration with hybrid zonotope verification methods
 
+### **`util/` - Utility Modules**
+- **`options.py`**: Command-line argument parsing
+  - Comprehensive argument parser for all verification backends
+  - Parameter validation and type checking
+  - Integration with configuration file defaults
+  - Support for verifier-specific parameter sets
+
+- **`path_config.py`**: Centralized path configuration
+  - Eliminates redundant sys.path manipulations across files
+  - Provides consistent import resolution for hierarchical structure
+  - Enables clean absolute imports throughout the codebase
+
+- **`stats.py`**: Statistics and performance tracking
+  - Memory usage monitoring and optimization
+  - Performance profiling and benchmarking utilities
+  - Verification statistics collection and reporting
+
+- **`inference.py`**: Model inference utilities
+  - Common model inference operations
+  - Batch processing support
+  - Output format standardization
+
+### **`wrapper_external_verifiers/` - External Verifier Integrations**
+
+#### **`abcrown/` - αβ-CROWN Integration**
+- **`abcrown_verifier.py`**: αβ-CROWN wrapper and interface
+  - Translates ACT parameters to αβ-CROWN format
+  - Manages conda environment isolation for αβ-CROWN execution
+  - Handles subprocess communication and result parsing
+  - Provides error handling and comprehensive logging
+
+- **`abcrown_runner.py`**: αβ-CROWN backend execution script
+  - Contains code adapted from the open-source αβ-CROWN project with enhancements for ACT framework integration
+  - Executes within isolated `act-abcrown` conda environment
+  - Direct interface to αβ-CROWN complete verification engine
+  - Independent execution without ACT path dependencies
+
+#### **`eran/` - ERAN Integration**
+- **`eran_verifier.py`**: ERAN wrapper and interface
+  - Integration with ERAN abstract interpretation methods
+  - Support for DeepPoly, DeepZono, and other ERAN domains
+  - Parameter translation for ERAN backend compatibility
+
 
 ## Architecture Benefits
 
-The hierarchical modular architecture provides several key advantages:
+The flattened modular architecture provides several key advantages:
 
 ### **Modular Design**
-- **Clear Separation**: Each verification algorithm isolated in dedicated modules
+- **Clear Separation**: Core ACT modules (hybridz, interval) are separated from external verifier wrappers
 - **Independent Development**: Modules can be developed, tested, and maintained separately
 - **Easy Extension**: Add new verifiers by creating new modules in `wrapper_external_verifiers/`
-- **Clean Dependencies**: Centralized path management eliminates import complexity
+- **Clean Dependencies**: Centralized utilities in `util/` eliminate code duplication
+
+### **Flat Structure Benefits**
+- **Simplified Imports**: Direct module access without deep nesting (e.g., `from hybridz.hybridz_verifier import ...`)
+- **Faster Development**: Quick navigation to core modules without traversing multiple subdirectories
+- **Clear Responsibilities**: Each top-level directory has a specific, well-defined purpose
+- **Better IDE Support**: Enhanced autocomplete and navigation in development environments
 
 ### **Configuration Management**
 - **Centralized Defaults**: Configuration files in `../configs/` provide optimal parameters
-- **Path Resolution**: `path_config.py` ensures consistent module import resolution
+- **Path Resolution**: `util/path_config.py` ensures consistent module import resolution
 - **Environment Isolation**: Different verifiers can use separate conda environments
+- **Parameter Management**: `util/options.py` provides unified command-line interface
 
 ### **Integration Flexibility**
 - **Unified Interface**: Single entry point (`main.py`) for all verification tasks
 - **Backend Abstraction**: Consistent API regardless of underlying verification method
 - **Parameter Translation**: Automatic conversion between ACT and backend-specific formats
 - **Result Standardization**: Uniform output format across all verification backends
+
+### **Performance Optimization**
+- **Memory Management**: `util/stats.py` provides comprehensive memory tracking and optimization
+- **Utility Reuse**: Common operations centralized in `util/` modules
+- **Import Efficiency**: Flat structure reduces import overhead and circular dependency risks
