@@ -291,6 +291,37 @@ class BoundsPropMetadata:
         if torch.any(lb > ub):
             raise InvalidBoundsError(f"Invalid bounds after {layer_name} layer {layer_idx}: lower > upper")
 
+    def validate_input_bounds(self, input_lb: torch.Tensor, input_ub: torch.Tensor):
+        """
+        Comprehensive input bounds validation before starting propagation.
+        
+        Args:
+            input_lb: Lower bounds tensor for input
+            input_ub: Upper bounds tensor for input
+            
+        Raises:
+            InvalidBoundsError: If input bounds are invalid, inconsistent, or malformed
+        """
+        # Check shape consistency
+        if input_lb.shape != input_ub.shape:
+            raise InvalidBoundsError(f"Input bounds shape mismatch: lb={input_lb.shape}, ub={input_ub.shape}")
+        
+        # Check bounds ordering
+        if torch.any(input_lb > input_ub):
+            raise InvalidBoundsError("Input lower bounds exceed upper bounds")
+        
+        # Check dimensionality
+        if len(input_lb.shape) == 0:
+            raise InvalidBoundsError("Input bounds must have at least one dimension")
+        
+        # Check for NaN values
+        if torch.any(torch.isnan(input_lb)) or torch.any(torch.isnan(input_ub)):
+            raise InvalidBoundsError("Input bounds contain NaN values")
+        
+        # Check for infinite values
+        if torch.any(torch.isinf(input_lb)) or torch.any(torch.isinf(input_ub)):
+            raise InvalidBoundsError("Input bounds contain infinite values")
+
     def validate_bounds_essential(self, lb: torch.Tensor, ub: torch.Tensor, layer_idx: int):
         """
         Essential bounds validation (always performed for correctness).

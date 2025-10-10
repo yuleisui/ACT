@@ -99,21 +99,8 @@ class BoundsPropagate:
             InvalidBoundsError: When bounds become invalid or inconsistent
             UnsupportedLayerError: When encountering unsupported layer type
         """
-        # Comprehensive input validation
-        if input_lb.shape != input_ub.shape:
-            raise InvalidBoundsError(f"Input bounds shape mismatch: lb={input_lb.shape}, ub={input_ub.shape}")
-        
-        if torch.any(input_lb > input_ub):
-            raise InvalidBoundsError("Input lower bounds exceed upper bounds")
-        
-        if len(input_lb.shape) == 0:
-            raise InvalidBoundsError("Input bounds must have at least one dimension")
-        
-        if torch.any(torch.isnan(input_lb)) or torch.any(torch.isnan(input_ub)):
-            raise InvalidBoundsError("Input bounds contain NaN values")
-        
-        if torch.any(torch.isinf(input_lb)) or torch.any(torch.isinf(input_ub)):
-            raise InvalidBoundsError("Input bounds contain infinite values")
+        # Comprehensive input validation using metadata tracker
+        self.metadata_tracker.validate_input_bounds(input_lb, input_ub)
         
         # Initialize tracking and validation
         self.metadata_tracker.start_propagation()
