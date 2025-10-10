@@ -33,7 +33,7 @@ def setup_gurobi_license():
             print(f"[ACT] Using ACTHOME environment variable: {os.environ['ACTHOME']}")
         else:
             # Use path_config to get project root
-            project_root = os.path.dirname(path_config.verifier_root)
+            project_root = os.path.dirname(path_config.act_root)
             license_path = os.path.join(project_root, 'gurobi', 'gurobi.lic')
             print(f"[ACT] Auto-detecting project root from path_config")
         

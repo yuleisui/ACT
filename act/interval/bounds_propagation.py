@@ -1,4 +1,4 @@
-#===- verifier.interval.bounds_propagation.py interval bounds propagation --#
+#===- act.interval.bounds_propagation.py interval bounds propagation --#
 #
 #                 ACT: Abstract Constraints Transformer
 #
@@ -30,6 +30,15 @@ import torch.nn as nn
 from typing import Tuple, Optional
 
 from util.stats import ACTLog
+from util.device import DeviceManager
+from interval.bounds_prop_helper import (
+    BoundsPropMetadata, 
+    BoundsPropagationMetadata, 
+    IntervalPropagationError,
+    NumericalInstabilityError,
+    InvalidBoundsError,
+    UnsupportedLayerError
+)
 from onnx2pytorch.operations.flatten import Flatten as OnnxFlatten
 from onnx2pytorch.operations.add import Add as OnnxAdd
 from onnx2pytorch.operations.div import Div as OnnxDiv
@@ -49,37 +58,68 @@ class BoundsPropagate:
     structural, and ONNX operations with tight interval arithmetic computations.
     """
     
-    def __init__(self, relu_constraints: Optional[list] = None):
+    def __init__(self, relu_constraints: Optional[list] = None, enable_metadata_tracking: bool = True):
         """
         Initialize the interval bound propagator.
         
         Args:
             relu_constraints: Optional list of ReLU constraints from BaB refinement
+            enable_metadata_tracking: Whether to enable metadata tracking (default: True)
         """
-        self.current_relu_constraints = relu_constraints if relu_constraints else []
-    
-    def propagate_bounds(self, model: nn.Module, input_lb: torch.Tensor, input_ub: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, None]:
-        """
-        Propagate interval bounds through network layers using interval arithmetic.
+        # Always create a defensive copy to prevent external modification
+        self.current_relu_constraints = (relu_constraints or []).copy()
         
-        Sequentially processes each layer applying interval arithmetic rules to maintain
-        tight bounds while supporting ReLU constraints from BaB refinement.
+        # Initialize the metadata tracker for bounds propagation tracking
+        self.metadata_tracker = BoundsPropMetadata(enable_metadata_tracking)
+        
+        # Always keep device manager available for essential functionality
+        self.device_manager = DeviceManager()
+    
+    def propagate_bounds(self, model: nn.Module, input_lb: torch.Tensor, input_ub: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, BoundsPropagationMetadata]:
+        """
+        Propagate interval bounds through the neural network model.
+        
+        This method performs forward propagation of interval bounds through each layer
+        of the model, handling different layer types with appropriate interval arithmetic.
         
         Args:
-            model: PyTorch neural network model to analyze
-            input_lb: Input lower bounds tensor
-            input_ub: Input upper bounds tensor
+            model: PyTorch neural network model
+            input_lb: Lower bounds for input (same shape as model input)
+            input_ub: Upper bounds for input (same shape as model input)
             
         Returns:
-            Tuple containing (output_lb, output_ub, None) for BaseVerifier compatibility
-            
+            Tuple of (output_lb, output_ub, metadata):
+                - output_lb: Lower bounds of model output
+                - output_ub: Upper bounds of model output  
+                - metadata: Detailed propagation metadata from BoundsPropMetadata
+                
         Raises:
-            NotImplementedError: If unsupported layer type encountered
-            ValueError: If numerical instability or division by zero detected
-            AttributeError: If required layer attributes missing
+            IntervalPropagationError: Base exception for propagation errors
+            NumericalInstabilityError: When numerical instability detected
+            InvalidBoundsError: When bounds become invalid or inconsistent
+            UnsupportedLayerError: When encountering unsupported layer type
         """
-        lb = input_lb.clone()
-        ub = input_ub.clone()
+        # Comprehensive input validation
+        if input_lb.shape != input_ub.shape:
+            raise InvalidBoundsError(f"Input bounds shape mismatch: lb={input_lb.shape}, ub={input_ub.shape}")
+        
+        if torch.any(input_lb > input_ub):
+            raise InvalidBoundsError("Input lower bounds exceed upper bounds")
+        
+        if len(input_lb.shape) == 0:
+            raise InvalidBoundsError("Input bounds must have at least one dimension")
+        
+        if torch.any(torch.isnan(input_lb)) or torch.any(torch.isnan(input_ub)):
+            raise InvalidBoundsError("Input bounds contain NaN values")
+        
+        if torch.any(torch.isinf(input_lb)) or torch.any(torch.isinf(input_ub)):
+            raise InvalidBoundsError("Input bounds contain infinite values")
+        
+        # Initialize tracking and validation
+        self.metadata_tracker.start_propagation()
+        
+        # Ensure device consistency and create working copies (always needed)
+        lb, ub = self.device_manager.ensure_device_consistency(model, input_lb.clone(), input_ub.clone())
         
         ACTLog.log_verification_info("Starting interval bound propagation through network layers")
         
@@ -89,34 +129,54 @@ class BoundsPropagate:
         for idx, layer in enumerate(model.children()):
             ACTLog.log_verification_info(f"Processing layer {idx}: {type(layer).__name__}")
             
-            # Validate numerical stability before processing each layer
-            if torch.any(torch.isnan(lb)) or torch.any(torch.isnan(ub)):
-                raise ValueError(f"NaN values detected at layer {idx} - numerical instability")
-            
-            if isinstance(layer, nn.Linear):
-                lb, ub = self._handle_linear(layer, lb, ub, idx)
-            elif isinstance(layer, nn.Conv2d):
-                lb, ub = self._handle_conv2d(layer, lb, ub, idx)
-            elif isinstance(layer, nn.ReLU):
-                lb, ub = self._handle_relu(layer, lb, ub, relu_count)
-                relu_count += 1
-            elif isinstance(layer, (nn.Sigmoid, nn.MaxPool2d)):
-                lb, ub = self._handle_activation(layer, lb, ub)
-            elif isinstance(layer, (nn.Flatten, OnnxFlatten, OnnxReshape, OnnxSqueeze, OnnxUnsqueeze, OnnxTranspose)):
-                lb, ub = self._handle_structural(layer, lb, ub)
-            elif isinstance(layer, nn.BatchNorm2d):
-                lb, ub = self._handle_batchnorm(layer, lb, ub)
-            elif isinstance(layer, (OnnxAdd, OnnxDiv, OnnxClip, OperatorWrapper)):
-                lb, ub = self._handle_onnx_op(layer, lb, ub)
-            else:
-                raise NotImplementedError(f"Layer type {type(layer)} not supported in interval propagation")
+            try:
+                # Perform essential bounds validation and optional tracking
+                self.metadata_tracker.validate_bounds_essential(lb, ub, idx)
+                self.metadata_tracker.process_layer(layer, idx, lb, ub)
+                
+                if isinstance(layer, nn.Linear):
+                    lb, ub = self._handle_linear(layer, lb, ub, idx)
+                    self.metadata_tracker.validate_layer_output(lb, ub, idx, "Linear")
+                elif isinstance(layer, nn.Conv2d):
+                    lb, ub = self._handle_conv2d(layer, lb, ub, idx)
+                    self.metadata_tracker.validate_layer_output(lb, ub, idx, "Conv2d")
+                elif isinstance(layer, nn.ReLU):
+                    lb, ub = self._handle_relu(layer, lb, ub, relu_count)
+                    self.metadata_tracker.validate_layer_output(lb, ub, idx, "ReLU")
+                    relu_count += 1
+                    # Track ReLU constraints application
+                    if relu_count <= len(self.current_relu_constraints):
+                        self.metadata_tracker.track_constraint_application()
+                elif isinstance(layer, (nn.Sigmoid, nn.MaxPool2d)):
+                    lb, ub = self._handle_activation(layer, lb, ub)
+                    self.metadata_tracker.validate_layer_output(lb, ub, idx, f"Activation({type(layer).__name__})")
+                elif isinstance(layer, (nn.Flatten, OnnxFlatten, OnnxReshape, OnnxSqueeze, OnnxUnsqueeze, OnnxTranspose)):
+                    lb, ub = self._handle_structural(layer, lb, ub)
+                    self.metadata_tracker.validate_layer_output(lb, ub, idx, f"Structural({type(layer).__name__})")
+                elif isinstance(layer, nn.BatchNorm2d):
+                    lb, ub = self._handle_batchnorm(layer, lb, ub)
+                    self.metadata_tracker.validate_layer_output(lb, ub, idx, "BatchNorm2d")
+                elif isinstance(layer, (OnnxAdd, OnnxDiv, OnnxClip, OperatorWrapper)):
+                    lb, ub = self._handle_onnx_op(layer, lb, ub)
+                    self.metadata_tracker.validate_layer_output(lb, ub, idx, f"ONNX({type(layer).__name__})")
+                else:
+                    raise UnsupportedLayerError(f"Layer type {type(layer)} not supported in interval propagation")
+                    
+            except (NumericalInstabilityError, InvalidBoundsError) as e:
+                self.metadata_tracker.track_numerical_warning(f"Layer {idx} error: {e}")
+                raise
+            except Exception as e:
+                raise UnsupportedLayerError(f"Failed to process layer {idx} ({type(layer).__name__}): {e}") from e
             
             # Log progress periodically
             if idx % 10 == 0 or idx < 5:
                 ACTLog.log_verification_info(f"Layer {idx} completed: bounds shape {lb.shape}")
         
         ACTLog.log_verification_info("Interval bound propagation completed successfully")
-        return lb, ub, None
+        
+        # Finalize propagation and collect comprehensive metadata
+        metadata = self.metadata_tracker.finalize_propagation(lb)
+        return lb, ub, metadata
 
     # =============================================================================
     # LAYER HANDLING METHODS - NEURAL NETWORK LAYERS
@@ -212,8 +272,14 @@ class BoundsPropagate:
         weight = layer.weight
         bias = layer.bias
         
-        # Apply batch norm transformation: (x - mean) / sqrt(var + eps) * weight + bias
-        norm_factor = weight[None, :, None, None] / torch.sqrt(var[None, :, None, None] + eps)
+        # Apply batch norm transformation with numerical stability check
+        sqrt_var_eps = torch.sqrt(var[None, :, None, None] + eps)
+        
+        # Validate numerical stability
+        if torch.any(sqrt_var_eps < 1e-10):
+            raise NumericalInstabilityError("BatchNorm variance too small, potential division by zero")
+        
+        norm_factor = weight[None, :, None, None] / sqrt_var_eps
         offset = bias[None, :, None, None] - mean[None, :, None, None] * norm_factor
         
         return lb * norm_factor + offset, ub * norm_factor + offset

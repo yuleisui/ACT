@@ -41,6 +41,12 @@ def get_parser():
     parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda'],
                         help='Computation device (cpu or cuda)')
 
+    # ACT Verification Features
+    parser.add_argument('--bounds_prop_metadata', action='store_true', default=True,
+                        help='ACT: Enable bounds propagation metadata tracking for detailed statistics and debugging')
+    parser.add_argument('--no_bounds_prop_metadata', dest='bounds_prop_metadata', action='store_false',
+                        help='ACT: Disable bounds propagation metadata tracking to improve performance')
+
     # ACT Hybrid Zonotope Novel Features
     parser.add_argument('--relaxation_ratio', type=float, default=1.0,
                         help='ACT Hybrid Zonotope relaxation ratio: 0.0=full-precision MILP, 1.0=fully-relaxed LP, 0.0~1.0=partially-relaxed MILP+LP. Only applies to hybridz_relaxed method (hybridz_relaxed_with_bab forces 1.0)')

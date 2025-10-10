@@ -28,10 +28,21 @@ import os
 import sys
 
 def setup_act_paths():
+    """Set up ACT project paths for proper module imports."""
     current_file = os.path.abspath(__file__)
-    act_root = os.path.dirname(current_file)
+    act_root = os.path.dirname(os.path.dirname(current_file))  # go up from util/ to act/
     if act_root not in sys.path:
         sys.path.insert(0, act_root)
     return act_root
 
+def get_project_root():
+    """Get the project root directory (parent of act/)."""
+    current_file = os.path.abspath(__file__)
+    # Current file is in act/util/path_config.py
+    # Project root is two levels up
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
+    return project_root
+
+# Set up paths
 act_root = setup_act_paths()
+project_root = get_project_root()
