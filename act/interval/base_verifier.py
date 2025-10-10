@@ -39,18 +39,20 @@ from .bounds_propagation import BoundsPropagate
 from .outputs_evaluation import OutputsEvaluate
 
 class BaseVerifier:
-    def __init__(self, spec: Spec, device: str = 'cpu'):
+    def __init__(self, spec: Spec, device: str = 'cpu', enable_metadata_tracking: bool = True):
         """
         Initialize BaseVerifier with specification and device configuration.
         
         Args:
             spec: Verification specification with input/output constraints and dataset
             device: Computing device ('cpu' or 'cuda')
+            enable_metadata_tracking: Whether to enable metadata tracking in bounds propagation
         """
         self.spec = spec
         self.dataset = spec.dataset
         self.model = spec.model
         self.device = device
+        self.enable_metadata_tracking = enable_metadata_tracking
         self.dtype = torch.float32
         self.verbose = True
         
@@ -250,7 +252,7 @@ class BaseVerifier:
         
         # Create propagator and run bound propagation
         # Use dedicated interval bound propagator with BaB constraints
-        propagator = BoundsPropagate(relu_constraints)
+        propagator = BoundsPropagate(relu_constraints, self.enable_metadata_tracking)
         output_lb, output_ub, _ = propagator.propagate_bounds(
             self.spec.model.pytorch_model, input_lb, input_ub
         )

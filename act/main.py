@@ -218,7 +218,7 @@ def main():
     elif verifier_type == 'interval':
         if method != 'interval':
             raise ValueError(f"Interval verifier only supports 'interval' method, got {method}.")
-        verifier = BaseVerifier(spec)
+        verifier = BaseVerifier(spec, enable_metadata_tracking=args_dict["bounds_prop_metadata"])
 
         if args_dict["enable_spec_refinement"]:
             print("Enabling specification refinement BaB verification")
