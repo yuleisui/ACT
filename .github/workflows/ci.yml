@@ -41,7 +41,7 @@ jobs:
         run: |
           source "$(conda info --base)/etc/profile.d/conda.sh"
           conda activate act-main
-          cd verifier/
+          cd act/
           python main.py \
             --verifier hybridz \
             --method hybridz_relaxed \
@@ -84,7 +84,7 @@ jobs:
         run: |
           source "$(conda info --base)/etc/profile.d/conda.sh"
           conda activate act-main
-          cd verifier/
+          cd act/
           python main.py \
             --verifier hybridz \
             --method hybridz_relaxed \
@@ -136,7 +136,7 @@ jobs:
         run: |
           source "$(conda info --base)/etc/profile.d/conda.sh"
           conda activate act-abcrown
-          cd verifier/
+          cd act/
           python main.py \
             --verifier abcrown \
             --method alpha_beta \
@@ -185,7 +185,7 @@ jobs:
         run: |
           source "$(conda info --base)/etc/profile.d/conda.sh"
           conda activate act-abcrown
-          cd verifier/
+          cd act/
           python main.py \
             --verifier abcrown \
             --method alpha_beta \
@@ -228,7 +228,7 @@ jobs:
         run: |
           source "$(conda info --base)/etc/profile.d/conda.sh"
           conda activate act-eran
-          cd verifier/
+          cd act/
           python main.py \
             --verifier eran \
             --method deepzono \
