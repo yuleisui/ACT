@@ -1,21 +1,5 @@
 #!/bin/bash
 #
-# Quick regression test runner for bounds propagation
-# Run this script after making changes to bounds_propagation.py
-#
-
-set -e
-
-# Get the directory where this script is located (unit-tests folder)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
-
-echo "🧪 ACT Bounds Propagation Regression Tests"
-echo "==========================================="
-echo ""
-
-#!/bin/bash
-#
 # Enhanced regression test runner for bounds propagation APIs
 # Usage: ./regression_test.sh [options]
 #
@@ -65,9 +49,9 @@ while [[ $# -gt 0 ]]; do
         --help)
             echo "Usage: $0 [options]"
             echo "Options:"
-            echo "  --save-baseline  Save current performance as baseline"
-            echo "  --quick         Run only fast tests"
-            echo "  --help          Show this help message"
+            echo "  --save-baseline     Capture new performance and correctness baseline"
+            echo "  --quick             Run only fast tests"
+            echo "  --help              Show this help message"
             exit 0
             ;;
         *)
@@ -99,7 +83,7 @@ fi
 if [[ "$SAVE_BASELINE" == "true" ]]; then
     echo ""
     echo -e "${YELLOW}📊 Saving performance baseline...${NC}"
-    python test_bounds_prop_regression.py --capture-baseline
+    python test_bounds_prop_regression.py --save-baseline
     echo -e "${GREEN}✅ Baseline saved${NC}"
 fi
 
@@ -140,7 +124,7 @@ if [ -f "test_bounds_prop_regression.py" ]; then
         echo ""
         echo -e "${BLUE}🔧 Next Steps:${NC}"
         echo "  • Review the detailed failure messages above"
-        echo "  • If changes are intentional, update baseline: python test_bounds_prop_regression.py --capture-baseline"
+        echo "  • If changes are intentional, update baseline: ./regression_test.sh --save-baseline"
         echo "  • If unintentional, investigate algorithmic or numerical changes"
         exit 1
     fi
@@ -161,5 +145,5 @@ if [ -f "test_bounds_prop_regression.py" ]; then
 fi
 echo ""
 echo "🔧 Next steps:"
-echo "  • Run with --save-baseline to update performance baseline"
-echo "  • Run with --quick for faster testing during development"
+echo "  • ./regression_test.sh --save-baseline                      # Update performance baseline"
+echo "  • ./regression_test.sh --quick                              # Faster testing during development"

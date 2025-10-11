@@ -14,6 +14,7 @@ comprehensive regression testing across various models and input scenarios.
 """
 
 import json
+import sys
 import time
 import hashlib
 import torch
@@ -23,6 +24,7 @@ from dataclasses import dataclass, asdict
 from datetime import datetime
 
 from act.interval.bounds_propagation import BoundsPropagate
+from act.interval.bounds_prop_helper import TrackingMode
 from test_configs import MockFactory, get_regression_test_configs
 
 
@@ -32,6 +34,11 @@ class RegressionBaseline:
     correctness: dict
     timestamp: str
     test_configs: dict
+    metadata: dict = None
+    
+    def __post_init__(self):
+        if self.metadata is None:
+            self.metadata = {}
 
 
 class BoundsRegressionTester:
@@ -45,7 +52,7 @@ class BoundsRegressionTester:
     def capture_baseline(self):
         """Capture baseline using shared configurations."""
         torch.manual_seed(42)
-        propagator = BoundsPropagate(performance_mode=True)
+        propagator = BoundsPropagate(mode=TrackingMode.PERFORMANCE)
         
         performance_data = {}
         correctness_data = {}
@@ -111,6 +118,11 @@ class BoundsRegressionTester:
             test_configs={
                 'performance': perf_configs,
                 'correctness': correct_configs
+            },
+            metadata={
+                'capture_method': 'manual',
+                'python_version': f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+                'torch_version': torch.__version__
             }
         )
         
@@ -122,14 +134,14 @@ class BoundsRegressionTester:
     def test_regression(self, auto_update_on_improvement: bool = False) -> bool:
         """Test for regressions using shared configurations."""
         if not self.baseline_file.exists():
-            print("❌ No baseline found. Run with --capture-baseline first.")
+            print("❌ No baseline found. Run ./regression_test.sh --save-baseline first.")
             return False
         
         with open(self.baseline_file) as f:
             baseline = RegressionBaseline(**json.load(f))
         
         torch.manual_seed(42)
-        propagator = BoundsPropagate(performance_mode=True)
+        propagator = BoundsPropagate(mode=TrackingMode.PERFORMANCE)
         
         success = True
         performance_failures = []
@@ -250,7 +262,7 @@ class BoundsRegressionTester:
             print(f"\n💡 Recommendations:")
             if performance_failures:
                 print("  • Performance: Check for algorithmic changes, memory leaks, or suboptimal implementations")
-                print("  • Re-capture baseline if performance changes are intentional: --capture-baseline")
+                print("  • Re-capture baseline if performance changes are intentional: ./regression_test.sh --save-baseline")
             if correctness_failures:
                 print("  • Correctness: Verify numerical stability, floating-point precision, or algorithm changes")
                 print("  • Check for unintended modifications to bounds computation logic")
@@ -305,15 +317,15 @@ def main():
     import sys
     tester = BoundsRegressionTester()
     
-    if "--capture-baseline" in sys.argv:
+    if "--save-baseline" in sys.argv:
         tester.capture_baseline()
     elif "--test-regression" in sys.argv:
         # Enable auto-update for --test-regression 
         success = tester.test_regression(auto_update_on_improvement=True)
         sys.exit(0 if success else 1)
     else:
-        print("Usage: python test_bounds_prop_regression.py [--capture-baseline|--test-regression]")
-        print("  --capture-baseline    : Capture new performance and correctness baseline")
+        print("Usage: python test_bounds_prop_regression.py [--save-baseline|--test-regression]")
+        print("  --save-baseline       : Capture new performance and correctness baseline")
         print("  --test-regression     : Test for regressions (auto-updates baseline on improvements)")
 
 

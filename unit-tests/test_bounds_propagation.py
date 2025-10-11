@@ -26,6 +26,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from act.interval.bounds_propagation import BoundsPropagate
 from act.util.bounds import Bounds
+from act.interval.bounds_prop_helper import TrackingMode
 
 # Import shared test configurations
 from test_configs import MockFactory, get_unit_test_configs
@@ -37,7 +38,7 @@ class TestBoundsPropagateLayers(unittest.TestCase):
     def setUp(self):
         """Initialize with REAL BoundsPropagate."""
         torch.manual_seed(42)
-        self.propagator = BoundsPropagate(enable_metadata_tracking=False, performance_mode=True)
+        self.propagator = BoundsPropagate(mode=TrackingMode.PERFORMANCE)
     
     def test_handle_linear_correctness(self):
         """Test _handle_linear API with various configurations."""
@@ -104,12 +105,12 @@ class TestBoundsPropagateLayers(unittest.TestCase):
                 self.assertTrue(torch.all(result.lb <= result.ub))
 
 
-class TestBoundsPropagateEndToEnd(unittest.TestCase):
-    """Test main propagate_bounds API end-to-end using shared configs."""
+class TestBoundsPropagatePipeline(unittest.TestCase):
+    """Test main propagate_bounds API using shared configs."""
     
     def setUp(self):
         torch.manual_seed(42)
-        self.propagator = BoundsPropagate(performance_mode=True)
+        self.propagator = BoundsPropagate(mode=TrackingMode.PERFORMANCE)
     
     def test_propagate_bounds_configurations(self):
         """Test main API with various model/data combinations."""
@@ -134,7 +135,7 @@ class TestBoundsPropagatePoperties(unittest.TestCase):
     
     def setUp(self):
         torch.manual_seed(42)
-        self.propagator = BoundsPropagate(performance_mode=True)
+        self.propagator = BoundsPropagate(mode=TrackingMode.PERFORMANCE)
     
     def test_mathematical_properties(self):
         """Test mathematical properties with various configurations."""

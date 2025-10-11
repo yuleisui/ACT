@@ -1,32 +1,32 @@
 {
   "performance": {
     "simple_linear_small_uniform": {
-      "mean_time": 0.0004859430094559987,
-      "std_time": 6.160737257758137e-06,
+      "mean_time": 0.05715752499721324,
+      "std_time": 0.0004199598419661142,
       "iterations": 5,
       "output_shape": [
         5
       ]
     },
     "mnist_mlp_mnist_linf": {
-      "mean_time": 0.01922056166222319,
-      "std_time": 1.9050683362303717e-05,
+      "mean_time": 0.0741672923322767,
+      "std_time": 0.0004498176648997039,
       "iterations": 3,
       "output_shape": [
         10
       ]
     },
     "small_cnn_cifar_linf": {
-      "mean_time": 0.002637816476635635,
-      "std_time": 0.00019522052025422454,
+      "mean_time": 0.06525095200049691,
+      "std_time": 0.0006063889886718243,
       "iterations": 2,
       "output_shape": [
         10
       ]
     },
     "deep_conv_mnist_l2": {
-      "mean_time": 0.00204313249560073,
-      "std_time": 0.0001824515056796372,
+      "mean_time": 0.060054430505260825,
+      "std_time": 0.00041234749369323254,
       "iterations": 2,
       "output_shape": [
         10
@@ -67,7 +67,7 @@
       ]
     }
   },
-  "timestamp": "2025-10-11T11:36:45.977634",
+  "timestamp": "2025-10-11T12:47:35.531315",
   "test_configs": {
     "performance": [
       {
@@ -109,5 +109,10 @@
         "data": "adversarial_bounds"
       }
     ]
+  },
+  "metadata": {
+    "capture_method": "manual",
+    "python_version": "3.13.5",
+    "torch_version": "2.8.0+cu128"
   }
 }
