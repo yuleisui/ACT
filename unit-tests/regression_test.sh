@@ -93,7 +93,7 @@ echo -e "${YELLOW}🧪 Running bounds propagation tests...${NC}"
 case $TEST_MODE in
     "quick")
         echo "Running quick test suite..."
-        python -m unittest test_bounds_propagation.TestBoundsPropagateLayers.test_reference_linear_implementation -v
+        python -m unittest test_bounds_propagation.TestBoundsPropagateLayers.test_handle_linear_correctness -v
         ;;
     *)
         echo "Running full test suite..."
@@ -106,6 +106,28 @@ if [[ $? -eq 0 ]]; then
 else
     echo -e "${RED}❌ Bounds propagation tests failed${NC}"
     exit 1
+fi
+
+# Run bounds operator tests
+if [ -f "test_bounds_operators.py" ]; then
+    echo ""
+    echo -e "${YELLOW}🧮 Running bounds operator tests...${NC}"
+    case $TEST_MODE in
+        "quick")
+            echo "Skipping operator tests in quick mode..."
+            ;;
+        *)
+            echo "Running bounds operator test suite..."
+            python -m unittest test_bounds_operators -v
+            ;;
+    esac
+    
+    if [[ $? -eq 0 ]]; then
+        echo -e "${GREEN}✅ Bounds operator tests passed${NC}"
+    else
+        echo -e "${RED}❌ Bounds operator tests failed${NC}"
+        exit 1
+    fi
 fi
 
 # Run regression tests if the file exists
@@ -140,6 +162,9 @@ echo "📋 What was tested:"
 echo "  • Shared configuration system"
 echo "  • Reference implementations"
 echo "  • Bounds propagation APIs"
+if [ -f "test_bounds_operators.py" ]; then
+    echo "  • Bounds operator arithmetic"
+fi
 if [ -f "test_bounds_prop_regression.py" ]; then
     echo "  • Performance regression"
 fi

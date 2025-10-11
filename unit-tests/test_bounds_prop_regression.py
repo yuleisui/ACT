@@ -188,17 +188,26 @@ class BoundsRegressionTester:
             
             # Check for performance changes
             baseline_time = baseline.performance[test_name]['mean_time']
+            percent_change = ((current_time - baseline_time) / baseline_time) * 100
+            
             if current_time > baseline_time * 1.2:
-                regression_percent = ((current_time - baseline_time) / baseline_time) * 100
-                failure_msg = f"Performance regression in {test_name}: {current_time:.4f}s vs baseline {baseline_time:.4f}s (+{regression_percent:.1f}% above 20% threshold)"
+                failure_msg = f"Performance regression in {test_name}: {current_time:.4f}s vs baseline {baseline_time:.4f}s (+{percent_change:.1f}% above 20% threshold)"
                 print(f"⚠️  {failure_msg}")
                 performance_failures.append(failure_msg)
                 success = False
             elif current_time < baseline_time * 0.8:  # 20% improvement threshold
-                improvement_percent = ((baseline_time - current_time) / baseline_time) * 100
-                improvement_msg = f"Performance improvement in {test_name}: {current_time:.4f}s vs baseline {baseline_time:.4f}s (-{improvement_percent:.1f}% improvement)"
+                improvement_msg = f"Performance improvement in {test_name}: {current_time:.4f}s vs baseline {baseline_time:.4f}s (-{-percent_change:.1f}% improvement)"
                 print(f"🚀 {improvement_msg}")
                 performance_improvements.append(improvement_msg)
+            else:
+                # Show all performance changes, even smaller ones
+                if abs(percent_change) > 1.0:  # Show changes >1%
+                    if percent_change < 0:
+                        print(f"✅ Minor improvement in {test_name}: {current_time:.4f}s vs baseline {baseline_time:.4f}s ({percent_change:.1f}%)")
+                    else:
+                        print(f"� Minor change in {test_name}: {current_time:.4f}s vs baseline {baseline_time:.4f}s (+{percent_change:.1f}%)")
+                else:
+                    print(f"🔄 Stable performance in {test_name}: {current_time:.4f}s vs baseline {baseline_time:.4f}s ({percent_change:+.1f}%)")
         
         # Test correctness regressions
         correct_configs = get_regression_test_configs("correctness_tests")
@@ -275,6 +284,34 @@ class BoundsRegressionTester:
         
         if success:
             print("✅ All regression tests passed!")
+            
+        # Always show performance summary at the end
+        if current_performance:
+            print(f"\n📊 Performance Summary:")
+            print("=" * 50)
+            total_improvement = 0
+            num_tests = 0
+            
+            for test_name, perf_data in current_performance.items():
+                if test_name in baseline.performance:
+                    current_time = perf_data['mean_time']
+                    baseline_time = baseline.performance[test_name]['mean_time']
+                    percent_change = ((current_time - baseline_time) / baseline_time) * 100
+                    
+                    status_icon = "🚀" if percent_change < -20 else "✅" if percent_change < 0 else "📊" if percent_change < 20 else "⚠️"
+                    print(f"  {status_icon} {test_name}: {current_time:.4f}s (baseline: {baseline_time:.4f}s, {percent_change:+.1f}%)")
+                    
+                    total_improvement += -percent_change  # Negative change is improvement
+                    num_tests += 1
+            
+            if num_tests > 0:
+                avg_change = total_improvement / num_tests
+                if avg_change > 1:
+                    print(f"\n🎯 Overall Performance: {avg_change:.1f}% improvement on average")
+                elif avg_change < -1:
+                    print(f"\n📉 Overall Performance: {-avg_change:.1f}% slower on average")
+                else:
+                    print(f"\n⚖️  Overall Performance: Stable ({avg_change:+.1f}% change on average)")
         
         return success
 

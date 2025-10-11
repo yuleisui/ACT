@@ -36,7 +36,6 @@ from act.interval.bounds_prop_helper import (
     BoundsPropMetadata, 
     BoundsPropagationMetadata, 
     TrackingMode,
-    IntervalPropagationError,
     NumericalInstabilityError,
     InvalidBoundsError,
     UnsupportedLayerError
@@ -97,20 +96,18 @@ class BoundsPropagate:
         # Device consistency - metadata tracker handles performance optimizations
         input_lb_clean, input_ub_clean = self.device_manager.ensure_device_consistency(model, input_lb, input_ub)
         
-        # Create initial bounds object
+        # Create initial bounds object - validate input bounds since this is public API entry point
         bounds = Bounds(input_lb_clean, input_ub_clean)
         
         # Logging handled by metadata tracker performance settings
-        if self.metadata_tracker.mode.enable_logging:
-            ACTLog.log_verification_info("Starting interval bound propagation through network layers")
+        self.metadata_tracker.log_if_enabled("Starting interval bound propagation through network layers")
         
         # Reset ReLU layer index for this propagation
         self.relu_layer_index = 0
         
         for idx, layer in enumerate(model.children()):
             # Logging handled by metadata tracker
-            if self.metadata_tracker.mode.enable_logging:
-                ACTLog.log_verification_info(f"Processing layer {idx}: {type(layer).__name__}")
+            self.metadata_tracker.log_if_enabled(f"Processing layer {idx}: {type(layer).__name__}")
             
             try:
                 # Validation and processing handled by metadata tracker
@@ -146,8 +143,8 @@ class BoundsPropagate:
                 raise UnsupportedLayerError(f"Failed to process layer {idx} ({type(layer).__name__}): {e}") from e
             
             # Progress logging handled by metadata tracker
-            if self.metadata_tracker.mode.enable_logging and (idx % 10 == 0 or idx < 5):
-                ACTLog.log_verification_info(f"Layer {idx} completed: bounds shape {bounds.shape}")
+            if idx % 10 == 0 or idx < 5:
+                self.metadata_tracker.log_if_enabled(f"Layer {idx} completed: bounds shape {bounds.shape}")
             
             # Track layer count for metadata
             layer_count = idx + 1
@@ -169,7 +166,7 @@ class BoundsPropagate:
         
         # Handle bounds flattening if needed
         if hasattr(bounds, 'flatten') and len(bounds.shape) > 2:
-            bounds = bounds.flatten()  # Essential operation
+            bounds = bounds.flatten(_internal=True)  # Essential operation
         
         # Tracking handled by metadata tracker if available
         if hasattr(self.metadata_tracker, 'track_linear_layer'):
@@ -179,9 +176,8 @@ class BoundsPropagate:
         weight = layer.weight
         bias = layer.bias
         
-        # Decompose weights: W = W+ + W- for optimal bound computation
-        w_pos = torch.clamp(weight, min=0)
-        w_neg = torch.clamp(weight, max=0)
+        # Use cached weight decomposition for performance
+        w_pos, w_neg = self.weight_decomposer.decompose(weight)
         
         # Cache attribute access for performance
         lb = bounds.lb
@@ -195,7 +191,7 @@ class BoundsPropagate:
             new_lb += bias
             new_ub += bias
         
-        result = Bounds(new_lb, new_ub, validate=False)
+        result = Bounds(new_lb, new_ub, _internal=True)
         
         if self.metadata_tracker.mode.enable_logging:
             ACTLog.log_verification_info(f"Linear layer {idx} output shape: {result.shape}")
@@ -247,7 +243,7 @@ class BoundsPropagate:
             new_lb += bias.view(*bias_shape)
             new_ub += bias.view(*bias_shape)
             
-        result = Bounds(new_lb, new_ub, validate=False)
+        result = Bounds(new_lb, new_ub, _internal=True)
         
         if self.metadata_tracker.mode.enable_logging:
             ACTLog.log_verification_info(f"Conv2d layer {idx} output shape: {result.shape}")
@@ -273,7 +269,7 @@ class BoundsPropagate:
         return Bounds(
             bounds.lb * norm_factor + offset,
             bounds.ub * norm_factor + offset,
-            validate=False
+            _internal=True
         )
 
     # =============================================================================
@@ -295,10 +291,10 @@ class BoundsPropagate:
                     ACTLog.log_verification_info(f"Applied {layer_name} constraints: {constrained_bounds._applied_constraints}")
                 
                 # Apply ReLU transformation to constrained bounds
-                result_bounds = constrained_bounds.clamp_relu()
+                result_bounds = constrained_bounds.clamp_relu(_internal=True)
             else:
                 # No constraints - apply standard ReLU
-                result_bounds = bounds.clamp_relu()
+                result_bounds = bounds.clamp_relu(_internal=True)
             
             # Increment ReLU layer index and track constraints application
             self.relu_layer_index += 1
@@ -308,14 +304,13 @@ class BoundsPropagate:
             return result_bounds
             
         elif isinstance(layer, nn.Sigmoid):
-            return bounds.apply_sigmoid()
+            return bounds.apply_sigmoid(_internal=True)
         elif isinstance(layer, nn.MaxPool2d):
             # Inline max pooling operation
             kernel_size, stride, padding = layer.kernel_size, layer.stride, layer.padding
             return Bounds(
                 nn.functional.max_pool2d(bounds.lb, kernel_size, stride, padding),
-                nn.functional.max_pool2d(bounds.ub, kernel_size, stride, padding),
-                validate=False
+                nn.functional.max_pool2d(bounds.ub, kernel_size, stride, padding)
             )
         else:
             raise NotImplementedError(f"Activation layer {type(layer)} not supported")
@@ -327,9 +322,8 @@ class BoundsPropagate:
     def _handle_structural(self, layer: nn.Module, bounds: Bounds) -> Bounds:
         """Handle structural layers that manipulate tensor shape without computation."""
         if isinstance(layer, (nn.Flatten, OnnxFlatten)):
-            if self.metadata_tracker.mode.enable_logging:
-                ACTLog.log_verification_info("Processing flatten layer")
-            return bounds.flatten(start_dim=0)
+            self.metadata_tracker.log_if_enabled("Processing flatten layer")
+            return bounds.flatten(start_dim=0, _internal=True)
         
         elif isinstance(layer, OnnxReshape):
             # Extract shape dimensions from ONNX reshape layer
@@ -342,13 +336,13 @@ class BoundsPropagate:
             if shape is None:
                 raise AttributeError(f"Cannot find shape attribute in Reshape layer. Available: {dir(layer)}")
             
-            return bounds.reshape(list(shape))
+            return bounds.reshape(list(shape), _internal=True)
         
         elif isinstance(layer, OnnxSqueeze):
-            return bounds.squeeze(layer.dim)
+            return bounds.squeeze(layer.dim, _internal=True)
         
         elif isinstance(layer, OnnxUnsqueeze):
-            return bounds.unsqueeze(layer.dim)
+            return bounds.unsqueeze(layer.dim, _internal=True)
         
         elif isinstance(layer, OnnxTranspose):
             # Extract permutation dimensions from ONNX transpose layer
@@ -361,7 +355,7 @@ class BoundsPropagate:
             if perm is None:
                 raise AttributeError(f"Cannot find permutation attribute in Transpose layer. Available: {dir(layer)}")
             
-            return bounds.permute(*perm)
+            return bounds.permute(*perm, _internal=True)
         
         else:
             raise NotImplementedError(f"Structural layer {type(layer)} not supported")
@@ -373,21 +367,20 @@ class BoundsPropagate:
     def _handle_onnx_op(self, layer: nn.Module, bounds: Bounds) -> Bounds:
         """Handle ONNX operation layers with proper interval arithmetic."""
         if isinstance(layer, OnnxAdd):
-            return Bounds(layer(bounds.lb), layer(bounds.ub), validate=False)
+            return Bounds(layer(bounds.lb), layer(bounds.ub))
         
         elif isinstance(layer, OnnxDiv):
             new_lb = layer(bounds.lb)
             new_ub = layer(bounds.ub)
             # Division can flip bound ordering depending on divisor sign
-            return Bounds(torch.min(new_lb, new_ub), torch.max(new_lb, new_ub), validate=False)
+            return Bounds(torch.min(new_lb, new_ub), torch.max(new_lb, new_ub))
         
         elif isinstance(layer, OnnxClip):
             min_val = layer.min
             max_val = layer.max
             return Bounds(
                 torch.clamp(bounds.lb, min=min_val, max=max_val),
-                torch.clamp(bounds.ub, min=min_val, max=max_val),
-                validate=False
+                torch.clamp(bounds.ub, min=min_val, max=max_val)
             )
         
         elif isinstance(layer, OperatorWrapper):
@@ -400,28 +393,12 @@ class BoundsPropagate:
         """Handle generic operator wrapper with interval arithmetic for constant operations."""
         if not (hasattr(layer, 'op_type') and layer.op_type in ["Add", "Sub", "Mul", "Div"]):
             # Generic operator without specific interval handling
-            return Bounds(layer(bounds.lb), layer(bounds.ub), validate=False)
+            return Bounds(layer(bounds.lb), layer(bounds.ub))
         
         other = getattr(layer, 'other', None)
         if other is None:
             # No constant operand - apply layer directly
-            return Bounds(layer(bounds.lb), layer(bounds.ub), validate=False)
+            return Bounds(layer(bounds.lb), layer(bounds.ub))
         
-        # Apply interval arithmetic with constant operand
-        if layer.op_type == "Add":
-            return Bounds(bounds.lb + other, bounds.ub + other, validate=False)
-        elif layer.op_type == "Sub":
-            return Bounds(bounds.lb - other, bounds.ub - other, validate=False)
-        elif layer.op_type == "Mul":
-            # Multiplication can flip bounds depending on sign of constant
-            new_lb = torch.min(bounds.lb * other, bounds.ub * other)
-            new_ub = torch.max(bounds.lb * other, bounds.ub * other)
-            return Bounds(new_lb, new_ub, validate=False)
-        elif layer.op_type == "Div":
-            # Validate no division by zero
-            if torch.any(other == 0):
-                raise ValueError("Division by zero encountered in OperatorWrapper")
-            # Division can flip bounds depending on sign of divisor
-            new_lb = torch.min(bounds.lb / other, bounds.ub / other)
-            new_ub = torch.max(bounds.lb / other, bounds.ub / other)
-            return Bounds(new_lb, new_ub, validate=False)
+        # Use the new Bounds class methods for operator arithmetic
+        return bounds.apply_operator(layer.op_type, other)

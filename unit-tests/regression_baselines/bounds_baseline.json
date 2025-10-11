@@ -1,32 +1,32 @@
 {
   "performance": {
     "simple_linear_small_uniform": {
-      "mean_time": 0.05715752499721324,
-      "std_time": 0.0004199598419661142,
+      "mean_time": 0.057375365344341844,
+      "std_time": 0.0003939649811641717,
       "iterations": 5,
       "output_shape": [
         5
       ]
     },
     "mnist_mlp_mnist_linf": {
-      "mean_time": 0.0741672923322767,
-      "std_time": 0.0004498176648997039,
+      "mean_time": 0.059320031005578734,
+      "std_time": 0.0010963461051040335,
       "iterations": 3,
       "output_shape": [
         10
       ]
     },
     "small_cnn_cifar_linf": {
-      "mean_time": 0.06525095200049691,
-      "std_time": 0.0006063889886718243,
+      "mean_time": 0.06396526747266762,
+      "std_time": 4.393051494844258e-05,
       "iterations": 2,
       "output_shape": [
         10
       ]
     },
     "deep_conv_mnist_l2": {
-      "mean_time": 0.060054430505260825,
-      "std_time": 0.00041234749369323254,
+      "mean_time": 0.061807223479263484,
+      "std_time": 0.0006501245079562068,
       "iterations": 2,
       "output_shape": [
         10
@@ -67,7 +67,7 @@
       ]
     }
   },
-  "timestamp": "2025-10-11T12:47:35.531315",
+  "timestamp": "2025-10-11T14:33:01.071478",
   "test_configs": {
     "performance": [
       {

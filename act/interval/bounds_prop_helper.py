@@ -337,6 +337,11 @@ class BoundsPropMetadata:
         if self.mode.enable_logging:
             ACTLog.log_verification_info(f"Numerical warning: {warning_msg}")
     
+    def log_if_enabled(self, message: str) -> None:
+        """Log message if logging is enabled in current tracking mode."""
+        if self.mode.enable_logging:
+            ACTLog.log_verification_info(message)
+    
     def _track_constraint_application(self):
         """Private method for internal use - kept for backward compatibility."""
         self.track_constraint_application()
@@ -516,15 +521,15 @@ class BoundsPropMetadata:
             NumericalInstabilityError: If NaN or infinite values detected
             InvalidBoundsError: If bounds are inconsistent
         """
+        # Skip all validation in production/performance modes for maximum speed
+        if not self.mode.enable_validation:
+            return
+            
         # Always check bounds consistency (critical for correctness)
         if torch.any(lb > ub):
             raise InvalidBoundsError(f"Invalid bounds at layer {layer_idx}: lower bounds exceed upper bounds")
         
-        # Skip expensive NaN/inf checks in production/performance modes  
-        if not self.mode.enable_validation:
-            return
-        
-        # Comprehensive validation in normal mode
+        # Comprehensive validation in debug mode
         if torch.any(torch.isnan(lb)) or torch.any(torch.isnan(ub)):
             raise NumericalInstabilityError(f"NaN values detected in bounds at layer {layer_idx}")
         
