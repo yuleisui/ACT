@@ -1,0 +1,113 @@
+{
+  "performance": {
+    "simple_linear_small_uniform": {
+      "mean_time": 0.0004859430094559987,
+      "std_time": 6.160737257758137e-06,
+      "iterations": 5,
+      "output_shape": [
+        5
+      ]
+    },
+    "mnist_mlp_mnist_linf": {
+      "mean_time": 0.01922056166222319,
+      "std_time": 1.9050683362303717e-05,
+      "iterations": 3,
+      "output_shape": [
+        10
+      ]
+    },
+    "small_cnn_cifar_linf": {
+      "mean_time": 0.002637816476635635,
+      "std_time": 0.00019522052025422454,
+      "iterations": 2,
+      "output_shape": [
+        10
+      ]
+    },
+    "deep_conv_mnist_l2": {
+      "mean_time": 0.00204313249560073,
+      "std_time": 0.0001824515056796372,
+      "iterations": 2,
+      "output_shape": [
+        10
+      ]
+    }
+  },
+  "correctness": {
+    "simple_linear_small_uniform": {
+      "lb_hash": "235a7c38f1f830efebaad84d5cd00949",
+      "ub_hash": "abb7925bd7509ecb51cbbaa63f367928",
+      "bounds_width": 0.18043294548988342,
+      "output_shape": [
+        5
+      ]
+    },
+    "mnist_mlp_mnist_linf": {
+      "lb_hash": "73918db41769018204621f34a53d8820",
+      "ub_hash": "3ae98039f0b88ec11140fee7a129dc30",
+      "bounds_width": 96.91252136230469,
+      "output_shape": [
+        10
+      ]
+    },
+    "small_cnn_cifar_linf": {
+      "lb_hash": "d49ed8a0598d16122b028105b3a6f25c",
+      "ub_hash": "0678583f733315cefba8ac5c048e15fa",
+      "bounds_width": 155.73806762695312,
+      "output_shape": [
+        10
+      ]
+    },
+    "mixed_network_adversarial_bounds": {
+      "lb_hash": "8a8c923b69afee13e424a6a5d40c1941",
+      "ub_hash": "78ef861b1f28b5071d50b3f391760972",
+      "bounds_width": 2.432349681854248,
+      "output_shape": [
+        3
+      ]
+    }
+  },
+  "timestamp": "2025-10-11T11:36:45.977634",
+  "test_configs": {
+    "performance": [
+      {
+        "model": "simple_linear",
+        "data": "small_uniform",
+        "iterations": 5
+      },
+      {
+        "model": "mnist_mlp",
+        "data": "mnist_linf",
+        "iterations": 3
+      },
+      {
+        "model": "small_cnn",
+        "data": "cifar_linf",
+        "iterations": 2
+      },
+      {
+        "model": "deep_conv",
+        "data": "mnist_l2",
+        "iterations": 2
+      }
+    ],
+    "correctness": [
+      {
+        "model": "simple_linear",
+        "data": "small_uniform"
+      },
+      {
+        "model": "mnist_mlp",
+        "data": "mnist_linf"
+      },
+      {
+        "model": "small_cnn",
+        "data": "cifar_linf"
+      },
+      {
+        "model": "mixed_network",
+        "data": "adversarial_bounds"
+      }
+    ]
+  }
+}

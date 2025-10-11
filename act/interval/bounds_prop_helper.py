@@ -110,14 +110,16 @@ class BoundsPropMetadata:
     device consistency, and bounds validation with optional tracking control.
     """
     
-    def __init__(self, enable_tracking: bool = True):
+    def __init__(self, enable_tracking: bool = True, performance_mode: bool = False):
         """
         Initialize the metadata tracker with optional tracking control.
         
         Args:
             enable_tracking: Whether to enable metadata tracking (default: True)
+            performance_mode: Whether to enable performance optimizations (reduced logging/validation)
         """
         self.enable_tracking = enable_tracking
+        self.performance_mode = performance_mode
         self._reset_metadata()
         self.device_manager = DeviceManager()
     

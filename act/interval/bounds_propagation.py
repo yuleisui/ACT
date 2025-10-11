@@ -56,19 +56,20 @@ class BoundsPropagate:
     Interval bound propagation through neural network layers using interval arithmetic.
     """
     
-    def __init__(self, relu_constraints: Optional[list] = None, enable_metadata_tracking: bool = True):
+    def __init__(self, relu_constraints: Optional[list] = None, enable_metadata_tracking: bool = True, performance_mode: bool = False):
         """
         Initialize the interval bound propagator.
         
         Args:
             relu_constraints: Optional list of ReLU constraints from BaB refinement
             enable_metadata_tracking: Whether to enable metadata tracking (default: True)
+            performance_mode: Whether to enable performance optimizations (reduced logging/validation)
         """
         # Always create a defensive copy to prevent external modification
         self.current_relu_constraints = (relu_constraints or []).copy()
         
         # Initialize the metadata tracker for bounds propagation tracking
-        self.metadata_tracker = BoundsPropMetadata(enable_metadata_tracking)
+        self.metadata_tracker = BoundsPropMetadata(enable_metadata_tracking, performance_mode)
         
         # Always keep device manager available for essential functionality
         self.device_manager = DeviceManager()
@@ -84,31 +85,43 @@ class BoundsPropagate:
         Propagate interval bounds through the neural network model.
         """
 
-        # Comprehensive input validation using metadata tracker
-        self.metadata_tracker.validate_input_bounds(input_lb, input_ub)
+        # Optimized input validation - skip expensive validation in performance mode
+        if not self.metadata_tracker.performance_mode:
+            self.metadata_tracker.validate_input_bounds(input_lb, input_ub)
         
         # Initialize tracking and validation
         self.metadata_tracker.start_propagation()
         
-        # Ensure device consistency and create working copies (always needed)
-        input_lb_clean, input_ub_clean = self.device_manager.ensure_device_consistency(model, input_lb.clone(), input_ub.clone())
+        # Optimize device consistency - avoid unnecessary cloning in performance mode
+        if self.metadata_tracker.performance_mode:
+            # Use in-place operations when possible in performance mode
+            input_lb_clean, input_ub_clean = self.device_manager.ensure_device_consistency(model, input_lb, input_ub)
+        else:
+            # Safe cloning for debugging/development mode
+            input_lb_clean, input_ub_clean = self.device_manager.ensure_device_consistency(model, input_lb.clone(), input_ub.clone())
         
         # Create initial bounds object
         bounds = Bounds(input_lb_clean, input_ub_clean)
         
-        ACTLog.log_verification_info("Starting interval bound propagation through network layers")
+        # Conditional logging based on performance mode
+        if not self.metadata_tracker.performance_mode:
+            ACTLog.log_verification_info("Starting interval bound propagation through network layers")
         
         # Reset ReLU layer index for this propagation
         self.relu_layer_index = 0
         
         for idx, layer in enumerate(model.children()):
-            ACTLog.log_verification_info(f"Processing layer {idx}: {type(layer).__name__}")
+            # Optimize logging - only log in debug mode or for key layers
+            if not self.metadata_tracker.performance_mode:
+                ACTLog.log_verification_info(f"Processing layer {idx}: {type(layer).__name__}")
             
             try:
-                # Perform essential bounds validation and optional tracking
-                self.metadata_tracker.validate_bounds_essential(bounds.lb, bounds.ub, idx)
-                self.metadata_tracker.process_layer(layer, idx, bounds.lb, bounds.ub)
+                # Optimized validation - skip expensive validation in performance mode
+                if not self.metadata_tracker.performance_mode:
+                    self.metadata_tracker.validate_bounds_essential(bounds.lb, bounds.ub, idx)
+                    self.metadata_tracker.process_layer(layer, idx, bounds.lb, bounds.ub)
                 
+                # Fast path layer processing with optimized dispatching
                 if isinstance(layer, nn.Linear):
                     bounds = self._handle_linear(layer, bounds, idx)
                 elif isinstance(layer, nn.Conv2d):
@@ -124,21 +137,26 @@ class BoundsPropagate:
                 else:
                     raise UnsupportedLayerError(f"Layer type {type(layer)} not supported in interval propagation")
                 
-                # Validate layer output once for all layer types (determines category internally)
-                self.metadata_tracker.validate_layer_output(bounds.lb, bounds.ub, idx, layer)
-                
-                # Finalize layer processing for timing and memory tracking
-                self.metadata_tracker.finalize_layer_processing(idx)
+                # Conditional validation and metadata tracking
+                if not self.metadata_tracker.performance_mode:
+                    # Validate layer output once for all layer types (determines category internally)
+                    self.metadata_tracker.validate_layer_output(bounds.lb, bounds.ub, idx, layer)
+                    # Finalize layer processing for timing and memory tracking
+                    self.metadata_tracker.finalize_layer_processing(idx)
                     
             except (NumericalInstabilityError, InvalidBoundsError) as e:
-                self.metadata_tracker.track_numerical_warning(f"Layer {idx} error: {e}")
+                if not self.metadata_tracker.performance_mode:
+                    self.metadata_tracker.track_numerical_warning(f"Layer {idx} error: {e}")
                 raise
             except Exception as e:
                 raise UnsupportedLayerError(f"Failed to process layer {idx} ({type(layer).__name__}): {e}") from e
             
-            # Log progress periodically
-            if idx % 10 == 0 or idx < 5:
+            # Optimized progress logging - only periodic in debug mode
+            if not self.metadata_tracker.performance_mode and (idx % 10 == 0 or idx < 5):
                 ACTLog.log_verification_info(f"Layer {idx} completed: bounds shape {bounds.shape}")
+            
+            # Track layer count for metadata even in performance mode
+            layer_count = idx + 1
         
         ACTLog.log_verification_info("Interval bound propagation completed successfully")
         
@@ -151,8 +169,20 @@ class BoundsPropagate:
     # =============================================================================
 
     def _handle_linear(self, layer: nn.Linear, bounds: Bounds, idx: int) -> Bounds:
-        """Handle linear layer using weight decomposition for tight interval arithmetic."""
-        # Direct weight decomposition for optimal performance
+        """Handle linear layer with performance optimizations."""
+        if not self.metadata_tracker.performance_mode:
+            ACTLog.log_verification_info(f"Linear layer {idx}: input {layer.in_features} -> {layer.out_features}")
+        
+        # Optimized computation
+        if hasattr(bounds, 'flatten') and len(bounds.shape) > 2:
+            bounds = bounds.flatten()  # Essential operation
+        
+        # Full tracking and logging in normal mode only
+        if not self.metadata_tracker.performance_mode:
+            if hasattr(self.metadata_tracker, 'track_linear_layer'):
+                self.metadata_tracker.track_linear_layer(layer, bounds.lb, bounds.ub, idx)
+        
+        # Apply linear transformation using interval arithmetic
         weight = layer.weight
         bias = layer.bias
         
@@ -172,12 +202,24 @@ class BoundsPropagate:
             new_lb += bias
             new_ub += bias
         
-        result_bounds = Bounds(new_lb, new_ub, validate=False)
-        ACTLog.log_verification_info(f"Linear layer processed: output shape {result_bounds.shape}")
-        return result_bounds
+        result = Bounds(new_lb, new_ub, validate=False)
+        
+        if not self.metadata_tracker.performance_mode:
+            ACTLog.log_verification_info(f"Linear layer {idx} output shape: {result.shape}")
+        
+        return result
 
     def _handle_conv2d(self, layer: nn.Conv2d, bounds: Bounds, idx: int) -> Bounds:
-        """Handle 2D convolution layer with interval arithmetic using weight decomposition."""
+        """Handle Conv2d layer with performance optimizations."""
+        if not self.metadata_tracker.performance_mode:
+            ACTLog.log_verification_info(f"Conv2d layer {idx}: channels {layer.in_channels} -> {layer.out_channels}")
+        
+        # Full tracking and logging in normal mode only
+        if not self.metadata_tracker.performance_mode:
+            if hasattr(self.metadata_tracker, 'track_conv_layer'):
+                self.metadata_tracker.track_conv_layer(layer, bounds.lb, bounds.ub, idx)
+        
+        # Apply convolution transformation using interval arithmetic
         # Use cached weight decomposition for performance
         w_pos, w_neg = self.weight_decomposer.decompose(layer.weight)
         
@@ -206,13 +248,19 @@ class BoundsPropagate:
             new_ub = new_ub.squeeze(0)
         
         if bias is not None:
-            bias_shape = [-1] + [1] * (new_lb.dim() - 1)
+            if new_lb.dim() == 4:  # Batch dimension present
+                bias_shape = [1, -1] + [1] * (new_lb.dim() - 2)
+            else:  # No batch dimension
+                bias_shape = [-1] + [1] * (new_lb.dim() - 1)
             new_lb += bias.view(*bias_shape)
             new_ub += bias.view(*bias_shape)
+            
+        result = Bounds(new_lb, new_ub, validate=False)
         
-        result_bounds = Bounds(new_lb, new_ub, validate=False)
-        ACTLog.log_verification_info(f"Conv2d layer processed: output shape {result_bounds.shape}")
-        return result_bounds
+        if not self.metadata_tracker.performance_mode:
+            ACTLog.log_verification_info(f"Conv2d layer {idx} output shape: {result.shape}")
+        
+        return result
 
     def _handle_batchnorm(self, layer: nn.BatchNorm2d, bounds: Bounds) -> Bounds:
         """Handle batch normalization layer with running statistics."""
@@ -250,8 +298,8 @@ class BoundsPropagate:
             if hasattr(self, 'current_relu_constraints') and self.current_relu_constraints:
                 constrained_bounds = bounds.apply_relu_constraints(self.current_relu_constraints, layer_name)
                 
-                # Log applied constraints if any
-                if hasattr(constrained_bounds, '_applied_constraints') and constrained_bounds._applied_constraints:
+                # Conditional constraint logging for performance
+                if not self.metadata_tracker.performance_mode and hasattr(constrained_bounds, '_applied_constraints') and constrained_bounds._applied_constraints:
                     ACTLog.log_verification_info(f"Applied {layer_name} constraints: {constrained_bounds._applied_constraints}")
                 
                 # Apply ReLU transformation to constrained bounds
@@ -262,7 +310,7 @@ class BoundsPropagate:
             
             # Increment ReLU layer index and track constraints application
             self.relu_layer_index += 1
-            if self.relu_layer_index <= len(self.current_relu_constraints):
+            if not self.metadata_tracker.performance_mode and hasattr(self.metadata_tracker, 'track_constraint_application') and self.relu_layer_index <= len(self.current_relu_constraints):
                 self.metadata_tracker.track_constraint_application()
             
             return result_bounds
@@ -287,7 +335,8 @@ class BoundsPropagate:
     def _handle_structural(self, layer: nn.Module, bounds: Bounds) -> Bounds:
         """Handle structural layers that manipulate tensor shape without computation."""
         if isinstance(layer, (nn.Flatten, OnnxFlatten)):
-            ACTLog.log_verification_info("Processing flatten layer")
+            if not self.metadata_tracker.performance_mode:
+                ACTLog.log_verification_info("Processing flatten layer")
             return bounds.flatten(start_dim=0)
         
         elif isinstance(layer, OnnxReshape):

@@ -143,6 +143,23 @@ class Bounds:
             validate=False
         )
     
+    def flatten(self, start_dim: int = 0, end_dim: int = -1) -> 'Bounds':
+        """
+        Flatten bounds tensors.
+        
+        Args:
+            start_dim: First dim to flatten (default: 0)
+            end_dim: Last dim to flatten (default: -1, which means last dim)
+            
+        Returns:
+            New Bounds object with flattened tensors
+        """
+        return Bounds(
+            torch.flatten(self.lb, start_dim=start_dim, end_dim=end_dim),
+            torch.flatten(self.ub, start_dim=start_dim, end_dim=end_dim),
+            validate=False
+        )
+    
     def __repr__(self) -> str:
         """String representation of bounds."""
         return f"Bounds(shape={self.shape}, device={self.device})"
