@@ -120,14 +120,14 @@ class TestBoundsPropagatePipeline(unittest.TestCase):
             with self.subTest(config=config):
                 model = MockFactory.create_model(config["model"])
                 lb, ub = MockFactory.create_data(config["data"])
+                input_bounds = Bounds(lb, ub, _internal=True)
                 
                 # Test REAL API
-                result_bounds, metadata = self.propagator.propagate_bounds(model, lb, ub)
+                result_bounds = self.propagator.propagate_bounds(model, input_bounds)
                 
                 # Validate API contract
                 self.assertIsInstance(result_bounds, Bounds)
                 self.assertTrue(torch.all(result_bounds.lb <= result_bounds.ub))
-                self.assertIsNotNone(metadata)
 
 
 class TestBoundsPropagatePoperties(unittest.TestCase):
@@ -159,8 +159,11 @@ class TestBoundsPropagatePoperties(unittest.TestCase):
         lb2 = lb - 0.1
         ub2 = ub + 0.1
         
-        result1, _ = self.propagator.propagate_bounds(model, lb, ub)
-        result2, _ = self.propagator.propagate_bounds(model, lb2, ub2)
+        input_bounds1 = Bounds(lb, ub, _internal=True)
+        input_bounds2 = Bounds(lb2, ub2, _internal=True)
+        
+        result1 = self.propagator.propagate_bounds(model, input_bounds1)
+        result2 = self.propagator.propagate_bounds(model, input_bounds2)
         
         # Wider input should produce wider output
         self.assertTrue(torch.all(result2.lb <= result1.lb + 1e-6))  # Small tolerance
@@ -168,7 +171,8 @@ class TestBoundsPropagatePoperties(unittest.TestCase):
     
     def _test_soundness(self, model, lb, ub):
         """Test that actual outputs are within computed bounds."""
-        result_bounds, _ = self.propagator.propagate_bounds(model, lb, ub)
+        input_bounds = Bounds(lb, ub, _internal=True)
+        result_bounds = self.propagator.propagate_bounds(model, input_bounds)
         model.eval()
         
         # Sample random inputs within bounds
@@ -185,7 +189,8 @@ class TestBoundsPropagatePoperties(unittest.TestCase):
     
     def _test_bounds_ordering(self, model, lb, ub):
         """Test that bounds ordering is preserved."""
-        result_bounds, _ = self.propagator.propagate_bounds(model, lb, ub)
+        input_bounds = Bounds(lb, ub, _internal=True)
+        result_bounds = self.propagator.propagate_bounds(model, input_bounds)
         self.assertTrue(torch.all(result_bounds.lb <= result_bounds.ub))
 
 

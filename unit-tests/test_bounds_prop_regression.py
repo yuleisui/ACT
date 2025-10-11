@@ -25,6 +25,7 @@ from datetime import datetime
 
 from act.interval.bounds_propagation import BoundsPropagate
 from act.interval.bounds_prop_helper import TrackingMode
+from act.util.bounds import Bounds
 from test_configs import MockFactory, get_regression_test_configs
 
 
@@ -65,10 +66,11 @@ class BoundsRegressionTester:
             
             model = MockFactory.create_model(config["model"])
             lb, ub = MockFactory.create_data(config["data"])
+            input_bounds = Bounds(lb, ub, _internal=True)
             
             # Warmup runs to eliminate first-time overhead
             for _ in range(2):
-                propagator.propagate_bounds(model, lb, ub)
+                propagator.propagate_bounds(model, input_bounds)
             
             # Measure performance with isolated timing
             times = []
@@ -77,7 +79,7 @@ class BoundsRegressionTester:
                 torch.cuda.empty_cache() if torch.cuda.is_available() else None
                 
                 start_time = time.perf_counter()
-                result, metadata = propagator.propagate_bounds(model, lb, ub)
+                result = propagator.propagate_bounds(model, input_bounds)
                 elapsed = time.perf_counter() - start_time
                 times.append(elapsed)
             
@@ -100,8 +102,9 @@ class BoundsRegressionTester:
             
             model = MockFactory.create_model(config["model"])
             lb, ub = MockFactory.create_data(config["data"])
+            input_bounds = Bounds(lb, ub, _internal=True)
             
-            result, metadata = propagator.propagate_bounds(model, lb, ub)
+            result = propagator.propagate_bounds(model, input_bounds)
             
             correctness_data[test_name] = {
                 'lb_hash': self._hash_tensor(result.lb),
@@ -161,17 +164,18 @@ class BoundsRegressionTester:
             
             model = MockFactory.create_model(config["model"])
             lb, ub = MockFactory.create_data(config["data"])
+            input_bounds = Bounds(lb, ub, _internal=True)
             
             # Run current test with improved timing
             # Warmup run to eliminate first-time overhead
-            propagator.propagate_bounds(model, lb, ub)
+            propagator.propagate_bounds(model, input_bounds)
             
             # Multiple timing runs for better accuracy
             times = []
             for _ in range(3):
                 torch.cuda.empty_cache() if torch.cuda.is_available() else None
                 start_time = time.perf_counter()
-                result, metadata = propagator.propagate_bounds(model, lb, ub)
+                result = propagator.propagate_bounds(model, input_bounds)
                 elapsed = time.perf_counter() - start_time
                 times.append(elapsed)
             
@@ -223,8 +227,9 @@ class BoundsRegressionTester:
             
             model = MockFactory.create_model(config["model"])
             lb, ub = MockFactory.create_data(config["data"])
+            input_bounds = Bounds(lb, ub, _internal=True)
             
-            result, metadata = propagator.propagate_bounds(model, lb, ub)
+            result = propagator.propagate_bounds(model, input_bounds)
             
             # Store current correctness for potential baseline update
             current_correctness[test_name] = {

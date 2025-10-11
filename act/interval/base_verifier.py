@@ -35,7 +35,9 @@ from act.input_parser.adaptor import InputAdaptor
 from act.refinement.bab_spec_refinement import create_bab_refinement
 from act.util.stats import ACTLog, ACTStats
 from act.util.inference import perform_model_inference
+from act.util.bounds import Bounds
 from .bounds_propagation import BoundsPropagate
+from .bounds_prop_helper import TrackingMode
 from .outputs_evaluation import OutputsEvaluate
 
 class BaseVerifier:
@@ -124,14 +126,15 @@ class BaseVerifier:
                 results.append(VerifyResult.CLEAN_FAILURE)
                 continue
 
-            # Extract bounds for current sample
+            # Extract bounds for current sample and create Bounds object
             sample_lb = self.spec.input_spec.input_lb if self.spec.input_spec.input_lb.ndim == 1 else self.spec.input_spec.input_lb[idx]
             sample_ub = self.spec.input_spec.input_ub if self.spec.input_spec.input_ub.ndim == 1 else self.spec.input_spec.input_ub[idx]
+            input_bounds = Bounds(sample_lb, sample_ub, _internal=True)
 
             self.clean_prediction_stats['verification_attempted'] += 1
 
             ACTLog.log_verification_info("Step 1: Interval abstract constraint solving")
-            initial_verdict = self._solve_constraints(sample_lb, sample_ub, idx)
+            initial_verdict = self._solve_constraints(input_bounds, idx)
 
             if initial_verdict == VerifyResult.SAT:
                 self.clean_prediction_stats['verification_sat'] += 1
@@ -152,7 +155,7 @@ class BaseVerifier:
             ACTLog.log_verification_info("="*60)
 
             if self.bab_config['enabled']:
-                refinement_verdict = self._spec_refinement(sample_lb, sample_ub, idx)
+                refinement_verdict = self._spec_refinement(input_bounds, idx)
                 if refinement_verdict == VerifyResult.SAT:
                     self.clean_prediction_stats['verification_sat'] += 1
                 elif refinement_verdict == VerifyResult.UNSAT:
@@ -230,7 +233,7 @@ class BaseVerifier:
             
         ACTLog.log_constraint_application_complete(self.verbose)
 
-    def _solve_constraints(self, input_lb: torch.Tensor, input_ub: torch.Tensor, sample_idx: int) -> VerifyResult:
+    def _solve_constraints(self, input_bounds: Bounds, sample_idx: int) -> VerifyResult:
         """
         Perform interval constraint solving for a single sample.
         
@@ -238,8 +241,7 @@ class BaseVerifier:
         against verification constraints to determine if the sample is safe.
         
         Args:
-            input_lb: Input lower bounds tensor for the sample
-            input_ub: Input upper bounds tensor for the sample  
+            input_bounds: Input bounds object containing lb and ub tensors
             sample_idx: Index of the current sample being processed
             
         Returns:
@@ -252,13 +254,15 @@ class BaseVerifier:
         
         # Create propagator and run bound propagation
         # Use dedicated interval bound propagator with BaB constraints
-        propagator = BoundsPropagate(relu_constraints, self.enable_metadata_tracking)
-        output_lb, output_ub, _ = propagator.propagate_bounds(
-            self.spec.model.pytorch_model, input_lb, input_ub
+        # Convert boolean metadata tracking flag to TrackingMode enum
+        tracking_mode = TrackingMode.DEBUG if self.enable_metadata_tracking else TrackingMode.PRODUCTION
+        propagator = BoundsPropagate(relu_constraints, tracking_mode)
+        output_bounds = propagator.propagate_bounds(
+            self.spec.model.pytorch_model, input_bounds
         )
 
         verdict = OutputsEvaluate.evaluate_output_bounds(
-            output_lb, output_ub,
+            output_bounds,
             self.spec.output_spec.output_constraints if self.spec.output_spec.output_constraints is not None else None,
             self.spec.output_spec.labels[sample_idx].item() if self.spec.output_spec.labels is not None else None
         )
@@ -349,14 +353,13 @@ class BaseVerifier:
         else:
             ACTLog.log_constraint_error(f"Unknown constraint type: {constraint_type}", self.verbose)
 
-    def _spec_refinement(self, input_lb: torch.Tensor, input_ub: torch.Tensor, 
+    def _spec_refinement(self, input_bounds: Bounds, 
                         sample_idx: int = 0) -> VerifyResult:
         """
         Perform branch-and-bound verification using specification refinement.
         
         Args:
-            input_lb: Input lower bounds
-            input_ub: Input upper bounds
+            input_bounds: Input bounds object containing lb and ub tensors
             sample_idx: Sample index for logging (default: 0)
             
         Returns:
@@ -375,7 +378,7 @@ class BaseVerifier:
         spec_refinement._current_verifier = self
 
         try:
-            result = spec_refinement.search(input_lb, input_ub, self, self.spec.model.pytorch_model)
+            result = spec_refinement.search(input_bounds.lb, input_bounds.ub, self, self.spec.model.pytorch_model)
             ACTLog.log_bab_results(result.status.name, result.total_subproblems, 
                                  len(result.spurious_counterexamples), result.real_counterexample,
                                  result.max_depth, result.total_time)

@@ -30,6 +30,7 @@ from typing import List, Optional
 
 from act.input_parser.type import VerifyResult
 from act.util.stats import ACTLog
+from act.util.bounds import Bounds
 
 
 class OutputsEvaluate:
@@ -41,7 +42,7 @@ class OutputsEvaluate:
     """
     
     @staticmethod
-    def evaluate_output_bounds(lb: torch.Tensor, ub: torch.Tensor,
+    def evaluate_output_bounds(output_bounds: Bounds,
                              output_constraints: Optional[List[List[float]]],
                              true_label: Optional[int]) -> VerifyResult:
         """
@@ -51,8 +52,7 @@ class OutputsEvaluate:
         or classification robustness requirements to determine verification status.
         
         Args:
-            lb: Lower bounds tensor for network outputs
-            ub: Upper bounds tensor for network outputs
+            output_bounds: Bounds object containing lower and upper bounds for network outputs
             output_constraints: Linear constraint matrix (optional)
             true_label: Ground truth class index for classification (optional)
             
@@ -60,17 +60,19 @@ class OutputsEvaluate:
             VerifyResult indicating SAT (safe), UNSAT (unsafe), or UNKNOWN
         """
         if output_constraints is not None:
-            return OutputsEvaluate._eval_linear_constraints(lb, ub, output_constraints)
+            return OutputsEvaluate._eval_linear_constraints(output_bounds, output_constraints)
         
         if true_label is not None:
-            return OutputsEvaluate._eval_classification(lb, ub, true_label)
+            return OutputsEvaluate._eval_classification(output_bounds, true_label)
         
         return VerifyResult.UNKNOWN
 
     @staticmethod
-    def _eval_linear_constraints(lb: torch.Tensor, ub: torch.Tensor, 
+    def _eval_linear_constraints(output_bounds: Bounds, 
                                constraints: List[List[float]]) -> VerifyResult:
         """Evaluate linear output constraints using interval arithmetic."""
+        lb, ub = output_bounds.lb, output_bounds.ub
+        
         # Check each linear constraint: coefficients·outputs + bias ≥ 0
         for row in constraints:
             # Split constraint: [coeff1, coeff2, ..., coeffN, bias]
@@ -90,9 +92,11 @@ class OutputsEvaluate:
         return VerifyResult.SAT
 
     @staticmethod
-    def _eval_classification(lb: torch.Tensor, ub: torch.Tensor, 
+    def _eval_classification(output_bounds: Bounds, 
                            true_label: int) -> VerifyResult:
         """Evaluate classification robustness using interval bounds comparison."""
+        lb, ub = output_bounds.lb, output_bounds.ub
+        
         ACTLog.log_verification_info(f"Checking classification robustness for true_label: {true_label}")
         
         # Validate true_label is within valid output class range

@@ -82,22 +82,29 @@ class BoundsPropagate:
         # Weight decomposition cache for performance optimization
         self.weight_decomposer = WeightDecomposer()
     
-    def propagate_bounds(self, model: nn.Module, input_lb: torch.Tensor, input_ub: torch.Tensor) -> Tuple[Bounds, BoundsPropagationMetadata]:
+    def propagate_bounds(self, model: nn.Module, input_bounds: Bounds) -> Bounds:
         """
         Propagate interval bounds through the neural network model.
+        
+        Args:
+            model: Neural network model to propagate bounds through
+            input_bounds: Input bounds object containing lower and upper bound tensors
+            
+        Returns:
+            Bounds object containing output lower and upper bounds
         """
 
         # Input validation handled by metadata tracker
-        self.metadata_tracker.validate_input_bounds(input_lb, input_ub)
+        self.metadata_tracker.validate_input_bounds(input_bounds.lb, input_bounds.ub)
         
         # Initialize tracking and validation
         self.metadata_tracker.start_propagation()
         
         # Device consistency - metadata tracker handles performance optimizations
-        input_lb_clean, input_ub_clean = self.device_manager.ensure_device_consistency(model, input_lb, input_ub)
+        input_lb_clean, input_ub_clean = self.device_manager.ensure_device_consistency(model, input_bounds.lb, input_bounds.ub)
         
-        # Create initial bounds object - validate input bounds since this is public API entry point
-        bounds = Bounds(input_lb_clean, input_ub_clean)
+        # Create initial bounds object - use _internal=True since input validation already done above
+        bounds = Bounds(input_lb_clean, input_ub_clean, _internal=True)
         
         # Logging handled by metadata tracker performance settings
         self.metadata_tracker.log_if_enabled("Starting interval bound propagation through network layers")
@@ -153,7 +160,7 @@ class BoundsPropagate:
         
         # Finalize propagation and collect comprehensive metadata
         metadata = self.metadata_tracker.finalize_propagation(bounds.lb)
-        return bounds, metadata
+        return bounds
 
     # =============================================================================
     # LAYER HANDLING METHODS - NEURAL NETWORK LAYERS
@@ -310,7 +317,8 @@ class BoundsPropagate:
             kernel_size, stride, padding = layer.kernel_size, layer.stride, layer.padding
             return Bounds(
                 nn.functional.max_pool2d(bounds.lb, kernel_size, stride, padding),
-                nn.functional.max_pool2d(bounds.ub, kernel_size, stride, padding)
+                nn.functional.max_pool2d(bounds.ub, kernel_size, stride, padding),
+                _internal=True
             )
         else:
             raise NotImplementedError(f"Activation layer {type(layer)} not supported")
@@ -367,20 +375,21 @@ class BoundsPropagate:
     def _handle_onnx_op(self, layer: nn.Module, bounds: Bounds) -> Bounds:
         """Handle ONNX operation layers with proper interval arithmetic."""
         if isinstance(layer, OnnxAdd):
-            return Bounds(layer(bounds.lb), layer(bounds.ub))
+            return Bounds(layer(bounds.lb), layer(bounds.ub), _internal=True)
         
         elif isinstance(layer, OnnxDiv):
             new_lb = layer(bounds.lb)
             new_ub = layer(bounds.ub)
             # Division can flip bound ordering depending on divisor sign
-            return Bounds(torch.min(new_lb, new_ub), torch.max(new_lb, new_ub))
+            return Bounds(torch.min(new_lb, new_ub), torch.max(new_lb, new_ub), _internal=True)
         
         elif isinstance(layer, OnnxClip):
             min_val = layer.min
             max_val = layer.max
             return Bounds(
                 torch.clamp(bounds.lb, min=min_val, max=max_val),
-                torch.clamp(bounds.ub, min=min_val, max=max_val)
+                torch.clamp(bounds.ub, min=min_val, max=max_val),
+                _internal=True
             )
         
         elif isinstance(layer, OperatorWrapper):
@@ -393,12 +402,12 @@ class BoundsPropagate:
         """Handle generic operator wrapper with interval arithmetic for constant operations."""
         if not (hasattr(layer, 'op_type') and layer.op_type in ["Add", "Sub", "Mul", "Div"]):
             # Generic operator without specific interval handling
-            return Bounds(layer(bounds.lb), layer(bounds.ub))
+            return Bounds(layer(bounds.lb), layer(bounds.ub), _internal=True)
         
         other = getattr(layer, 'other', None)
         if other is None:
             # No constant operand - apply layer directly
-            return Bounds(layer(bounds.lb), layer(bounds.ub))
+            return Bounds(layer(bounds.lb), layer(bounds.ub), _internal=True)
         
         # Use the new Bounds class methods for operator arithmetic
         return bounds.apply_operator(layer.op_type, other)
