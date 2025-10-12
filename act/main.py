@@ -47,6 +47,7 @@ import configparser
 
 # Import commendline paser
 from util.options import get_parser
+from util.path_config import get_config_root
 
 # Import ACT modules
 from input_parser.model import Model
@@ -62,10 +63,7 @@ def load_verifier_default_configs(verifier, method, dataset):
     if not verifier or not dataset:
         return {}
     
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(current_dir)
-    config_root = os.path.join(project_root, 'configs')
-    config_root = os.path.abspath(config_root)
+    config_root = get_config_root()
     
     config_file = os.path.join(config_root, f"{verifier}_defaults.ini")
     if not os.path.exists(config_file):

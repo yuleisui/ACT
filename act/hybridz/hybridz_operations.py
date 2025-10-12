@@ -10,51 +10,22 @@
 #########################################################################
 
 import torch
-import os
 import time
 import numpy as np
 from scipy.optimize import linprog
 
-import util.path_config as path_config
+from util.path_config import configure_torch_print, ensure_gurobi_license, import_gurobi
 from util.stats import ACTStats
 
-try:
-    import gurobipy as gp
-    from gurobipy import GRB
-    GUROBI_AVAILABLE = True
-except ImportError:
-    print("Warning: Gurobi not available. HybridZonotopeOps will use alternative solvers.")
-    GUROBI_AVAILABLE = False
+ensure_gurobi_license()
 
-def setup_gurobi_license():
-    if 'GRB_LICENSE_FILE' not in os.environ:
-        if 'ACTHOME' in os.environ:
-            license_path = os.path.join(os.environ['ACTHOME'], 'gurobi', 'gurobi.lic')
-            print(f"[ACT] Using ACTHOME environment variable: {os.environ['ACTHOME']}")
-        else:
-            # Use path_config to get project root
-            project_root = os.path.dirname(path_config.act_root)
-            license_path = os.path.join(project_root, 'gurobi', 'gurobi.lic')
-            print(f"[ACT] Auto-detecting project root from path_config")
-        
-        license_path = os.path.abspath(license_path)
-        
-        if os.path.exists(license_path):
-            os.environ['GRB_LICENSE_FILE'] = license_path
-            print(f"[ACT] Gurobi license found and set: {license_path}")
-        else:
-            print(f"[WARN] Gurobi license not found at: {license_path}")
-            print(f"[INFO] Please ensure gurobi.lic is placed in: {os.path.dirname(license_path)}")
-    else:
-        print(f"[ACT] Using existing Gurobi license: {os.environ['GRB_LICENSE_FILE']}")
+GUROBI_AVAILABLE, gp, GRB = import_gurobi()
 
-setup_gurobi_license()
-
-torch.set_printoptions(
+configure_torch_print(
     linewidth=500,
     threshold=10000,
     sci_mode=False,
-    precision=4
+    precision=4,
 )
 
 class HybridZonotopeOps:
