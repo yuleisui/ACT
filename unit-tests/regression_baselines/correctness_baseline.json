@@ -1,0 +1,195 @@
+[
+  {
+    "test_name": "linear_basic",
+    "input_shape": [
+      10
+    ],
+    "output_shape": [
+      20
+    ],
+    "lower_bounds_hash": "-1727413202574157543",
+    "upper_bounds_hash": "3307237980576279826",
+    "numerical_properties": {
+      "bounds_width_mean": 6.914480686187744,
+      "bounds_width_std": 1.6132283210754395,
+      "lower_bound_mean": -3.57969331741333,
+      "upper_bound_mean": 3.334787368774414,
+      "bounds_ordering_violations": 0
+    },
+    "stability_metrics": {
+      "nan_values_lb": 0,
+      "nan_values_ub": 0,
+      "inf_values_lb": 0,
+      "inf_values_ub": 0,
+      "small_intervals": 0,
+      "zero_intervals": 0,
+      "warning_count": 0
+    },
+    "interval_statistics": {
+      "interval_min": 4.194811820983887,
+      "interval_max": 9.875875473022461,
+      "interval_median": 7.041743278503418,
+      "interval_q25": 5.904769420623779,
+      "interval_q75": 7.774332523345947,
+      "interval_sparsity": 0.0,
+      "bounds_range_lb": 12.720433235168457,
+      "bounds_range_ub": 11.785300254821777
+    }
+  },
+  {
+    "test_name": "linear_reduction",
+    "input_shape": [
+      50
+    ],
+    "output_shape": [
+      30
+    ],
+    "lower_bounds_hash": "3204221656042835062",
+    "upper_bounds_hash": "-1655541442777799332",
+    "numerical_properties": {
+      "bounds_width_mean": 28.153535842895508,
+      "bounds_width_std": 3.986353635787964,
+      "lower_bound_mean": -15.11104965209961,
+      "upper_bound_mean": 13.042489051818848,
+      "bounds_ordering_violations": 0
+    },
+    "stability_metrics": {
+      "nan_values_lb": 0,
+      "nan_values_ub": 0,
+      "inf_values_lb": 0,
+      "inf_values_ub": 0,
+      "small_intervals": 0,
+      "zero_intervals": 0,
+      "warning_count": 0
+    },
+    "interval_statistics": {
+      "interval_min": 20.995201110839844,
+      "interval_max": 38.957801818847656,
+      "interval_median": 27.64107894897461,
+      "interval_q25": 25.761402130126953,
+      "interval_q75": 29.936643600463867,
+      "interval_sparsity": 0.0,
+      "bounds_range_lb": 32.71146011352539,
+      "bounds_range_ub": 25.986175537109375
+    }
+  },
+  {
+    "test_name": "linear_expansion",
+    "input_shape": [
+      25
+    ],
+    "output_shape": [
+      100
+    ],
+    "lower_bounds_hash": "-2350195226989124284",
+    "upper_bounds_hash": "-3269198791374132078",
+    "numerical_properties": {
+      "bounds_width_mean": 14.034355163574219,
+      "bounds_width_std": 2.5690040588378906,
+      "lower_bound_mean": -6.365260124206543,
+      "upper_bound_mean": 7.66909646987915,
+      "bounds_ordering_violations": 0
+    },
+    "stability_metrics": {
+      "nan_values_lb": 0,
+      "nan_values_ub": 0,
+      "inf_values_lb": 0,
+      "inf_values_ub": 0,
+      "small_intervals": 0,
+      "zero_intervals": 0,
+      "warning_count": 0
+    },
+    "interval_statistics": {
+      "interval_min": 9.112396240234375,
+      "interval_max": 25.312488555908203,
+      "interval_median": 13.657661437988281,
+      "interval_q25": 12.493457794189453,
+      "interval_q75": 15.494556427001953,
+      "interval_sparsity": 0.0,
+      "bounds_range_lb": 39.352149963378906,
+      "bounds_range_ub": 37.00791549682617
+    }
+  },
+  {
+    "test_name": "conv2d_basic",
+    "input_shape": [
+      3,
+      32,
+      32
+    ],
+    "output_shape": [
+      16,
+      32,
+      32
+    ],
+    "lower_bounds_hash": "-8260827118079011834",
+    "upper_bounds_hash": "4010802035058687361",
+    "numerical_properties": {
+      "bounds_width_mean": 1.9640053510665894,
+      "bounds_width_std": 0.4667885899543762,
+      "lower_bound_mean": -0.9743291139602661,
+      "upper_bound_mean": 0.989676296710968,
+      "bounds_ordering_violations": 0
+    },
+    "stability_metrics": {
+      "nan_values_lb": 0,
+      "nan_values_ub": 0,
+      "inf_values_lb": 0,
+      "inf_values_ub": 0,
+      "small_intervals": 0,
+      "zero_intervals": 0,
+      "warning_count": 0
+    },
+    "interval_statistics": {
+      "interval_min": 0.3424075245857239,
+      "interval_max": 4.1602020263671875,
+      "interval_median": 1.9636306762695312,
+      "interval_q25": 1.6463358402252197,
+      "interval_q75": 2.2734196186065674,
+      "interval_sparsity": 0.0,
+      "bounds_range_lb": 5.914419174194336,
+      "bounds_range_ub": 5.311351299285889
+    }
+  },
+  {
+    "test_name": "conv2d_stride",
+    "input_shape": [
+      1,
+      28,
+      28
+    ],
+    "output_shape": [
+      8,
+      14,
+      14
+    ],
+    "lower_bounds_hash": "7429433103454718077",
+    "upper_bounds_hash": "-7264258798138003367",
+    "numerical_properties": {
+      "bounds_width_mean": 1.8782100677490234,
+      "bounds_width_std": 0.48159947991371155,
+      "lower_bound_mean": -0.9374483227729797,
+      "upper_bound_mean": 0.9407617449760437,
+      "bounds_ordering_violations": 0
+    },
+    "stability_metrics": {
+      "nan_values_lb": 0,
+      "nan_values_ub": 0,
+      "inf_values_lb": 0,
+      "inf_values_ub": 0,
+      "small_intervals": 0,
+      "zero_intervals": 0,
+      "warning_count": 0
+    },
+    "interval_statistics": {
+      "interval_min": 0.5801196694374084,
+      "interval_max": 3.5408215522766113,
+      "interval_median": 1.9010924100875854,
+      "interval_q25": 1.556249976158142,
+      "interval_q75": 2.2060723304748535,
+      "interval_sparsity": 0.0,
+      "bounds_range_lb": 4.8947954177856445,
+      "bounds_range_ub": 4.4891357421875
+    }
+  }
+]

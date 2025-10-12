@@ -7,10 +7,53 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+env:
+  # Ensure top-level 'act' package is importable in all jobs
+  PYTHONPATH: ${{ github.workspace }}
+  # Optional: make TF deterministic-ish and reduce noisy logs
+  TF_ENABLE_ONEDNN_OPTS: "0"
+  # Enable CI mode for lightweight installs
+  ACT_CI_MODE: "true"
+
 jobs:
+  # Add a quick test job first to catch import issues early
+  quick-test:
+    name: Quick Import Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.9"
+
+      - name: Install minimal dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch torchvision onnx onnx2pytorch tensorflow
+
+      - name: Test ACT imports
+        run: |
+          cd ${{ github.workspace }}
+          python -c "
+          import sys
+          sys.path.insert(0, '.')
+          try:
+              from act.util.options import get_parser
+              from act.interval.bounds_propagation import BoundsPropagate
+              from act.util.stats import ACTLog
+              print('✅ All critical imports working')
+          except ImportError as e:
+              print(f'❌ Import failed: {e}')
+              sys.exit(1)
+          "
+
   hybridz-linux:
     name: HybridZ Relaxed (Linux)
     runs-on: ubuntu-22.04
+    needs: quick-test
     steps:
       - name: Checkout repository with submodules
         uses: actions/checkout@v4
@@ -41,11 +84,12 @@ jobs:
         run: |
           source "$(conda info --base)/etc/profile.d/conda.sh"
           conda activate act-main
-          cd act/
-          python main.py \
+          # Ensure we're in the repo root for module execution
+          cd ${{ github.workspace }}
+          python -m act.main \
             --verifier hybridz \
             --method hybridz_relaxed \
-            --model_path ../models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
+            --model_path models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
             --dataset mnist --spec_type local_lp \
             --start 0 --end 1 --epsilon 0.01 --norm inf \
             --relaxation_ratio 1.0 \
@@ -55,6 +99,7 @@ jobs:
   hybridz-macos:
     name: HybridZ Relaxed (macOS)
     runs-on: macos-latest
+    needs: quick-test
     steps:
       - name: Checkout repository with submodules
         uses: actions/checkout@v4
@@ -84,11 +129,11 @@ jobs:
         run: |
           source "$(conda info --base)/etc/profile.d/conda.sh"
           conda activate act-main
-          cd act/
-          python main.py \
+          cd ${{ github.workspace }}
+          python -m act.main \
             --verifier hybridz \
             --method hybridz_relaxed \
-            --model_path ../models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
+            --model_path models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
             --dataset mnist --spec_type local_lp \
             --start 0 --end 1 --epsilon 0.01 --norm inf \
             --relaxation_ratio 1.0 \
@@ -136,11 +181,11 @@ jobs:
         run: |
           source "$(conda info --base)/etc/profile.d/conda.sh"
           conda activate act-abcrown
-          cd act/
-          python main.py \
+          cd ${{ github.workspace }}
+          python -m act.main \
             --verifier abcrown \
             --method alpha_beta \
-            --model_path ../models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
+            --model_path models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
             --dataset mnist --spec_type local_lp \
             --start 0 --end 1 --epsilon 0.1 --norm inf \
             --mean 0.1307 --std 0.3081
@@ -173,11 +218,11 @@ jobs:
           cd setup/
           ACT_CI_MODE=true source setup.sh abcrown
 
-      - name: Patch abCrown submodule
+      - name: Patch abCrown submodule (BSD sed)
         run: |
           INIT_FULL_PATH="modules/abcrown/complete_verifier/__init__.py"
           if grep -q "^from abcrown import abCrown" "$INIT_FULL_PATH"; then
-            sed -i 's/^from abcrown import abCrown/# from abcrown import abCrown/' "$INIT_FULL_PATH"
+            sed -i '' -e 's/^from abcrown import abCrown/# from abcrown import abCrown/' "$INIT_FULL_PATH"
           fi
 
       - name: Run abCrown verification
@@ -185,11 +230,11 @@ jobs:
         run: |
           source "$(conda info --base)/etc/profile.d/conda.sh"
           conda activate act-abcrown
-          cd act/
-          python main.py \
+          cd ${{ github.workspace }}
+          python -m act.main \
             --verifier abcrown \
             --method alpha_beta \
-            --model_path ../models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
+            --model_path models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
             --dataset mnist --spec_type local_lp \
             --start 0 --end 1 --epsilon 0.1 --norm inf \
             --mean 0.1307 --std 0.3081
@@ -228,11 +273,40 @@ jobs:
         run: |
           source "$(conda info --base)/etc/profile.d/conda.sh"
           conda activate act-eran
-          cd act/
-          python main.py \
+          cd ${{ github.workspace }}
+          python -m act.main \
             --verifier eran \
             --method deepzono \
-            --model_path ../models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
+            --model_path models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
             --dataset mnist --spec_type local_lp \
             --start 0 --end 5 --epsilon 0.01 --norm inf \
             --mean 0.1307 --std 0.3081
+
+  # Add regression tests as a separate job
+  regression-tests:
+    name: Regression Tests
+    runs-on: ubuntu-latest
+    needs: quick-test
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.9"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch torchvision onnx onnx2pytorch pytest tensorflow
+
+      - name: Run unit tests
+        run: |
+          cd ${{ github.workspace }}
+          pytest unit-tests/ -v
+
+      - name: Run regression tests
+        run: |
+          cd ${{ github.workspace }}
+          bash unit-tests/regression_test.sh

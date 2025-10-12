@@ -25,13 +25,7 @@
 
 import os
 import torch
-from typing import Dict, Any, List
-
-try:
-    import psutil
-    PSUTIL_AVAILABLE = True
-except ImportError:
-    PSUTIL_AVAILABLE = False
+from typing import Dict, Any, List, Tuple
 
 
 class ACTStats:
@@ -56,11 +50,8 @@ class ACTStats:
         Returns:
             float: Process memory usage in MB, or 0 if psutil is unavailable
         """
-        if not PSUTIL_AVAILABLE:
-            print(f"⚠️ [{stage_name}] psutil not available, cannot monitor memory")
-            return 0.0
-            
         try:
+            import psutil
             process = psutil.Process(os.getpid())
             memory_info = process.memory_info()
             memory_mb = memory_info.rss / 1024 / 1024
@@ -81,6 +72,9 @@ class ACTStats:
 
             return memory_mb
             
+        except ImportError:
+            print(f"⚠️ [{stage_name}] psutil not available, cannot monitor memory")
+            return 0.0
         except Exception as e:
             print(f"⚠️ [{stage_name}] Error monitoring memory: {e}")
             return 0.0
@@ -93,25 +87,73 @@ class ACTStats:
         Returns:
             float: Process memory usage in MB, or 0 if psutil is unavailable
         """
-        if not PSUTIL_AVAILABLE:
-            return 0.0
-            
         try:
+            import psutil
             process = psutil.Process(os.getpid())
             memory_info = process.memory_info()
             return memory_info.rss / 1024 / 1024
-        except Exception:
+        except (ImportError, Exception):
             return 0.0
     
     @classmethod
-    def is_psutil_available(cls) -> bool:
+    def get_current_memory_usage(cls) -> float:
         """
-        Check if psutil is available for memory monitoring.
+        Get current memory usage in MB (GPU if available, otherwise CPU).
+        
+        This is an enhanced version that automatically detects the best memory
+        source (GPU vs CPU) for tracking during bounds propagation.
         
         Returns:
-            bool: True if psutil is available, False otherwise
+            float: Current memory usage in MB
         """
-        return PSUTIL_AVAILABLE
+        try:
+            if torch.cuda.is_available() and torch.cuda.device_count() > 0:
+                # Get GPU memory usage
+                gpu_memory_bytes = torch.cuda.memory_allocated()
+                return gpu_memory_bytes / (1024 * 1024)  # Convert to MB
+            else:
+                # Get CPU memory usage for current process
+                import psutil
+                process = psutil.Process(os.getpid())
+                cpu_memory_bytes = process.memory_info().rss
+                return cpu_memory_bytes / (1024 * 1024)  # Convert to MB
+        except (ImportError, Exception):
+            # Fallback if psutil unavailable or memory monitoring fails
+            return 0.0
+    
+    @classmethod
+    def get_gpu_memory_info(cls) -> Tuple[float, float]:
+        """
+        Get GPU memory info (available, total) in MB.
+        
+        Returns:
+            tuple: (available_memory_mb, total_memory_mb) - (0.0, 0.0) if no GPU
+        """
+        try:
+            if torch.cuda.is_available() and torch.cuda.device_count() > 0:
+                total_memory = torch.cuda.get_device_properties(0).total_memory
+                allocated_memory = torch.cuda.memory_allocated()
+                available_memory = total_memory - allocated_memory
+                return available_memory / (1024 * 1024), total_memory / (1024 * 1024)
+            else:
+                return 0.0, 0.0
+        except Exception:
+            return 0.0, 0.0
+    
+    @classmethod
+    def get_cpu_memory_usage(cls) -> float:
+        """
+        Get CPU memory usage for current process in MB.
+        
+        Returns:
+            float: CPU memory usage in MB, or 0.0 if psutil unavailable
+        """
+        try:
+            import psutil
+            process = psutil.Process(os.getpid())
+            return process.memory_info().rss / (1024 * 1024)
+        except (ImportError, Exception):
+            return 0.0
     
     @staticmethod
     def print_verification_stats(prediction_stats: Dict[str, Any]) -> None:
@@ -159,7 +201,7 @@ class ACTStats:
             Overall VerifyResult (SAT if all safe, UNSAT if any unsafe, UNKNOWN otherwise)
         """
         # Import VerifyResult locally to avoid circular imports
-        from input_parser.type import VerifyResult
+        from act.input_parser.type import VerifyResult
         
         print("\n" + "🏆" + "="*70 + "🏆")
         print("📊 Final verification results summary")

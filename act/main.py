@@ -46,17 +46,17 @@ import os
 import configparser
 
 # Import commendline paser
-from util.options import get_parser
+from act.util.options import get_parser
 
 # Import ACT modules
-from input_parser.model import Model
-from input_parser.dataset import Dataset
-from input_parser.spec import Spec, InputSpec, OutputSpec
-from input_parser.type import VerifyResult
-from wrapper_external_verifiers.eran.eran_verifier import ERANVerifier
-from wrapper_external_verifiers.abcrown.abcrown_verifier import abCrownVerifier
-from interval.base_verifier import BaseVerifier
-from hybridz.hybridz_verifier import HybridZonotopeVerifier
+from act.input_parser.model import Model
+from act.input_parser.dataset import Dataset
+from act.input_parser.spec import Spec, InputSpec, OutputSpec
+from act.input_parser.type import VerifyResult
+from act.wrapper_exts.eran.eran_verifier import ERANVerifier
+from act.wrapper_exts.abcrown.abcrown_verifier import abCrownVerifier
+from act.interval.base_verifier import BaseVerifier
+from act.hybridz.hybridz_verifier import HybridZonotopeVerifier
 
 def load_verifier_default_configs(verifier, method, dataset):
     if not verifier or not dataset:

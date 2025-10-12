@@ -1,0 +1,152 @@
+# Mock input configurations for ACT pipeline testing
+# This file defines templates for generating test inputs without code changes
+
+sample_data:
+  mnist_small:
+    type: "image"
+    shape: [1, 28, 28] 
+    distribution: "uniform"
+    range: [0, 1]
+    batch_size: 10
+    num_classes: 10
+  
+  mnist_large:
+    type: "image"
+    shape: [1, 28, 28]
+    distribution: "uniform"
+    range: [0, 1]
+    batch_size: 100
+    num_classes: 10
+  
+  cifar_small:
+    type: "image"
+    shape: [3, 32, 32]
+    distribution: "uniform"
+    range: [0, 1]
+    batch_size: 10
+    num_classes: 10
+  
+  cifar_adversarial:
+    type: "image"
+    shape: [3, 32, 32]
+    distribution: "gaussian_noise"
+    base_value: 0.5
+    noise_level: 0.05
+    batch_size: 10
+    num_classes: 10
+  
+  custom_dataset:
+    type: "image"
+    shape: [3, 64, 64]
+    distribution: "normal"
+    mean: 0.5
+    std: 0.2
+    range: [0, 1]
+    batch_size: 20
+    num_classes: 5
+
+input_specs:
+  robust_l_inf_small:
+    spec_type: "LOCAL_LP"
+    norm_type: "LINF" 
+    epsilon: 0.05
+    center_point: "auto"
+  
+  robust_l_inf:
+    spec_type: "LOCAL_LP"
+    norm_type: "LINF" 
+    epsilon: 0.1
+    center_point: "auto"
+  
+  robust_l_inf_large:
+    spec_type: "LOCAL_LP"
+    norm_type: "LINF" 
+    epsilon: 0.2
+    center_point: "auto"
+  
+  robust_l2:
+    spec_type: "LOCAL_LP"
+    norm_type: "L2"
+    epsilon: 1.0
+    center_point: "auto"
+  
+  vnnlib_simple:
+    spec_type: "LOCAL_VNNLIB"
+    constraints: ["x1 >= 0.0", "x1 <= 1.0", "x2 >= 0.0", "x2 <= 1.0"]
+    bounds: 
+      lower: [0.0, 0.0]
+      upper: [1.0, 1.0]
+  
+  vnnlib_custom:
+    spec_type: "LOCAL_VNNLIB"
+    constraints: ["x1 >= 0.5", "x2 <= 0.8", "x1 + x2 <= 1.2"]
+    bounds: 
+      lower: [0.0, 0.0]
+      upper: [1.0, 1.0]
+  
+  box_constraints:
+    spec_type: "SET_BOX"
+    lower_bounds: [0.0, 0.0, 0.0]
+    upper_bounds: [1.0, 1.0, 1.0]
+
+output_specs:
+  classification:
+    type: "classification"
+    num_classes: 10
+    target_label: null
+  
+  classification_targeted:
+    type: "classification"
+    num_classes: 10
+    target_label: 5
+  
+  robustness_small:
+    type: "robustness" 
+    property: "margin >= 0.05"
+    margin_threshold: 0.05
+  
+  robustness:
+    type: "robustness" 
+    property: "margin >= 0.1"
+    margin_threshold: 0.1
+  
+  robustness_large:
+    type: "robustness" 
+    property: "margin >= 0.2"
+    margin_threshold: 0.2
+
+models:
+  simple_linear:
+    architecture: "feedforward"
+    layers: [784, 10]
+    activations: ["linear"]
+  
+  simple_relu:
+    architecture: "feedforward"
+    layers: [784, 50, 10]
+    activations: ["relu", "linear"]
+  
+  deep_relu:
+    architecture: "feedforward"
+    layers: [784, 100, 50, 20, 10]
+    activations: ["relu", "relu", "relu", "linear"]
+  
+  small_cnn:
+    architecture: "cnn"
+    conv_layers: [[1, 16, 3], [16, 32, 3]]
+    fc_layers: [32*6*6, 50, 10]
+  
+  medium_cnn:
+    architecture: "cnn"
+    conv_layers: [[3, 32, 3], [32, 64, 3], [64, 128, 3]]
+    fc_layers: [128*2*2, 100, 10]
+  
+  tiny_sigmoid:
+    architecture: "feedforward"
+    layers: [784, 20, 10]
+    activations: ["sigmoid", "linear"]
+  
+  tiny_tanh:
+    architecture: "feedforward"
+    layers: [784, 20, 10]
+    activations: ["tanh", "linear"]

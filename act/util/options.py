@@ -34,12 +34,18 @@ def get_parser():
     
     # ACT Core Verifier Selection
     parser.add_argument('--verifier', type=str, default=None, 
-                        choices=['interval', 'eran', 'abcrown', 'hybridz'],
-                        help='Backend verification engine. "interval": ACT native interval analysis, "eran": ERAN external verifier, "abcrown": αβ-CROWN external verifier, "hybridz": ACT novel hybrid zonotope verifier')
+                        choices=['interval', 'eran', 'abcrown', 'hybridz', 'act'],
+                        help='Backend verification engine. "interval": ACT native interval analysis, "eran": ERAN external verifier, "abcrown": αβ-CROWN external verifier, "hybridz": ACT novel hybrid zonotope verifier, "act": ACT torch-native abstraction framework')
     parser.add_argument('--method', type=str, default=None, 
-                        help='Verification method. ERAN: [deepzono, refinezono, deeppoly, refinepoly], αβ-CROWN: [alpha, beta, alpha_beta], ACT-HybridZ: [hybridz, hybridz_relaxed, hybridz_relaxed_with_bab], ACT-Interval: [interval]')
+                        help='Verification method. ERAN: [deepzono, refinezono, deeppoly, refinepoly], αβ-CROWN: [alpha, beta, alpha_beta], ACT-HybridZ: [hybridz, hybridz_relaxed, hybridz_relaxed_with_bab], ACT-Interval: [interval], ACT-Native: [interval, torch-native]')
     parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda'],
                         help='Computation device (cpu or cuda)')
+    parser.add_argument('--dtype', type=str, default='float64', 
+                        choices=['float16', 'float32', 'float64'],
+                        help='Floating point precision for numerical computations (float16, float32, float64). Default: float64 for maximum precision')
+    parser.add_argument('--solver', type=str, default='auto', 
+                        choices=['auto', 'gurobi', 'torch', 'both'],
+                        help='Solver backend for constraint solving. "auto": try Gurobi first, fallback to PyTorch, "gurobi": Gurobi MILP solver only, "torch": PyTorch LP solver only, "both": test both solvers')
 
     # ACT Verification Features
     parser.add_argument('--bounds_prop_metadata', action='store_true', default=True,
@@ -132,5 +138,14 @@ def get_parser():
                         help='Prefix to add to VNNLIB specification paths (for correcting malformed CSV files)')
     parser.add_argument("--rhs_offset", type=float, default=None,
                         help='Offset to add to right-hand side of constraints (advanced usage)')
+    
+    # ACT Torch-native Abstraction Framework Demo Parameters
+    parser.add_argument('--demo_input_dim', type=int, default=3,
+                        help='Input dimension for demo network (ACT torch-native abstraction framework)')
+    parser.add_argument('--demo_output_dim', type=int, default=4,
+                        help='Output dimension for demo network (ACT torch-native abstraction framework)')
+    parser.add_argument('--demo_target_class', type=int, default=None,
+                        help='Target class for robustness verification (default: auto-select, ACT torch-native abstraction framework)')
+    
     # ================================================================================
     return parser
