@@ -2,10 +2,10 @@
 import torch
 from collections import deque
 from typing import Dict, Tuple
-from .core import Bounds, Fact, Net, ConSet
-from .utils import box_join, changed_or_maskdiff, update_cache
-from .tf_mlp import *
-from .tf_transformer import *
+from act.abstraction.core import Bounds, Fact, Net, ConSet
+from act.abstraction.utils import box_join, changed_or_maskdiff, update_cache
+from act.abstraction.tf_mlp import *
+from act.abstraction.tf_transformer import *
 
 @torch.no_grad()
 def dispatch_tf(L, before, after, net):

@@ -51,10 +51,12 @@ from .solver_gurobi import GurobiSolver
 from .solver_torch import TorchLPSolver
 
 # Verification specifications
-from .specs import (
-    InputSpec, OutputSpec, InKind, OutKind, VerifStatus, VerifResult,
-    seed_from_input_spec, add_input_spec, verify_once
+from .verif_status import (
+    VerifStatus, VerifResult,
+    seed_from_input_spec, add_input_spec, materialise_input_poly,
+    add_negated_output_spec_to_solver, verify_once
 )
+from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
 
 # Branch-and-bound verification
 from .bab import BabNode, verify_bab

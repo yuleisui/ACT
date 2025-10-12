@@ -1,0 +1,45 @@
+
+from __future__ import annotations
+from dataclasses import dataclass
+from typing import Any, Dict, Optional, List
+import torch
+import numpy as np
+from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
+
+@dataclass
+class ModelSignature:
+    modality: str            # 'image', 'text', 'tabular', ...
+    layout: str              # 'NCHW', '[seq]', ...
+    input_shape: tuple       # per-sample shape, e.g., (C,H,W)
+    meta: Dict[str, Any]     # e.g., mean/std, tokenizer, vocab
+
+class Preprocessor:
+    """Base preprocessor: raw <-> model tensors <-> verifier flat vector."""
+    def __init__(self, signature: ModelSignature, device="cpu", dtype=torch.float32):
+        self.signature = signature
+        self.device = torch.device(device)
+        self.dtype = dtype
+
+    # ---------- RAW -> MODEL ----------
+    def prepare_sample(self, sample) -> torch.Tensor:
+        raise NotImplementedError
+
+    def prepare_label(self, label):
+        return label
+
+    # ---------- SPECS (RAW/MODEL) -> VERIFIER ----------
+    def canonicalize_input_spec(self, input_spec_raw: InputSpec, *, center=None, eps: Optional[float]=None) -> InputSpec:
+        raise NotImplementedError
+
+    def canonicalize_output_spec(self, output_spec_raw: OutputSpec, *, label=None) -> OutputSpec:
+        return output_spec_raw
+
+    # ---------- FLATTEN / UNFLATTEN ----------
+    def flatten_model_input(self, x: torch.Tensor) -> np.ndarray:
+        return x.contiguous().view(-1).detach().cpu().numpy()
+
+    def unflatten_to_model_input(self, flat: np.ndarray) -> torch.Tensor:
+        return torch.from_numpy(flat).view(*self.signature.input_shape).to(self.device, self.dtype)
+
+    def inverse_to_raw_space(self, x_model: torch.Tensor):
+        return x_model.detach().cpu()

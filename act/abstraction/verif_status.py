@@ -1,26 +1,14 @@
-# specs.pseudo
+# verif_status.py - Verification status, results, and core verification functions
 import torch, numpy as np
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List
-from .core import Bounds, Con, ConSet
-from .analyze import analyze
-from .cons_exportor import export_to_solver, to_numpy
-from .solver_base import Solver, SolveStatus
+from act.abstraction.core import Bounds, Con, ConSet
+from act.abstraction.analyze import analyze
+from act.abstraction.cons_exportor import export_to_solver, to_numpy
+from act.abstraction.solver_base import Solver, SolveStatus
 
-class InKind: BOX="BOX"; LINF_BALL="LINF_BALL"; LIN_POLY="LIN_POLY"
-@dataclass
-class InputSpec:
-    kind: str
-    lb: Optional[torch.Tensor]=None; ub: Optional[torch.Tensor]=None
-    center: Optional[torch.Tensor]=None; eps: Optional[float]=None
-    A: Optional[torch.Tensor]=None; b: Optional[torch.Tensor]=None
-
-class OutKind: LINEAR_LE="LINEAR_LE"; TOP1_ROBUST="TOP1_ROBUST"; MARGIN_ROBUST="MARGIN_ROBUST"
-@dataclass
-class OutputSpec:
-    kind: str
-    c: Optional[torch.Tensor]=None; d: Optional[float]=None
-    y_true: Optional[int]=None; margin: float=0.0
+# Import specification classes from front_end
+from act.front_end.specs import InKind, InputSpec, OutKind, OutputSpec
 
 class VerifStatus: CERTIFIED="CERTIFIED"; COUNTEREXAMPLE="COUNTEREXAMPLE"; UNKNOWN="UNKNOWN"
 @dataclass

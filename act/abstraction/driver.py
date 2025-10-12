@@ -28,12 +28,13 @@ sys.path.insert(0, abstraction_dir)
 from act.util.options import get_parser
 
 # Import abstraction components (use relative imports for package)
-from .device_manager import initialize_device, set_dtype, summary, as_t
-from .core import Layer, Net, Bounds
-from .specs import InputSpec, OutputSpec, InKind, OutKind, seed_from_input_spec
-from .bab import verify_bab
-from .solver_gurobi import GurobiSolver
-from .solver_torch import TorchLPSolver
+from act.abstraction.device_manager import initialize_device, set_dtype, summary, as_t
+from act.abstraction.core import Layer, Net, Bounds
+from act.abstraction.verif_status import VerifStatus, VerifResult, verify_once, seed_from_input_spec
+from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
+from act.abstraction.bab import verify_bab
+from act.abstraction.solver_gurobi import GurobiSolver
+from act.abstraction.solver_torch import TorchLPSolver
 
 def create_tiny_mlp(n_in: int, n_out: int):
     """Create a tiny MLP for demonstration: x(n_in) -> Dense(n_out) -> ReLU(n_out)"""

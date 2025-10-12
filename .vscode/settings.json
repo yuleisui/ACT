@@ -23,5 +23,15 @@
         {
             "text": "read the changes and summarize and also add mojis where necessary."
         }
+    ],
+    "files.associations": {
+        "*.onnx": "netron"
+    },
+    "workbench.editorAssociations": {
+        "*.onnx": "default"
+    },
+    "extensions.recommendations": [
+        "vincent-templier.vscode-netron",
+        "lijian-onnx-viewer.onnxviewer"
     ]
 }

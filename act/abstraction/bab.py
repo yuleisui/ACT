@@ -2,8 +2,9 @@
 import time, heapq, numpy as np, torch
 from dataclasses import dataclass
 from typing import Optional, List, Callable
-from .core import Bounds
-from .specs import verify_once, VerifResult, VerifStatus, OutputSpec, OutKind
+from act.abstraction.core import Bounds
+from act.abstraction.verif_status import VerifStatus, VerifResult, verify_once, seed_from_input_spec
+from act.front_end.specs import OutputSpec, OutKind
 
 @dataclass
 class BabNode:
@@ -18,7 +19,8 @@ def branch(B: Bounds, d: int) -> tuple[Bounds, Bounds]:
     mid=0.5*(B.lb[d]+B.ub[d]); Lb=B.lb.clone(); Ub=B.ub.clone(); Lb2=B.lb.clone(); Ub2=B.ub.clone()
     Ub[d]=mid; Lb2[d]=mid; return Bounds(Lb,Ub), Bounds(Lb2,Ub2)
 
-from .specs import InputSpec, OutputSpec, InKind, OutKind
+from .core import Bounds
+from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
 from .device_manager import as_t
 
 @torch.no_grad()

@@ -5,8 +5,8 @@ from typing import List, Optional, Tuple
 import numpy as np
 import torch
 
-from .solver_base import Solver, SolveStatus, SolverCaps
-from .device_manager import get_dtype
+from act.abstraction.solver_base import Solver, SolveStatus, SolverCaps
+from act.abstraction.device_manager import get_dtype
 
 def _to_t(x, device, dtype):
     """Convert input to tensor with specified device and dtype.

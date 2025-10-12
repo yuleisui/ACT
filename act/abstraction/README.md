@@ -197,7 +197,7 @@ This forms a **refinement loop**: false CEs drive further splitting → tighter 
 ```python
 import torch, numpy as np
 from dnnverif_torch.core import Layer, Net, Bounds, as_t
-from dnnverif_torch.specs import InputSpec, OutputSpec, InKind, OutKind, seed_from_input_spec
+from act.abstraction import InputSpec, OutputSpec, InKind, OutKind, seed_from_input_spec
 from dnnverif_torch.bab import verify_bab
 from dnnverif_torch.solver_gurobi import GurobiSolver
 
@@ -247,7 +247,7 @@ dnnverif_torch/
   analyze.py
   solver_base.py
   cons_exporter.py
-  specs.py
+  verif_status.py
   bab.py
   solver_gurobi.py
   solver_torch.py

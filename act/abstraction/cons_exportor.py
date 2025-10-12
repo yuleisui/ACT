@@ -1,9 +1,9 @@
 # exporter.pseudo
 import numpy as np
 from typing import Optional, Tuple
-from .core import ConSet
-from .solver_base import Solver
-from .device_manager import get_device, get_dtype  # for passing device hints and dtype
+from act.abstraction.core import ConSet
+from act.abstraction.solver_base import Solver
+from act.abstraction.device_manager import get_device, get_dtype  # for passing device hints and dtype
 
 def to_numpy(x) -> np.ndarray:
     try:
