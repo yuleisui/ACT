@@ -25,7 +25,7 @@ from datetime import datetime
 
 from act.interval.bounds_propagation import BoundsPropagate
 from act.interval.bounds_prop_helper import TrackingMode
-from act.util.bounds import Bounds
+from act.interval.util.bounds import Bounds
 from test_configs import MockFactory, get_regression_test_configs
 
 

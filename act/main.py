@@ -46,13 +46,13 @@ import os
 import configparser
 
 # Import commendline paser
-from act.util.options import get_parser
+from act.interval.util.options import get_parser
 
 # Import ACT modules
-from act.input_parser.model import Model
-from act.input_parser.dataset import Dataset
-from act.input_parser.spec import Spec, InputSpec, OutputSpec
-from act.input_parser.type import VerifyResult
+from act.interval.input_parser.model import Model
+from act.interval.input_parser.dataset import Dataset
+from act.interval.input_parser.spec import Spec, InputSpec, OutputSpec
+from act.interval.input_parser.type import VerifyResult
 from act.wrapper_exts.eran.eran_verifier import ERANVerifier
 from act.wrapper_exts.abcrown.abcrown_verifier import abCrownVerifier
 from act.interval.base_verifier import BaseVerifier

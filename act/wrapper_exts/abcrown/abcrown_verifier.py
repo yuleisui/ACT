@@ -19,8 +19,8 @@ import yaml
 import json
 
 from act.interval.base_verifier import BaseVerifier
-from act.input_parser.spec import Spec
-from act.input_parser.type import SpecType
+from act.interval.input_parser.spec import Spec
+from act.interval.input_parser.type import SpecType
 
 class abCrownVerifier(BaseVerifier):
     def __init__(self, method, spec : Spec, device: str = 'cpu'):

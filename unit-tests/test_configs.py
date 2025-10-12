@@ -25,7 +25,7 @@ from dataclasses import dataclass
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from act.input_parser.type import SpecType, LPNormType
+from act.interval.input_parser.type import SpecType, LPNormType
 
 
 @dataclass

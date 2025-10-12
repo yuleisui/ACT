@@ -5,7 +5,7 @@ from typing import Optional, Dict, Any, List
 from act.back_end.core import Bounds, Con, ConSet
 from act.back_end.analyze import analyze
 from act.back_end.cons_exportor import export_to_solver, to_numpy
-from act.back_end.solver_base import Solver, SolveStatus
+from act.back_end.solver.solver_base import Solver, SolveStatus
 
 # Import specification classes from front_end
 from act.front_end.specs import InKind, InputSpec, OutKind, OutputSpec

@@ -10,7 +10,7 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from act.util.bounds import Bounds
+from act.interval.util.bounds import Bounds
 
 
 class TestBoundsOperators(unittest.TestCase):

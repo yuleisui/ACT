@@ -17,10 +17,10 @@ from typing import Optional, List
 
 
 from act.interval.base_verifier import BaseVerifier
-from act.util.stats import ACTStats
-from act.util.inference import perform_model_inference
-from act.input_parser.spec import Spec
-from act.input_parser.type import VerifyResult
+from act.interval.util.stats import ACTStats
+from act.interval.util.inference import perform_model_inference
+from act.interval.input_parser.spec import Spec
+from act.interval.input_parser.type import VerifyResult
 from onnx2pytorch.operations.flatten import Flatten as OnnxFlatten
 from onnx2pytorch.operations.base import OperatorWrapper
 from act.hybridz.hybridz_transformers import HybridZonotopeGrid, HybridZonotopeElem

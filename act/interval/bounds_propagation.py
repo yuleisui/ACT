@@ -29,9 +29,9 @@ import torch
 import torch.nn as nn
 from typing import Tuple, Optional
 
-from act.util.stats import ACTLog
-from act.util.device import DeviceManager
-from act.util.bounds import Bounds, WeightDecomposer
+from act.interval.util.stats import ACTLog
+from act.interval.util.device import DeviceManager
+from act.interval.util.bounds import Bounds, WeightDecomposer
 from act.interval.bounds_prop_helper import (
     BoundsPropMetadata, 
     BoundsPropagationMetadata, 

@@ -9,9 +9,9 @@ import torch
 import sys
 import os
 # Import real ACT components
-from act.input_parser.model import Model
-from act.input_parser.dataset import Dataset  
-from act.input_parser.spec import Spec, InputSpec, OutputSpec
+from act.interval.input_parser.model import Model
+from act.interval.input_parser.dataset import Dataset  
+from act.interval.input_parser.spec import Spec, InputSpec, OutputSpec
 from act.interval.base_verifier import BaseVerifier
     
 # Add act to path

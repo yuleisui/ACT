@@ -15,8 +15,8 @@ import time
 import numpy as np
 from scipy.optimize import linprog
 
-import act.util.path_config as path_config
-from act.util.stats import ACTStats
+import act.interval.util.path_config as path_config
+from act.interval.util.stats import ACTStats
 
 try:
     import gurobipy as gp

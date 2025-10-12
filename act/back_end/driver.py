@@ -25,7 +25,7 @@ sys.path.insert(0, project_root)
 sys.path.insert(0, abstraction_dir)
 
 # Import ACT options
-from act.util.options import get_parser
+from act.interval.util.options import get_parser
 
 # Import back_end components (use relative imports for package)
 from act.back_end.device_manager import initialize_device_dtype, ensure_initialized, summary
@@ -33,8 +33,8 @@ from act.back_end.core import Layer, Net, Bounds
 from act.back_end.verify_status import VerifStatus, VerifResult, verify_once, seed_from_input_spec
 from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
 from act.back_end.bab import verify_bab
-from act.back_end.solver_gurobi import GurobiSolver
-from act.back_end.solver_torch import TorchLPSolver
+from act.back_end.solver.solver_gurobi import GurobiSolver
+from act.back_end.solver.solver_torch import TorchLPSolver
 
 def create_tiny_mlp(n_in: int, n_out: int):
     """Create a tiny MLP for demonstration: x(n_in) -> Dense(n_out) -> ReLU(n_out)"""
@@ -215,7 +215,7 @@ def main():
     print("\n" + "=" * 60)
     print("ACT Integration Summary:")
     print("✅ Device management integrated with --device argument")
-    print("✅ Command-line parsing via act.util.options")
+    print("✅ Command-line parsing via act.interval.util.options")
     print("✅ Configurable dtype system (--dtype float16/32/64)")
     print("✅ ACT constraint generation and solving")
     print("✅ Multiple solver backends: Gurobi MILP + PyTorch LP")
