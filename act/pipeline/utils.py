@@ -251,12 +251,20 @@ def setup_logging(level: str = "INFO", format_str: Optional[str] = None) -> None
     if format_str is None:
         format_str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     
+    # Ensure log file goes to pipeline/log directory
+    import os
+    from pathlib import Path
+    pipeline_dir = Path(__file__).parent
+    log_dir = pipeline_dir / "log"
+    log_dir.mkdir(exist_ok=True)
+    log_file_path = log_dir / "pipeline_tests.log"
+    
     logging.basicConfig(
         level=getattr(logging, level.upper()),
         format=format_str,
         handlers=[
             logging.StreamHandler(),
-            logging.FileHandler("pipeline_tests.log")
+            logging.FileHandler(log_file_path)
         ]
     )
     

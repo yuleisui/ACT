@@ -19,63 +19,67 @@ scenarios:
     expected_result: "SAT"
     timeout: 30
   
-  # Regression test suite
-  regression_suite:
-    - scenario: "mnist_relu_baseline"
-      sample_data: "mnist_small"
-      input_spec: "robust_l_inf"
-      output_spec: "classification"
-      model: "simple_relu"
-      baseline_file: "mnist_relu_baseline.json"
-      timeout: 60
+  # Regression test suite - converted to individual scenarios
+  mnist_relu_baseline:
+    sample_data: "mnist_small"
+    input_spec: "robust_l_inf"
+    output_spec: "classification"
+    model: "simple_relu"
+    baseline_file: "mnist_relu_baseline.json"
+    expected_result: "UNSAT"
+    timeout: 60
     
-    - scenario: "mnist_cnn_baseline"
-      sample_data: "mnist_small"
-      input_spec: "robust_l_inf"
-      output_spec: "classification"
-      model: "small_cnn"
-      baseline_file: "mnist_cnn_baseline.json"
-      timeout: 120
+  mnist_cnn_baseline:
+    sample_data: "mnist_small"
+    input_spec: "robust_l_inf"
+    output_spec: "classification"
+    model: "small_cnn"
+    baseline_file: "mnist_cnn_baseline.json"
+    expected_result: "UNSAT"
+    timeout: 120
     
-    - scenario: "cifar_adversarial"
-      sample_data: "cifar_adversarial" 
-      input_spec: "robust_l_inf"
-      output_spec: "classification"
-      model: "medium_cnn"
-      baseline_file: "cifar_cnn_baseline.json"
-      timeout: 180
+  cifar_adversarial:
+    sample_data: "cifar_adversarial" 
+    input_spec: "robust_l_inf"
+    output_spec: "classification"
+    model: "medium_cnn"
+    baseline_file: "cifar_cnn_baseline.json"
+    expected_result: "SAT"
+    timeout: 180
   
-  # Stress tests with larger inputs
-  stress_tests:
-    - scenario: "large_batch_test"
-      sample_data: "mnist_large"
-      input_spec: "robust_l_inf"
-      output_spec: "classification"
-      model: "deep_relu"
-      timeout: 300
+  # Stress tests - converted to individual scenarios  
+  large_batch_test:
+    sample_data: "mnist_large"
+    input_spec: "robust_l_inf"
+    output_spec: "classification"
+    model: "deep_relu"
+    expected_result: "UNKNOWN"
+    timeout: 300
     
-    - scenario: "complex_cnn_test"
-      sample_data: "cifar_small"
-      input_spec: "robust_l2"
-      output_spec: "robustness"
-      model: "medium_cnn"
-      timeout: 600
+  complex_cnn_test:
+    sample_data: "cifar_small"
+    input_spec: "robust_l2"
+    output_spec: "robustness"
+    model: "medium_cnn"
+    expected_result: "UNKNOWN"
+    timeout: 600
   
-  # Targeted property tests
-  property_test_suite:
-    - scenario: "soundness_test_1"
-      sample_data: "mnist_small"
-      input_spec: "robust_l_inf_small"
-      output_spec: "classification"
-      model: "simple_relu"
-      expected_result: "UNSAT"
+  # Property tests - converted to individual scenarios
+  soundness_test_1:
+    sample_data: "mnist_small"
+    input_spec: "robust_l_inf_small"
+    output_spec: "classification"
+    model: "simple_relu"
+    expected_result: "UNSAT"
+    timeout: 60
     
-    - scenario: "soundness_test_2"
-      sample_data: "cifar_small"
-      input_spec: "robust_l_inf_small"
-      output_spec: "classification"
-      model: "small_cnn"
-      expected_result: "UNSAT"
+  soundness_test_2:
+    sample_data: "cifar_small"
+    input_spec: "robust_l_inf_small"
+    output_spec: "classification"
+    model: "small_cnn"
+    expected_result: "UNSAT"
+    timeout: 120
 
 # Property-based testing configurations
 property_tests:

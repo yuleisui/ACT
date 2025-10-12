@@ -29,10 +29,9 @@ Usage:
 from .config import ConfigManager, load_config, get_default_config
 from .mock_factory import MockInputFactory
 from .correctness import (
-    AbstractionVerifierValidator, 
+    BackEndVerifierValidator, 
     TestCase,
     ValidationResult,
-    PropertyTestResult,
     PerformanceResult,
     VerifyResult
 )
@@ -102,7 +101,7 @@ def validate_abstraction_verifier(config_path: str = "configs/test_scenarios.yam
         config = load_config(config_path)
         
         # Initialize validator with real abstraction verifier
-        validator = AbstractionVerifierValidator(device=device)
+        validator = BackEndVerifierValidator(device=device)
         
         # Run comprehensive validation
         results = validator.run_comprehensive_validation(config)
@@ -153,7 +152,7 @@ def quick_validate(verifier_module: Optional[Any] = None) -> bool:
         }
         
         # Initialize validator with real abstraction verifier
-        validator = AbstractionVerifierValidator()
+        validator = BackEndVerifierValidator()
         
         # Run validation
         results = validator.run_comprehensive_validation(default_config)
@@ -239,7 +238,7 @@ def run_mock_test_example():
     )
     
     # Run validation
-    validator = AbstractionVerifierValidator()
+    validator = BackEndVerifierValidator()
     result = validator.validate_correctness([test_case])
     
     logger.info(f"Mock test result: {'PASSED' if result.success else 'FAILED'}")
@@ -260,7 +259,7 @@ __all__ = [
     # Core classes
     "ConfigManager",
     "MockInputFactory", 
-    "AbstractionVerifierValidator",
+    "BackEndVerifierValidator",
     "PipelineValidator",
     "PerformanceProfiler",
     "ParallelExecutor",

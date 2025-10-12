@@ -1,0 +1,24 @@
+2025-10-12 21:35:56,497 - __main__ - INFO - Running simple integration test (following driver.py)...
+2025-10-12 21:35:56,499 - __main__ - INFO - ✅ ACT initialized: device=cpu, dtype=torch.float64
+2025-10-12 21:35:56,502 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: torch.Size([3])
+2025-10-12 21:35:56,503 - __main__ - INFO - Converted PyTorch model to ACT Net with 3 layers:
+2025-10-12 21:35:56,503 - __main__ - INFO -   Layer 0: DENSE
+2025-10-12 21:35:56,504 - __main__ - INFO -   Layer 1: RELU
+2025-10-12 21:35:56,505 - __main__ - INFO -   Layer 2: DENSE
+2025-10-12 21:36:03,107 - __main__ - INFO - ✅ Simple verification successful: COUNTEREXAMPLE
+2025-10-12 21:37:50,504 - __main__ - INFO - Running simple integration test (following driver.py)...
+2025-10-12 21:37:50,507 - __main__ - INFO - ✅ ACT initialized: device=cpu, dtype=torch.float64
+2025-10-12 21:37:50,510 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: torch.Size([3])
+2025-10-12 21:37:50,511 - __main__ - INFO - Converted PyTorch model to ACT Net with 3 layers:
+2025-10-12 21:37:50,512 - __main__ - INFO -   Layer 0: DENSE
+2025-10-12 21:37:50,512 - __main__ - INFO -   Layer 1: RELU
+2025-10-12 21:37:50,513 - __main__ - INFO -   Layer 2: DENSE
+2025-10-12 21:37:57,189 - __main__ - INFO - ✅ Simple verification successful: COUNTEREXAMPLE
+2025-10-12 23:29:35,998 - __main__ - INFO - Running simple integration test (following driver.py)...
+2025-10-12 23:29:36,000 - __main__ - INFO - ✅ ACT initialized: device=cpu, dtype=torch.float64
+2025-10-12 23:29:36,003 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: torch.Size([3])
+2025-10-12 23:29:36,004 - __main__ - INFO - Converted PyTorch model to ACT Net with 3 layers:
+2025-10-12 23:29:36,005 - __main__ - INFO -   Layer 0: DENSE
+2025-10-12 23:29:36,005 - __main__ - INFO -   Layer 1: RELU
+2025-10-12 23:29:36,006 - __main__ - INFO -   Layer 2: DENSE
+2025-10-12 23:29:47,767 - __main__ - INFO - ✅ Simple verification successful: COUNTEREXAMPLE

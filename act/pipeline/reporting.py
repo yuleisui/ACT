@@ -43,7 +43,7 @@ if PLOTTING_AVAILABLE:
 @dataclass
 class ReportConfig:
     """Configuration for report generation."""
-    output_dir: str = "reports"
+    output_dir: str = "reports"  # Will be resolved relative to pipeline directory
     include_plots: bool = True
     include_details: bool = True
     format: str = "html"  # html, json, markdown
@@ -101,7 +101,9 @@ class ReportGenerator:
             config: Report configuration
         """
         self.config = config or ReportConfig()
-        self.output_dir = Path(self.config.output_dir)
+        # Resolve output directory relative to pipeline folder
+        pipeline_dir = Path(__file__).parent
+        self.output_dir = pipeline_dir / self.config.output_dir
         self.output_dir.mkdir(exist_ok=True)
         
         # Setup plotting style
