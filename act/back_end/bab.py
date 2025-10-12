@@ -2,8 +2,8 @@
 import time, heapq, numpy as np, torch
 from dataclasses import dataclass
 from typing import Optional, List, Callable
-from act.abstraction.core import Bounds
-from act.abstraction.verif_status import VerifStatus, VerifResult, verify_once, seed_from_input_spec
+from act.back_end.core import Bounds
+from act.back_end.verify_status import VerifStatus, VerifResult, verify_once, seed_from_input_spec
 from act.front_end.specs import OutputSpec, OutKind
 
 @dataclass

@@ -7,11 +7,11 @@ with ACT's existing command-line interface and argument parsing system.
 
 Usage:
     # From project root:
-    python -m act.abstraction.driver --device cuda --verifier act --method interval
-    python -m act.abstraction.driver --device cpu --verifier act --demo_input_dim 4 --demo_output_dim 2
+    python -m act.back_end.driver --device cuda --verifier act --method interval
+    python -m act.back_end.driver --device cpu --verifier act --demo_input_dim 4 --demo_output_dim 2
     
     # Or directly:
-    cd act/abstraction && python driver.py --device cuda --verifier act --method interval
+    cd act/back_end && python driver.py --device cuda --verifier act --method interval
 """
 
 import torch
@@ -27,19 +27,19 @@ sys.path.insert(0, abstraction_dir)
 # Import ACT options
 from act.util.options import get_parser
 
-# Import abstraction components (use relative imports for package)
-from act.abstraction.device_manager import initialize_device, set_dtype, summary, as_t
-from act.abstraction.core import Layer, Net, Bounds
-from act.abstraction.verif_status import VerifStatus, VerifResult, verify_once, seed_from_input_spec
+# Import back_end components (use relative imports for package)
+from act.back_end.device_manager import initialize_device_dtype, ensure_initialized, summary
+from act.back_end.core import Layer, Net, Bounds
+from act.back_end.verify_status import VerifStatus, VerifResult, verify_once, seed_from_input_spec
 from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
-from act.abstraction.bab import verify_bab
-from act.abstraction.solver_gurobi import GurobiSolver
-from act.abstraction.solver_torch import TorchLPSolver
+from act.back_end.bab import verify_bab
+from act.back_end.solver_gurobi import GurobiSolver
+from act.back_end.solver_torch import TorchLPSolver
 
 def create_tiny_mlp(n_in: int, n_out: int):
     """Create a tiny MLP for demonstration: x(n_in) -> Dense(n_out) -> ReLU(n_out)"""
-    W = as_t(torch.randn(n_out, n_in))
-    b = as_t(torch.randn(n_out))
+    W = torch.randn(n_out, n_in)
+    b = torch.randn(n_out)
     W_pos, W_neg = torch.clamp(W, min=0), torch.clamp(W, max=0)
 
     x_ids = list(range(n_in))
@@ -80,18 +80,9 @@ def main():
     else:
         args = parser.parse_args()
     
-    # Initialize device using ACT's device management
+    # Initialize device using ACT's unified device management
     print(f"Initializing device: {args.device}")
-    device = initialize_device(args.device)
-    
-    # Configure dtype from command line
-    dtype_map = {
-        'float16': torch.float16,
-        'float32': torch.float32, 
-        'float64': torch.float64
-    }
-    torch_dtype = dtype_map.get(args.dtype, torch.float64)
-    set_dtype(torch_dtype)
+    device, dtype = initialize_device_dtype(args.device, args.dtype)
     
     print("\nACT DNN Verification Framework")
     print("=" * 60)
@@ -100,7 +91,7 @@ def main():
     print(f"  Verifier: {getattr(args, 'verifier', 'act')}")
     print(f"  Method: {getattr(args, 'method', 'interval')}")
     print(f"  Solver: {getattr(args, 'solver', 'auto')}")
-    print(f"  Dtype: {args.dtype} ({torch_dtype})")
+    print(f"  Dtype: {args.dtype} ({dtype})")
     print()
     
     # Create demonstration network
@@ -111,8 +102,8 @@ def main():
     
     # Create input specification: box constraints [-1, +1]
     I = InputSpec(kind=InKind.BOX, 
-                  lb=as_t(torch.full((n_in,), -1.0)), 
-                  ub=as_t(torch.full((n_in,), +1.0)))
+                  lb=torch.full((n_in,), -1.0), 
+                  ub=torch.full((n_in,), +1.0))
     root_box = seed_from_input_spec(I)
     
     # Create output specification: margin robustness
@@ -141,16 +132,16 @@ def main():
     if args.solver == 'gurobi':
         solvers_to_test = [("Gurobi MILP", lambda: GurobiSolver())]
     elif args.solver == 'torch':
-        solvers_to_test = [("PyTorch LP", lambda: TorchLPSolver(dtype=torch_dtype))]
+        solvers_to_test = [("PyTorch LP", lambda: TorchLPSolver(dtype=dtype))]
     elif args.solver == 'both':
         solvers_to_test = [
             ("Gurobi MILP", lambda: GurobiSolver()),
-            ("PyTorch LP", lambda: TorchLPSolver(dtype=torch_dtype))
+            ("PyTorch LP", lambda: TorchLPSolver(dtype=dtype))
         ]
     else:  # args.solver == 'auto' (default)
         solvers_to_test = [
             ("Gurobi MILP", lambda: GurobiSolver()),
-            ("PyTorch LP", lambda: TorchLPSolver(dtype=torch_dtype))
+            ("PyTorch LP", lambda: TorchLPSolver(dtype=dtype))
         ]
         print("Auto mode: Will try Gurobi first, then PyTorch as fallback")
         print()
@@ -180,11 +171,11 @@ def main():
                     print(f"  🔍 Counterexample output: {result.ce_y}")
                     
                     # Additional analysis of the counterexample
-                    ce_input_norm = torch.norm(as_t(result.ce_x)).item()
+                    ce_input_norm = torch.norm(torch.as_tensor(result.ce_x)).item()
                     print(f"  📊 Input norm: {ce_input_norm:.6f}")
                     
                     # Check if counterexample satisfies input constraints
-                    ce_x_tensor = as_t(result.ce_x)
+                    ce_x_tensor = torch.as_tensor(result.ce_x)
                     in_bounds = torch.all((ce_x_tensor >= I.lb) & (ce_x_tensor <= I.ub))
                     print(f"  ✓ Satisfies input bounds: {in_bounds}")
                 else:
@@ -234,7 +225,7 @@ def main():
     print("Execution Summary:")
     print(f"✅ Network: {n_in}D input → Dense({n_out}) → ReLU({n_out})")
     print(f"✅ Specification: Box[{I.lb[0].item():.1f},{I.ub[0].item():.1f}]^{n_in} → Margin robustness (class {target_class})")
-    print(f"✅ Device: {device} with dtype {torch_dtype}")
+    print(f"✅ Device: {device} with dtype {dtype}")
     print(f"✅ Solver mode: {args.solver}")
     if verification_success:
         print("✅ Verification: COMPLETED successfully")

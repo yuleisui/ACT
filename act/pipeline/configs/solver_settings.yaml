@@ -1,0 +1,188 @@
+# Solver-specific settings for ACT pipeline testing
+
+solvers:
+  hybridz:
+    method: "hybridz_relaxed"
+    relaxation_ratio: 0.5
+    enable_generator_merging: true
+    cosine_threshold: 0.95
+    timeout: 300
+    memory_limit_gb: 4
+    
+  hybridz_exact:
+    method: "hybridz_exact"
+    relaxation_ratio: 0.0
+    enable_generator_merging: false
+    timeout: 600
+    memory_limit_gb: 8
+  
+  hybridz_fast:
+    method: "hybridz_relaxed"
+    relaxation_ratio: 1.0
+    enable_generator_merging: true
+    cosine_threshold: 0.9
+    timeout: 60
+    memory_limit_gb: 2
+  
+  pytorch_interval:
+    method: "interval_bound_propagation"
+    tighten_bounds: true
+    timeout: 60
+    memory_limit_gb: 2
+  
+  eran_deepzono:
+    method: "deepzono"
+    domain: "zono"
+    timeout: 120
+    memory_limit_gb: 4
+  
+  eran_deeppoly:
+    method: "deeppoly"
+    domain: "poly"
+    timeout: 180
+    memory_limit_gb: 4
+  
+  abcrown:
+    method: "abcrown"
+    batch_size: 1000
+    timeout: 300
+    memory_limit_gb: 6
+
+# Testing framework settings
+testing:
+  # Parallel execution settings
+  parallel_workers: 4
+  max_concurrent_tests: 8
+  
+  # Memory management
+  memory_limit_gb: 8
+  memory_check_interval: 10
+  clear_cache_frequency: 5
+  
+  # Timeout and retry settings
+  default_timeout: 300
+  retry_on_timeout: true
+  max_retries: 2
+  retry_delay: 5.0
+  
+  # Progress and logging
+  progress_update_interval: 10
+  verbose_logging: false
+  capture_intermediate_results: true
+  
+  # Performance monitoring
+  enable_profiling: true
+  profile_memory: true
+  profile_cpu: true
+  profile_gpu: true
+  sampling_interval: 0.1
+
+# Environment-specific settings
+environments:
+  ci:
+    # Lightweight settings for CI/CD
+    testing:
+      parallel_workers: 2
+      memory_limit_gb: 4
+      default_timeout: 60
+      retry_on_timeout: false
+    solvers:
+      default: "hybridz_fast"
+      available: ["hybridz_fast", "pytorch_interval"]
+  
+  development:
+    # Settings for local development
+    testing:
+      parallel_workers: 2
+      memory_limit_gb: 8
+      default_timeout: 300
+      verbose_logging: true
+    solvers:
+      default: "hybridz"
+      available: ["hybridz", "hybridz_fast", "pytorch_interval"]
+  
+  production:
+    # Settings for comprehensive testing
+    testing:
+      parallel_workers: 8
+      memory_limit_gb: 16
+      default_timeout: 600
+      retry_on_timeout: true
+    solvers:
+      default: "hybridz"
+      available: ["hybridz", "hybridz_exact", "eran_deeppoly", "abcrown"]
+
+# Solver-specific test configurations
+solver_tests:
+  hybridz_specific:
+    generator_merging_tests:
+      - scenario: "test_merging_enabled"
+        enable_generator_merging: true
+        cosine_threshold: 0.95
+      - scenario: "test_merging_disabled" 
+        enable_generator_merging: false
+    
+    relaxation_tests:
+      - scenario: "exact_milp"
+        relaxation_ratio: 0.0
+      - scenario: "hybrid_relaxation"
+        relaxation_ratio: 0.5
+      - scenario: "full_relaxation"
+        relaxation_ratio: 1.0
+  
+  cross_solver_comparison:
+    test_scenarios: ["quick_smoke_test", "basic_sat_test"]
+    solvers: ["hybridz", "pytorch_interval"]
+    tolerance: 0.05
+    compare_results: true
+    compare_performance: true
+
+# Resource allocation settings
+resources:
+  cpu:
+    max_cores: null  # null = use all available
+    affinity: null   # null = no affinity
+  
+  memory:
+    max_memory_gb: null  # null = use system default
+    swap_enabled: true
+  
+  gpu:
+    enabled: true
+    device_ids: [0]  # GPU device IDs to use
+    memory_fraction: 0.8
+
+# Debugging and development settings
+debug:
+  save_intermediate_results: false
+  dump_verification_traces: false
+  enable_assertions: true
+  log_level: "INFO"
+  
+  # Memory debugging
+  track_memory_leaks: false
+  memory_profiling: false
+  
+  # Performance debugging
+  detailed_timing: false
+  profile_individual_operations: false
+
+# Integration settings
+integration:
+  front_end:
+    enabled: true
+    preprocessing_timeout: 30
+    data_loading_timeout: 60
+  
+  external_tools:
+    gurobi:
+      enabled: true
+      license_check: true
+    
+    eran:
+      enabled: false
+      installation_path: "/path/to/eran"
+    
+    abcrown:
+      enabled: false
+      installation_path: "/path/to/abcrown"

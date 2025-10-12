@@ -1,8 +1,7 @@
-# utils.pseudo
+# utils.py
 import torch
 from typing import Dict, Any, Tuple
-from act.abstraction.core import Bounds
-from act.abstraction.device_manager import as_t
+from act.back_end.core import Bounds
 
 EPS = 1e-12
 

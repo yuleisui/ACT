@@ -113,26 +113,289 @@ class ModelLoader:
         
     def _convert_onnx_to_pytorch(self, onnx_model) -> torch.nn.Module:
         """
-        Basic ONNX to PyTorch conversion for simple models
+        Convert ONNX model to PyTorch Sequential model for feedforward networks.
         
-        Note: This is a simplified converter. For production use,
-        consider using dedicated libraries like onnx2torch.
+        This implementation handles Conv2d, Linear, ReLU, and Flatten layers.
         """
-        # This is a placeholder - in practice, you'd need a full ONNX->PyTorch converter
-        # For now, we'll create a simple wrapper that can handle basic models
+        import onnx.numpy_helper as numpy_helper
         
-        class ONNXWrapper(nn.Module):
-            def __init__(self, onnx_model):
-                super().__init__()
-                self.onnx_model = onnx_model
-                # For demo purposes - real implementation would parse ONNX graph
+        # Parse ONNX graph nodes
+        graph = onnx_model.graph
+        initializers = {init.name: numpy_helper.to_array(init) for init in graph.initializer}
+        
+        layers = []
+        
+        # Track the flow through the network
+        for i, node in enumerate(graph.node):
+            if node.op_type == "Conv":
+                # Convolutional layer
+                weight_name = node.input[1]  # Second input is weight
+                bias_name = node.input[2] if len(node.input) > 2 else None
                 
-            def forward(self, x):
-                # Placeholder - real implementation would execute ONNX operations
-                # For now, return identity (this needs proper ONNX execution)
-                return x
+                if weight_name in initializers:
+                    weight = torch.from_numpy(initializers[weight_name]).float()
+                    # Conv weight shape: [out_channels, in_channels, kernel_h, kernel_w]
+                    out_channels, in_channels, kernel_h, kernel_w = weight.shape
+                    
+                    # Extract conv attributes
+                    kernel_size = (kernel_h, kernel_w)
+                    stride = 1
+                    padding = 0
+                    
+                    for attr in node.attribute:
+                        if attr.name == "strides" and attr.ints:
+                            stride = tuple(attr.ints) if len(attr.ints) > 1 else attr.ints[0]
+                        elif attr.name == "pads" and attr.ints:
+                            # ONNX pads format: [pad_top, pad_left, pad_bottom, pad_right]
+                            # PyTorch expects: (pad_left, pad_right) or single value
+                            pads = attr.ints
+                            if len(pads) == 4:
+                                padding = pads[0]  # Assume symmetric padding
+                            elif len(pads) == 2:
+                                padding = tuple(pads)
+                            else:
+                                padding = pads[0]
+                        elif attr.name == "kernel_shape" and attr.ints:
+                            kernel_size = tuple(attr.ints) if len(attr.ints) > 1 else attr.ints[0]
+                    
+                    conv_layer = nn.Conv2d(in_channels, out_channels, kernel_size, 
+                                         stride=stride, padding=padding)
+                    conv_layer.weight.data = weight
+                    
+                    if bias_name and bias_name in initializers:
+                        bias = torch.from_numpy(initializers[bias_name]).float()
+                        conv_layer.bias.data = bias
+                    else:
+                        conv_layer.bias.data = torch.zeros(out_channels)
+                    
+                    layers.append(conv_layer)
+            
+            elif node.op_type == "Gemm":
+                # General matrix multiplication (fully connected layer)
+                weight_name = node.input[1]  # Second input is weight
+                bias_name = node.input[2] if len(node.input) > 2 else None
                 
-        return ONNXWrapper(onnx_model)
+                if weight_name in initializers:
+                    weight = torch.from_numpy(initializers[weight_name]).float()
+                    # Gemm weight shape: [out_features, in_features]
+                    out_features, in_features = weight.shape
+                    
+                    linear_layer = nn.Linear(in_features, out_features)
+                    linear_layer.weight.data = weight
+                    
+                    if bias_name and bias_name in initializers:
+                        bias = torch.from_numpy(initializers[bias_name]).float()
+                        linear_layer.bias.data = bias
+                    else:
+                        linear_layer.bias.data = torch.zeros(out_features)
+                    
+                    layers.append(linear_layer)
+            
+            elif node.op_type == "MatMul":
+                # Matrix multiplication (alternative to Gemm)
+                weight_name = None
+                for input_name in node.input:
+                    if input_name in initializers:
+                        weight_name = input_name
+                        break
+                
+                if weight_name:
+                    weight = torch.from_numpy(initializers[weight_name]).float()
+                    if weight.dim() == 2:
+                        out_features, in_features = weight.shape
+                        linear_layer = nn.Linear(in_features, out_features)
+                        linear_layer.weight.data = weight
+                        linear_layer.bias.data = torch.zeros(out_features)
+                        layers.append(linear_layer)
+            
+            elif node.op_type == "Add":
+                # Bias addition (usually after MatMul)
+                bias_name = None
+                for input_name in node.input:
+                    if input_name in initializers:
+                        bias_name = input_name
+                        break
+                
+                if bias_name and layers and isinstance(layers[-1], nn.Linear):
+                    bias = torch.from_numpy(initializers[bias_name]).float()
+                    layers[-1].bias.data = bias
+            
+            elif node.op_type == "LSTM":
+                # LSTM layer
+                input_weights = []
+                hidden_weights = []
+                biases = []
+                
+                # Extract LSTM parameters from initializers
+                for input_name in node.input[1:]:  # Skip first input (data)
+                    if input_name in initializers:
+                        param = torch.from_numpy(initializers[input_name]).float()
+                        if "W" in input_name:
+                            if "input" in input_name.lower() or "i" in input_name.lower():
+                                input_weights.append(param)
+                            else:
+                                hidden_weights.append(param)
+                        elif "B" in input_name or "bias" in input_name.lower():
+                            biases.append(param)
+                
+                if input_weights and hidden_weights:
+                    # Reconstruct LSTM parameters
+                    weight_ih = input_weights[0] if input_weights else None
+                    weight_hh = hidden_weights[0] if hidden_weights else None
+                    bias_ih = biases[0] if len(biases) > 0 else None
+                    bias_hh = biases[1] if len(biases) > 1 else None
+                    
+                    # Get dimensions
+                    if weight_ih is not None:
+                        hidden_size = weight_ih.shape[0] // 4  # LSTM has 4 gates
+                        input_size = weight_ih.shape[1]
+                        
+                        # Create LSTM layer
+                        lstm_layer = nn.LSTM(input_size, hidden_size, batch_first=True)
+                        
+                        # Set weights
+                        lstm_layer.weight_ih_l0.data = weight_ih
+                        lstm_layer.weight_hh_l0.data = weight_hh
+                        if bias_ih is not None:
+                            lstm_layer.bias_ih_l0.data = bias_ih
+                        if bias_hh is not None:
+                            lstm_layer.bias_hh_l0.data = bias_hh
+                        
+                        layers.append(lstm_layer)
+            
+            elif node.op_type == "GRU":
+                # GRU layer
+                input_weights = []
+                hidden_weights = []
+                biases = []
+                
+                # Extract GRU parameters
+                for input_name in node.input[1:]:
+                    if input_name in initializers:
+                        param = torch.from_numpy(initializers[input_name]).float()
+                        if "W" in input_name:
+                            if "input" in input_name.lower() or "i" in input_name.lower():
+                                input_weights.append(param)
+                            else:
+                                hidden_weights.append(param)
+                        elif "B" in input_name or "bias" in input_name.lower():
+                            biases.append(param)
+                
+                if input_weights and hidden_weights:
+                    weight_ih = input_weights[0]
+                    weight_hh = hidden_weights[0]
+                    bias_ih = biases[0] if len(biases) > 0 else None
+                    bias_hh = biases[1] if len(biases) > 1 else None
+                    
+                    # Get dimensions
+                    hidden_size = weight_ih.shape[0] // 3  # GRU has 3 gates
+                    input_size = weight_ih.shape[1]
+                    
+                    # Create GRU layer
+                    gru_layer = nn.GRU(input_size, hidden_size, batch_first=True)
+                    
+                    # Set weights
+                    gru_layer.weight_ih_l0.data = weight_ih
+                    gru_layer.weight_hh_l0.data = weight_hh
+                    if bias_ih is not None:
+                        gru_layer.bias_ih_l0.data = bias_ih
+                    if bias_hh is not None:
+                        gru_layer.bias_hh_l0.data = bias_hh
+                    
+                    layers.append(gru_layer)
+            
+            elif node.op_type == "RNN":
+                # Vanilla RNN layer
+                input_weights = []
+                hidden_weights = []
+                biases = []
+                
+                # Extract RNN parameters
+                for input_name in node.input[1:]:
+                    if input_name in initializers:
+                        param = torch.from_numpy(initializers[input_name]).float()
+                        if "W" in input_name:
+                            if "input" in input_name.lower() or "i" in input_name.lower():
+                                input_weights.append(param)
+                            else:
+                                hidden_weights.append(param)
+                        elif "B" in input_name or "bias" in input_name.lower():
+                            biases.append(param)
+                
+                if input_weights and hidden_weights:
+                    weight_ih = input_weights[0]
+                    weight_hh = hidden_weights[0]
+                    bias_ih = biases[0] if len(biases) > 0 else None
+                    bias_hh = biases[1] if len(biases) > 1 else None
+                    
+                    # Get dimensions
+                    hidden_size = weight_ih.shape[0]
+                    input_size = weight_ih.shape[1]
+                    
+                    # Create RNN layer (default to tanh)
+                    rnn_layer = nn.RNN(input_size, hidden_size, batch_first=True, nonlinearity='tanh')
+                    
+                    # Set weights
+                    rnn_layer.weight_ih_l0.data = weight_ih
+                    rnn_layer.weight_hh_l0.data = weight_hh
+                    if bias_ih is not None:
+                        rnn_layer.bias_ih_l0.data = bias_ih
+                    if bias_hh is not None:
+                        rnn_layer.bias_hh_l0.data = bias_hh
+                    
+                    layers.append(rnn_layer)
+            
+            elif node.op_type == "Gather":
+                # Embedding layer (uses Gather operation in ONNX)
+                weight_name = None
+                for input_name in node.input:
+                    if input_name in initializers:
+                        weight_name = input_name
+                        break
+                
+                if weight_name:
+                    weight = torch.from_numpy(initializers[weight_name]).float()
+                    if weight.dim() == 2:
+                        num_embeddings, embedding_dim = weight.shape
+                        embedding_layer = nn.Embedding(num_embeddings, embedding_dim)
+                        embedding_layer.weight.data = weight
+                        layers.append(embedding_layer)
+            
+            elif node.op_type == "Relu":
+                layers.append(nn.ReLU())
+            
+            elif node.op_type == "Flatten":
+                layers.append(nn.Flatten())
+                
+            elif node.op_type == "Reshape":
+                # Handle reshape operations
+                layers.append(nn.Flatten())
+        
+        if not layers:
+            raise ValueError(f"No supported layers found in ONNX model. Found operations: {[node.op_type for node in graph.node]}")
+        
+        # Create Sequential model
+        model = nn.Sequential(*layers)
+        
+        print(f"🔧 Converted ONNX to PyTorch Sequential with {len(layers)} layers:")
+        for i, layer in enumerate(layers):
+            if isinstance(layer, nn.Conv2d):
+                print(f"   {i}: {type(layer).__name__}({layer.in_channels}, {layer.out_channels}, "
+                      f"kernel_size={layer.kernel_size}, stride={layer.stride}, padding={layer.padding})")
+            elif isinstance(layer, nn.Linear):
+                print(f"   {i}: {type(layer).__name__}({layer.in_features}, {layer.out_features})")
+            elif isinstance(layer, nn.LSTM):
+                print(f"   {i}: {type(layer).__name__}({layer.input_size}, {layer.hidden_size})")
+            elif isinstance(layer, nn.GRU):
+                print(f"   {i}: {type(layer).__name__}({layer.input_size}, {layer.hidden_size})")
+            elif isinstance(layer, nn.RNN):
+                print(f"   {i}: {type(layer).__name__}({layer.input_size}, {layer.hidden_size}, nonlinearity='{layer.nonlinearity}')")
+            elif isinstance(layer, nn.Embedding):
+                print(f"   {i}: {type(layer).__name__}({layer.num_embeddings}, {layer.embedding_dim})")
+            else:
+                print(f"   {i}: {type(layer).__name__}")
+        
+        return model
         
     def extract_model_signature(self, onnx_path: str) -> ModelSignature:
         """

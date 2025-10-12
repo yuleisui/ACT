@@ -1,0 +1,8 @@
+2025-10-12 21:14:15,524 - __main__ - INFO - Running simple integration test (following driver.py)...
+2025-10-12 21:14:15,525 - __main__ - INFO - ✅ ACT initialized: device=cpu, dtype=torch.float64
+2025-10-12 21:14:15,541 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: torch.Size([3])
+2025-10-12 21:14:15,555 - __main__ - INFO - Converted PyTorch model to ACT Net with 3 layers:
+2025-10-12 21:14:15,556 - __main__ - INFO -   Layer 0: DENSE
+2025-10-12 21:14:15,557 - __main__ - INFO -   Layer 1: RELU
+2025-10-12 21:14:15,557 - __main__ - INFO -   Layer 2: DENSE
+2025-10-12 21:14:23,553 - __main__ - INFO - ✅ Simple verification successful: COUNTEREXAMPLE

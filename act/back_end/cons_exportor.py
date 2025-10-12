@@ -1,20 +1,20 @@
-# exporter.pseudo
+# exporter.py
 import numpy as np
+import torch
 from typing import Optional, Tuple
-from act.abstraction.core import ConSet
-from act.abstraction.solver_base import Solver
-from act.abstraction.device_manager import get_device, get_dtype  # for passing device hints and dtype
+from act.back_end.core import ConSet
+from act.back_end.solver_base import Solver
 
 def to_numpy(x) -> np.ndarray:
     try:
-        import torch
         if isinstance(x, torch.Tensor):
-            # Use the global dtype instead of hardcoded float64
-            return x.detach().to("cpu", dtype=get_dtype()).numpy()
+            # Use current default dtype
+            current_dtype = torch.get_default_dtype()
+            return x.detach().to("cpu", dtype=current_dtype).numpy()
     except Exception:
         pass
     # Use the global dtype for numpy conversion too
-    current_dtype = get_dtype()
+    current_dtype = torch.get_default_dtype()
     if current_dtype == torch.float16:
         np_dtype = np.float16
     elif current_dtype == torch.float32:

@@ -9,7 +9,7 @@ from act.front_end.preprocessor_image import ImgPre
 from act.front_end.mocks import mock_image_sample, mock_image_specs
 from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
 from act.front_end.batch import run_batch, SampleRecord, BatchConfig
-from act.abstraction.verif_status import VerifResult
+from act.back_end.verify_status import VerifResult
 
 def verify_once_stub(net, entry_id, input_ids, output_ids, input_spec, output_spec, seed_bounds, solver, timelimit=None, maximize_violation=False) -> VerifResult:
     # A silly stub: always return UNKNOWN with no CE

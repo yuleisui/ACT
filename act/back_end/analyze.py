@@ -2,10 +2,12 @@
 import torch
 from collections import deque
 from typing import Dict, Tuple
-from act.abstraction.core import Bounds, Fact, Net, ConSet
-from act.abstraction.utils import box_join, changed_or_maskdiff, update_cache
-from act.abstraction.tf_mlp import *
-from act.abstraction.tf_transformer import *
+from act.back_end.core import Bounds, Fact, Net, ConSet
+from act.back_end.utils import box_join, changed_or_maskdiff, update_cache
+from act.back_end.tf_mlp import *
+from act.back_end.tf_transformer import *
+from act.back_end.tf_cnn import *
+from act.back_end.tf_rnn import *
 
 @torch.no_grad()
 def dispatch_tf(L, before, after, net):
@@ -22,6 +24,16 @@ def dispatch_tf(L, before, after, net):
     if k=="MUL":   return tf_mul(L, before[net.preds[L.id][0]].bounds, before[net.preds[L.id][1]].bounds)
     if k=="CONCAT":return tf_concat(L, [after[p].bounds for p in net.preds[L.id]])
     if k=="BN":    return tf_bn(L, before[L.id].bounds)
+    # CNN layers
+    if k=="CONV2D": return tf_conv2d(L, before[L.id].bounds)
+    if k=="MAXPOOL2D": return tf_maxpool2d(L, before[L.id].bounds)
+    if k=="AVGPOOL2D": return tf_avgpool2d(L, before[L.id].bounds)
+    if k=="FLATTEN": return tf_flatten(L, before[L.id].bounds)
+    # RNN layers
+    if k=="LSTM": return tf_lstm(L, before[L.id].bounds)
+    if k=="GRU": return tf_gru(L, before[L.id].bounds)
+    if k=="RNN": return tf_rnn(L, before[L.id].bounds)
+    if k=="EMBEDDING": return tf_embedding(L, before[L.id].bounds)
     # less-common
     if k=="SIGMOID": return tf_sigmoid(L, before[L.id].bounds)
     if k=="TANH":    return tf_tanh(L, before[L.id].bounds)
@@ -31,8 +43,8 @@ def dispatch_tf(L, before, after, net):
     if k=="MIN":     return tf_min(L, [before[p].bounds for p in net.preds[L.id]])
     if k=="SQUARE":  return tf_square(L, before[L.id].bounds)
     if k=="POWER":   return tf_power(L, before[L.id].bounds)
-    # transformer
-    if k=="EMBEDDING":  return tf_embedding(L)
+    # transformer (keeping original embedding for backward compatibility)
+    if k=="EMBEDDING_TF":  return tf_embedding(L)
     if k=="POSENC":     return tf_posenc(L, before[L.id].bounds)
     if k=="LAYERNORM":  return tf_layernorm(L, before[L.id].bounds)
     if k=="GELU":       return tf_gelu(L, before[L.id].bounds)

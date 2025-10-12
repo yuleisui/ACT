@@ -1,8 +1,8 @@
 # transfer.pseudo
 import torch
 from typing import List
-from act.abstraction.core import Bounds, Con, ConSet, Fact, Layer
-from act.abstraction.utils import affine_bounds, pwl_meta, bound_var_interval, scale_interval
+from act.back_end.core import Bounds, Con, ConSet, Fact, Layer
+from act.back_end.utils import affine_bounds, pwl_meta, bound_var_interval, scale_interval
 
 # -------- MLP Basics --------
 def tf_dense(L: Layer, Bin: Bounds) -> Fact:

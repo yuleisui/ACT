@@ -1,11 +1,7 @@
-# core.pseudo
+# core.py
 import torch
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Optional, Any
-from act.abstraction.device_manager import get_device, get_dtype, as_t
-
-DEFAULT_DEVICE = get_device()
-DEFAULT_DTYPE  = get_dtype()
 
 @dataclass(eq=True, frozen=True)
 class Bounds:

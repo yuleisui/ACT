@@ -1,0 +1,191 @@
+# Test scenario configurations for ACT pipeline testing
+# This file combines mock inputs into complete test scenarios
+
+scenarios:
+  # Quick smoke tests for basic functionality
+  quick_smoke_test:
+    sample_data: "mnist_small"
+    input_spec: "robust_l_inf_small" 
+    output_spec: "classification"
+    model: "simple_relu"
+    expected_result: "UNSAT"
+    timeout: 30
+  
+  basic_sat_test:
+    sample_data: "mnist_small"
+    input_spec: "robust_l_inf_large"
+    output_spec: "classification"
+    model: "simple_linear"
+    expected_result: "SAT"
+    timeout: 30
+  
+  # Regression test suite
+  regression_suite:
+    - scenario: "mnist_relu_baseline"
+      sample_data: "mnist_small"
+      input_spec: "robust_l_inf"
+      output_spec: "classification"
+      model: "simple_relu"
+      baseline_file: "mnist_relu_baseline.json"
+      timeout: 60
+    
+    - scenario: "mnist_cnn_baseline"
+      sample_data: "mnist_small"
+      input_spec: "robust_l_inf"
+      output_spec: "classification"
+      model: "small_cnn"
+      baseline_file: "mnist_cnn_baseline.json"
+      timeout: 120
+    
+    - scenario: "cifar_adversarial"
+      sample_data: "cifar_adversarial" 
+      input_spec: "robust_l_inf"
+      output_spec: "classification"
+      model: "medium_cnn"
+      baseline_file: "cifar_cnn_baseline.json"
+      timeout: 180
+  
+  # Stress tests with larger inputs
+  stress_tests:
+    - scenario: "large_batch_test"
+      sample_data: "mnist_large"
+      input_spec: "robust_l_inf"
+      output_spec: "classification"
+      model: "deep_relu"
+      timeout: 300
+    
+    - scenario: "complex_cnn_test"
+      sample_data: "cifar_small"
+      input_spec: "robust_l2"
+      output_spec: "robustness"
+      model: "medium_cnn"
+      timeout: 600
+  
+  # Targeted property tests
+  property_test_suite:
+    - scenario: "soundness_test_1"
+      sample_data: "mnist_small"
+      input_spec: "robust_l_inf_small"
+      output_spec: "classification"
+      model: "simple_relu"
+      expected_result: "UNSAT"
+    
+    - scenario: "soundness_test_2"
+      sample_data: "cifar_small"
+      input_spec: "robust_l_inf_small"
+      output_spec: "classification"
+      model: "small_cnn"
+      expected_result: "UNSAT"
+
+# Property-based testing configurations
+property_tests:
+  soundness:
+    description: "Verify UNSAT results are truly unsatisfiable"
+    test_cases: ["quick_smoke_test", "soundness_test_1", "soundness_test_2"]
+    num_test_cases: 10
+    search_counterexamples: true
+  
+  monotonicity:
+    description: "Smaller epsilon should not make UNSAT become SAT"
+    epsilon_sequence: [0.01, 0.05, 0.1, 0.15, 0.2, 0.3]
+    base_scenario:
+      sample_data: "mnist_small"
+      input_spec: "robust_l_inf"
+      output_spec: "classification"
+      model: "simple_relu"
+  
+  consistency:
+    description: "Same input should give same result across multiple runs"
+    test_cases: ["quick_smoke_test", "basic_sat_test"]
+    num_runs: 5
+    tolerance: 0.0
+
+# Performance benchmarking scenarios
+performance_tests:
+  timing_benchmarks:
+    - scenario: "small_model_timing"
+      sample_data: "mnist_small"
+      input_spec: "robust_l_inf"
+      model: "simple_relu"
+      max_time_seconds: 10
+    
+    - scenario: "medium_model_timing"
+      sample_data: "mnist_small"
+      input_spec: "robust_l_inf"
+      model: "deep_relu"
+      max_time_seconds: 30
+    
+    - scenario: "cnn_timing"
+      sample_data: "cifar_small"
+      input_spec: "robust_l_inf"
+      model: "small_cnn"
+      max_time_seconds: 60
+  
+  memory_benchmarks:
+    - scenario: "memory_stress_test"
+      sample_data: "mnist_large"
+      input_spec: "robust_l_inf"
+      model: "deep_relu"
+      max_memory_mb: 1000
+    
+    - scenario: "batch_memory_test"
+      sample_data: "cifar_small"
+      input_spec: "robust_l_inf"
+      model: "medium_cnn"
+      max_memory_mb: 2000
+
+# BaB refinement testing scenarios
+bab_tests:
+  refinement_correctness:
+    - scenario: "bab_termination_test"
+      sample_data: "mnist_small"
+      input_spec: "robust_l_inf"
+      output_spec: "classification"
+      model: "simple_relu"
+      max_refinement_depth: 10
+      timeout: 120
+    
+    - scenario: "bab_performance_test"
+      sample_data: "cifar_small"
+      input_spec: "robust_l_inf"
+      output_spec: "classification"
+      model: "small_cnn"
+      max_refinement_depth: 5
+      timeout: 300
+
+# CI/CD testing scenarios (fast, reliable tests)
+ci_tests:
+  quick_validation:
+    - scenario: "ci_smoke_test"
+      sample_data: "mnist_small"
+      input_spec: "robust_l_inf_small"
+      output_spec: "classification"
+      model: "simple_relu"
+      timeout: 15
+    
+    - scenario: "ci_regression_check"
+      sample_data: "mnist_small"
+      input_spec: "robust_l_inf"
+      output_spec: "classification"
+      model: "simple_relu"
+      baseline_file: "ci_baseline.json"
+      timeout: 30
+
+# Development testing scenarios (for debugging and development)
+dev_tests:
+  debug_scenarios:
+    - scenario: "minimal_test"
+      sample_data: "mnist_small"
+      input_spec: "robust_l_inf_small"
+      output_spec: "classification"
+      model: "simple_linear"
+      timeout: 5
+    
+    - scenario: "step_by_step_debug"
+      sample_data: "mnist_small"
+      input_spec: "robust_l_inf"
+      output_spec: "classification"
+      model: "simple_relu"
+      debug_mode: true
+      verbose_logging: true
+      timeout: 60

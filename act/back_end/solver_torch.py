@@ -5,20 +5,7 @@ from typing import List, Optional, Tuple
 import numpy as np
 import torch
 
-from act.abstraction.solver_base import Solver, SolveStatus, SolverCaps
-from act.abstraction.device_manager import get_dtype
-
-def _to_t(x, device, dtype):
-    """Convert input to tensor with specified device and dtype.
-    
-    Args:
-        x: Input data (tensor, numpy array, or scalar)
-        device: Target device (cpu/cuda)
-        dtype: Target dtype (torch.float16/float32/float64)
-    """
-    if isinstance(x, torch.Tensor):
-        return x.to(device=device, dtype=dtype)
-    return torch.as_tensor(x, device=device, dtype=dtype)
+from act.back_end.solver_base import Solver, SolveStatus, SolverCaps
 
 class TorchLPSolver(Solver):
     """Continuous LP solver using Torch + Adam with penalty and box projection.
@@ -30,7 +17,7 @@ class TorchLPSolver(Solver):
     def __init__(self, default_device: Optional[str] = None, dtype: Optional[torch.dtype] = None):
         self._device_name = default_device
         self._device = torch.device(default_device) if default_device else (torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu"))
-        self._dtype = dtype if dtype is not None else get_dtype()
+        self._dtype = dtype if dtype is not None else torch.get_default_dtype()
         self._n = 0
         self._x = None                 # torch.nn.Parameter
         self._lb = None                # torch.Tensor [n]
@@ -82,13 +69,13 @@ class TorchLPSolver(Solver):
             return
         if self._n == 0:
             self._n = n
-            self._lb = _to_t(np.full((n,), -np.inf), self._device, self._dtype)
-            self._ub = _to_t(np.full((n,), +np.inf), self._device, self._dtype)
+            self._lb = torch.full((n,), -np.inf, device=self._device, dtype=self._dtype)
+            self._ub = torch.full((n,), +np.inf, device=self._device, dtype=self._dtype)
         else:
             old_n = self._n
             self._n += n
-            self._lb = torch.cat([self._lb, _to_t(np.full((n,), -np.inf), self._device, self._dtype)])
-            self._ub = torch.cat([self._ub, _to_t(np.full((n,), +np.inf), self._device, self._dtype)])
+            self._lb = torch.cat([self._lb, torch.full((n,), -np.inf, device=self._device, dtype=self._dtype)])
+            self._ub = torch.cat([self._ub, torch.full((n,), +np.inf, device=self._device, dtype=self._dtype)])
 
     def add_binary_vars(self, n: int) -> List[int]:
         start = self._n
@@ -100,8 +87,8 @@ class TorchLPSolver(Solver):
         return idxs
 
     def set_bounds(self, idxs: List[int], lb: np.ndarray, ub: np.ndarray) -> None:
-        lb_t = _to_t(lb, self._device, self._dtype)
-        ub_t = _to_t(ub, self._device, self._dtype)
+        lb_t = torch.as_tensor(lb, device=self._device, dtype=self._dtype)
+        ub_t = torch.as_tensor(ub, device=self._device, dtype=self._dtype)
         self._lb[idxs] = lb_t
         self._ub[idxs] = ub_t
 
@@ -150,11 +137,11 @@ class TorchLPSolver(Solver):
 
         def rows_to_dense(rows):
             if not rows:
-                return _to_t(np.zeros((0, self._n)), self._device, self._dtype), _to_t(np.zeros((0,)), self._device, self._dtype)
+                return torch.zeros((0, self._n), device=self._device, dtype=self._dtype), torch.zeros((0,), device=self._device, dtype=self._dtype)
             A = torch.zeros((len(rows), self._n), device=self._device, dtype=self._dtype)
             b = torch.zeros((len(rows),), device=self._device, dtype=self._dtype)
             for r, (vids, coeffs, rhs) in enumerate(rows):
-                A[r, torch.as_tensor(vids, device=self._device)] = _to_t(coeffs, self._device, self._dtype)
+                A[r, torch.as_tensor(vids, device=self._device)] = torch.as_tensor(coeffs, device=self._device, dtype=self._dtype)
                 b[r] = float(rhs)
             return A, b
 
@@ -164,7 +151,7 @@ class TorchLPSolver(Solver):
         vids, coeffs, c0, sense = self._objective
         c = torch.zeros((self._n,), device=self._device, dtype=self._dtype, requires_grad=False)
         if vids:
-            c[torch.as_tensor(vids, device=self._device)] = _to_t(coeffs, self._device, self._dtype)
+            c[torch.as_tensor(vids, device=self._device)] = torch.as_tensor(coeffs, device=self._device, dtype=self._dtype)
 
         t_end = None if timelimit is None else (time.time() + float(timelimit))
         self._status = SolveStatus.UNKNOWN
