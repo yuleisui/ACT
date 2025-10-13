@@ -14,17 +14,12 @@ import torch.nn.functional as F
 import time
 
 from hybridz.hybridz_operations import HybridZonotopeOps
-from util.path_config import configure_torch_print, ensure_gurobi_license
-from util.stats import ACTStats
+from act.interval.util.path_config import configure_torch_print, ensure_gurobi_license
+from act.interval.util.stats import ACTStats
 
 ensure_gurobi_license()
 
-configure_torch_print(
-    linewidth=500,
-    threshold=10000,
-    sci_mode=False,
-    precision=4,
-)
+configure_torch_print()
 
 class HybridZonotopeElem:
 

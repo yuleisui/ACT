@@ -46,8 +46,8 @@ import os
 import configparser
 
 # Import commendline paser
-from util.options import get_parser
-from util.path_config import get_config_root
+from act.interval.util.options import get_parser
+from act.interval.util.path_config import get_config_root
 
 # Import ACT modules
 from act.interval.input_parser.model import Model

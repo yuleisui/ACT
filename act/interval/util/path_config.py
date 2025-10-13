@@ -32,16 +32,27 @@ from typing import Any, Optional, Tuple
 def setup_act_paths() -> str:
     """Set up ACT project paths for proper module imports."""
     current_file = os.path.abspath(__file__)
-    act_root = os.path.dirname(os.path.dirname(current_file))  # go up from util/ to act/
+    # From: /path/to/act/interval/util/path_config.py
+    # Need to go up 3 levels: util -> interval -> act
+    act_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
+    
+    # Add both act_root and its parent (project_root) to sys.path
+    # This ensures both 'from interval.xxx' and 'from act.interval.xxx' work
     if act_root not in sys.path:
         sys.path.insert(0, act_root)
+    
+    project_root = os.path.dirname(act_root)
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+    
     return act_root
 
 
 def get_project_root() -> str:
     """Get the project root directory (parent of act/)."""
     current_file = os.path.abspath(__file__)
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
+    # Go up 4 levels: util -> interval -> act -> project_root
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_file))))
     return project_root
 
 

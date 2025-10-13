@@ -14,19 +14,14 @@ import time
 import numpy as np
 from scipy.optimize import linprog
 
-from util.path_config import configure_torch_print, ensure_gurobi_license, import_gurobi
-from util.stats import ACTStats
+from act.interval.util.path_config import configure_torch_print, ensure_gurobi_license, import_gurobi
+from act.interval.util.stats import ACTStats
 
 ensure_gurobi_license()
 
 GUROBI_AVAILABLE, gp, GRB = import_gurobi()
 
-configure_torch_print(
-    linewidth=500,
-    threshold=10000,
-    sci_mode=False,
-    precision=4,
-)
+configure_torch_print()
 
 class HybridZonotopeOps:
 
