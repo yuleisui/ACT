@@ -44,10 +44,10 @@ def get_parser():
     
     # ACT Core Verifier Selection
     parser.add_argument('--verifier', type=str, default=None, 
-                        choices=['interval', 'eran', 'abcrown', 'hybridz', 'act'],
-                        help='Backend verification engine. "interval": ACT native interval analysis, "eran": ERAN external verifier, "abcrown": αβ-CROWN external verifier, "hybridz": ACT novel hybrid zonotope verifier, "act": ACT torch-native abstraction framework')
+                        choices=['base', 'eran', 'abcrown', 'hybridz', 'act'],
+                        help='Backend verification engine. "base": ACT native base bounds analysis, "eran": ERAN external verifier, "abcrown": αβ-CROWN external verifier, "hybridz": ACT novel hybrid zonotope verifier, "act": ACT torch-native abstraction framework')
     parser.add_argument('--method', type=str, default=None, 
-                        help='Verification method. ERAN: [deepzono, refinezono, deeppoly, refinepoly], αβ-CROWN: [alpha, beta, alpha_beta], ACT-HybridZ: [hybridz, hybridz_relaxed, hybridz_relaxed_with_bab], ACT-Interval: [interval], ACT-Native: [interval, torch-native]')
+                        help='Verification method. ERAN: [deepzono, refinezono, deeppoly, refinepoly], αβ-CROWN: [alpha, beta, alpha_beta], ACT-HybridZ: [hybridz, hybridz_relaxed, hybridz_relaxed_with_bab], ACT-Base: [base], ACT-Native: [base, torch-native]')
     parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda'],
                         help='Computation device (cpu or cuda)')
     parser.add_argument('--dtype', type=str, default='float64', 

@@ -37,7 +37,7 @@ def setup_act_paths() -> str:
     act_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
     
     # Add both act_root and its parent (project_root) to sys.path
-    # This ensures both 'from interval.xxx' and 'from act.interval.xxx' work
+    # This ensures both 'from base.xxx' and 'from act.base.xxx' work
     if act_root not in sys.path:
         sys.path.insert(0, act_root)
     

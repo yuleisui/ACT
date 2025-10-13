@@ -14,8 +14,8 @@ import time
 import numpy as np
 from scipy.optimize import linprog
 
-from act.interval.util.path_config import configure_torch_print, ensure_gurobi_license, import_gurobi
-from act.interval.util.stats import ACTStats
+from act.base.util.path_config import configure_torch_print, ensure_gurobi_license, import_gurobi
+from act.base.util.stats import ACTStats
 
 ensure_gurobi_license()
 
@@ -893,7 +893,7 @@ class HybridZonotopeOps:
 
         print("ReLU pre-activation bounding: N =", N, ", method =", method)
 
-        if method == 'interval':
+        if method == 'base':
             print("Using Interval Arithmetic (no external solver required)")
             return HybridZonotopeOps.ComputeIntervalElemBounds(flat_center, flat_G_c, flat_G_b)
 
@@ -994,7 +994,7 @@ class HybridZonotopeOps:
                 print("Using Gurobi (MILP with binary variables - commercial solver)")
                 return HybridZonotopeOps.ComputeHybridZElemBoundsGurobi(flat_center, flat_G_c, flat_G_b, A_c_tensor, A_b_tensor, b_tensor, time_limit)
 
-        raise ValueError(f"Unsupported method: {method}. Supported methods: 'interval', 'hybridz', 'hybridz_relaxed', 'hybridz_relaxed_with_bab'")
+        raise ValueError(f"Unsupported method: {method}. Supported methods: 'base', 'hybridz', 'hybridz_relaxed', 'hybridz_relaxed_with_bab'")
 
     @staticmethod
     def BlockDiagonalCat(tensor_list):

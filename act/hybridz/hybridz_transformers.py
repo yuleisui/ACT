@@ -14,8 +14,8 @@ import torch.nn.functional as F
 import time
 
 from hybridz.hybridz_operations import HybridZonotopeOps
-from act.interval.util.path_config import configure_torch_print, ensure_gurobi_license
-from act.interval.util.stats import ACTStats
+from act.base.util.path_config import configure_torch_print, ensure_gurobi_license
+from act.base.util.stats import ACTStats
 
 ensure_gurobi_license()
 
@@ -78,7 +78,7 @@ class HybridZonotopeElem:
             self.nc = 0
 
     def set_method(self, method, time_limit=None):
-        valid_methods = ['interval', 'hybridz', 'hybridz_relaxed', 'hybridz_relaxed_with_bab']
+        valid_methods = ['base', 'hybridz', 'hybridz_relaxed', 'hybridz_relaxed_with_bab']
         if method not in valid_methods:
             raise ValueError(f"Invalid method '{method}'. Valid methods: {valid_methods}")
 
@@ -385,7 +385,7 @@ class HybridZonotopeGrid:
         self.nc = self.b_tensor.shape[0] if self.b_tensor is not None and self.b_tensor.numel() > 0 else 0
 
     def set_method(self, method, time_limit=None):
-        valid_methods = ['interval', 'hybridz', 'hybridz_relaxed', 'hybridz_relaxed_with_bab']
+        valid_methods = ['base', 'hybridz', 'hybridz_relaxed', 'hybridz_relaxed_with_bab']
         if method not in valid_methods:
             raise ValueError(f"Invalid method '{method}'. Valid methods: {valid_methods}")
 

@@ -1,4 +1,4 @@
-#===- act.interval.bounds_prop_helper.py helper utilities --#
+#===- act.base.bounds_prop_helper.py helper utilities --#
 #
 #                 ACT: Abstract Constraints Transformer
 #
@@ -43,8 +43,8 @@ from onnx2pytorch.operations.transpose import Transpose as OnnxTranspose
 from onnx2pytorch.operations.base import OperatorWrapper
 from dataclasses import dataclass
 
-from act.interval.util.stats import ACTLog, ACTStats
-from act.interval.util.device import DeviceManager, DeviceConsistencyError
+from act.base.util.stats import ACTLog, ACTStats
+from act.base.util.device import DeviceManager, DeviceConsistencyError
 
 
 # =============================================================================
@@ -90,23 +90,23 @@ class TrackingMode(Enum):
 # CUSTOM EXCEPTION CLASSES
 # =============================================================================
 
-class IntervalPropagationError(Exception):
-    """Base exception for interval propagation errors."""
+class BasePropagationError(Exception):
+    """Base exception for base propagation errors."""
     pass
 
 
-class NumericalInstabilityError(IntervalPropagationError):
-    """Raised when numerical instability is detected during propagation."""
+class NumericalInstabilityError(BasePropagationError):
+    """Raised when numerical instability is detected during bounds propagation."""
     pass
 
 
-class InvalidBoundsError(IntervalPropagationError):
-    """Raised when bounds become invalid (NaN, infinite, or inconsistent)."""
+class InvalidBoundsError(BasePropagationError):
+    """Raised when invalid bounds are encountered."""
     pass
 
 
-class UnsupportedLayerError(IntervalPropagationError):
-    """Raised when an unsupported layer type is encountered."""
+class UnsupportedLayerError(BasePropagationError):
+    """Raised when encountering unsupported layer types."""
     pass
 
 

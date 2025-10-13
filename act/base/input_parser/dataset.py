@@ -20,9 +20,9 @@ import torchvision
 import torchvision.transforms as transforms
 import os
 
-from act.interval.input_parser.type import SpecType
-from act.interval.input_parser.vnnlib_parser import VNNLIBParser
-from act.interval.util.path_config import get_data_root
+from act.base.input_parser.type import SpecType
+from act.base.input_parser.vnnlib_parser import VNNLIBParser
+from act.base.util.path_config import get_data_root
 
 class Dataset:
     def __init__(self,
