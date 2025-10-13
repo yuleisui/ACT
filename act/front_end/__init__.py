@@ -34,6 +34,9 @@ from act.front_end.preprocessor_text import TextPre
 # Model and data loading
 from act.front_end.loaders import ModelLoader, ModelMetadata, DatasetLoader, SpecLoader
 
+# Device management
+from act.front_end.device_manager import get_default_device, get_default_dtype, get_current_settings
+
 # Batch processing
 from act.front_end.batch import run_batch, SampleRecord, BatchConfig, ItemResult
 
@@ -53,6 +56,9 @@ __all__ = [
     
     # Model and data loading
     'ModelLoader', 'ModelMetadata', 'DatasetLoader', 'SpecLoader',
+    
+    # Device management
+    'get_default_device', 'get_default_dtype', 'get_current_settings',
     
     # Batch processing
     'run_batch', 'SampleRecord', 'BatchConfig', 'ItemResult',

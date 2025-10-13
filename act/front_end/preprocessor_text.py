@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional, List, Dict
 import torch, numpy as np
 
+from act.front_end.device_manager import get_default_device, get_default_dtype
 from act.front_end.preprocessor_base import Preprocessor, ModelSignature
 from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
 
@@ -37,8 +38,9 @@ class SimpleTokenizer:
                 "attention_mask": torch.tensor(att, dtype=torch.long)}
 
 class TextPre(Preprocessor):
-    def __init__(self, seq_len: int, vocab: Optional[Dict[str,int]] = None,
-                 device="cpu", dtype=torch.float32):
+    def __init__(self, seq_len: int, vocab: Optional[Dict[str,int]] = None):
+        device = get_default_device()
+        dtype = get_default_dtype()
         sig = ModelSignature(modality="text", layout="[seq]", input_shape=(seq_len,), meta={})
         super().__init__(sig, device=device, dtype=dtype)
         self.seq_len = seq_len

@@ -30,3 +30,273 @@
 2025-10-13 00:22:55,601 - __main__ - INFO -   Layer 1: RELU
 2025-10-13 00:22:55,601 - __main__ - INFO -   Layer 2: DENSE
 2025-10-13 00:22:59,155 - __main__ - INFO - ✅ Simple verification successful: COUNTEREXAMPLE
+2025-10-13 19:38:06,357 - __main__ - INFO - ✅ Device management integration successful
+2025-10-13 19:38:06,360 - __main__ - INFO - Validating real verification integration...
+2025-10-13 19:38:06,360 - __main__ - INFO - ✅ ACT initialized: device=cpu, dtype=torch.float64
+2025-10-13 19:38:06,360 - __main__ - INFO - Running real verification test: mnist
+2025-10-13 19:38:06,360 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-13 19:38:06,360 - __main__ - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-13 19:38:06,390 - __main__ - INFO - Loading ONNX model: models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx
+2025-10-13 19:38:06,510 - __main__ - INFO - Creating input specs with epsilon=0.1, norm=inf
+2025-10-13 19:38:06,511 - __main__ - INFO - Creating output spec for class 7
+2025-10-13 19:38:06,511 - __main__ - INFO - Created test case: mnist_integration_test
+2025-10-13 19:38:06,511 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: (1, 1, 28, 28)
+2025-10-13 19:38:06,522 - __main__ - INFO - Converted PyTorch model to ACT Net with 4 layers:
+2025-10-13 19:38:06,522 - __main__ - INFO -   Layer 0: CONV2D
+2025-10-13 19:38:06,522 - __main__ - INFO -   Layer 1: RELU
+2025-10-13 19:38:06,522 - __main__ - INFO -   Layer 2: FLATTEN
+2025-10-13 19:38:06,522 - __main__ - INFO -   Layer 3: DENSE
+2025-10-13 19:38:06,527 - __main__ - INFO - Testing with Gurobi MILP solver...
+2025-10-13 19:38:06,677 - gurobipy - INFO - Restricted license - for non-production use only - expires 2026-11-23
+2025-10-13 19:38:06,685 - __main__ - INFO - ✅ Gurobi MILP verification completed: CERTIFIED
+2025-10-13 19:38:06,685 - __main__ - INFO - ✅ Property VERIFIED for Gurobi MILP
+2025-10-13 19:38:06,685 - __main__ - INFO - Real verification completed: True
+2025-10-13 19:38:06,686 - __main__ - INFO - Real verification validation: 1/1 tests passed
+2025-10-13 21:31:31,050 - __main__ - INFO - ✅ Device management integration successful
+2025-10-13 21:31:31,053 - __main__ - INFO - Validating real verification integration...
+2025-10-13 21:31:31,053 - __main__ - INFO - ✅ ACT initialized: device=cpu, dtype=torch.float64
+2025-10-13 21:31:31,054 - __main__ - INFO - Running real verification test: mnist
+2025-10-13 21:31:31,054 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-13 21:34:18,224 - __main__ - INFO - ✅ Device management integration successful
+2025-10-13 21:34:18,226 - __main__ - INFO - Validating real verification integration...
+2025-10-13 21:34:18,226 - __main__ - INFO - ✅ ACT initialized: device=cpu, dtype=torch.float64
+2025-10-13 21:34:18,227 - __main__ - INFO - Running real verification test: mnist
+2025-10-13 21:34:18,227 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-13 21:34:50,253 - __main__ - INFO - ✅ Device management integration successful
+2025-10-13 21:34:50,253 - __main__ - INFO - Validating real verification integration...
+2025-10-13 21:34:50,253 - __main__ - INFO - ✅ ACT initialized: device=cpu, dtype=torch.float64
+2025-10-13 21:34:50,253 - __main__ - INFO - Running real verification test: mnist
+2025-10-13 21:34:50,253 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-13 21:34:50,253 - __main__ - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-13 21:34:50,282 - __main__ - INFO - Loading ONNX model: models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx
+2025-10-13 21:34:50,416 - __main__ - INFO - Creating input specs with epsilon=0.1, norm=inf
+2025-10-13 21:34:50,416 - __main__ - INFO - Creating output spec for class 7
+2025-10-13 21:34:50,416 - __main__ - INFO - Created test case: mnist_integration_test
+2025-10-13 21:34:50,416 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: (1, 1, 28, 28)
+2025-10-13 21:34:50,416 - __main__ - ERROR - Real verification setup failed: Layer.__init__() missing 1 required positional argument: 'cache'
+2025-10-13 21:34:50,416 - __main__ - INFO - Real verification validation: 0/1 tests passed
+2025-10-13 21:37:15,756 - __main__ - INFO - ✅ Device management integration successful
+2025-10-13 21:37:15,758 - __main__ - INFO - Validating real verification integration...
+2025-10-13 21:37:15,758 - __main__ - INFO - ✅ ACT initialized: device=cpu, dtype=torch.float64
+2025-10-13 21:37:15,758 - __main__ - INFO - Running real verification test: mnist
+2025-10-13 21:37:15,758 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-13 21:37:15,758 - __main__ - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-13 21:37:15,775 - __main__ - INFO - Loading ONNX model: models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx
+2025-10-13 21:37:15,844 - __main__ - INFO - Creating input specs with epsilon=0.1, norm=inf
+2025-10-13 21:37:15,844 - __main__ - INFO - Creating output spec for class 7
+2025-10-13 21:37:15,844 - __main__ - INFO - Created test case: mnist_integration_test
+2025-10-13 21:37:15,845 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: (1, 1, 28, 28)
+2025-10-13 21:37:15,845 - __main__ - ERROR - Real verification setup failed: Layer.__init__() missing 1 required positional argument: 'cache'
+2025-10-13 21:37:15,845 - __main__ - INFO - Real verification validation: 0/1 tests passed
+2025-10-13 21:37:49,818 - __main__ - INFO - ✅ Device management integration successful
+2025-10-13 21:37:49,818 - __main__ - INFO - Validating real verification integration...
+2025-10-13 21:37:49,818 - __main__ - INFO - ✅ ACT initialized: device=cpu, dtype=torch.float64
+2025-10-13 21:37:49,818 - __main__ - INFO - Running real verification test: mnist
+2025-10-13 21:37:49,818 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-13 21:37:49,818 - __main__ - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-13 21:37:49,835 - __main__ - INFO - Loading ONNX model: models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx
+2025-10-13 21:37:49,904 - __main__ - INFO - Creating input specs with epsilon=0.1, norm=inf
+2025-10-13 21:37:49,905 - __main__ - INFO - Creating output spec for class 7
+2025-10-13 21:37:49,905 - __main__ - INFO - Created test case: mnist_integration_test
+2025-10-13 21:37:49,905 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: (1, 1, 28, 28)
+2025-10-13 21:37:49,905 - __main__ - ERROR - Real verification setup failed: Layer.__init__() missing 1 required positional argument: 'cache'
+2025-10-13 21:37:49,905 - __main__ - INFO - Real verification validation: 0/1 tests passed
+2025-10-13 21:39:47,862 - __main__ - INFO - ✅ Device management integration successful
+2025-10-13 21:39:47,863 - __main__ - INFO - Validating real verification integration...
+2025-10-13 21:39:47,863 - __main__ - INFO - ✅ ACT initialized: device=cpu, dtype=torch.float64
+2025-10-13 21:39:47,863 - __main__ - INFO - Running real verification test: mnist
+2025-10-13 21:39:47,863 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-13 21:39:47,863 - __main__ - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-13 21:39:47,879 - __main__ - INFO - Loading ONNX model: models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx
+2025-10-13 21:39:47,948 - __main__ - INFO - Creating input specs with epsilon=0.1, norm=inf
+2025-10-13 21:39:47,949 - __main__ - INFO - Creating output spec for class 7
+2025-10-13 21:39:47,949 - __main__ - INFO - Created test case: mnist_integration_test
+2025-10-13 21:39:47,949 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: (1, 1, 28, 28)
+2025-10-13 21:39:47,964 - __main__ - INFO - Converted PyTorch model to ACT Net with 4 layers:
+2025-10-13 21:39:47,965 - __main__ - INFO -   Layer 0: CONV2D
+2025-10-13 21:39:47,965 - __main__ - INFO -   Layer 1: RELU
+2025-10-13 21:39:47,965 - __main__ - INFO -   Layer 2: FLATTEN
+2025-10-13 21:39:47,965 - __main__ - INFO -   Layer 3: DENSE
+2025-10-13 21:39:47,971 - __main__ - INFO - Testing with Gurobi MILP solver...
+2025-10-13 21:39:48,093 - gurobipy - INFO - Restricted license - for non-production use only - expires 2026-11-23
+2025-10-13 21:39:48,101 - __main__ - INFO - ✅ Gurobi MILP verification completed: CERTIFIED
+2025-10-13 21:39:48,101 - __main__ - INFO - ✅ Property VERIFIED for Gurobi MILP
+2025-10-13 21:39:48,101 - __main__ - INFO - Real verification completed: True
+2025-10-13 21:39:48,102 - __main__ - INFO - Real verification validation: 1/1 tests passed
+2025-10-13 21:45:48,142 - __main__ - INFO - ✅ Device management integration successful
+2025-10-13 21:45:48,144 - __main__ - INFO - Validating real verification integration...
+2025-10-13 21:45:48,144 - __main__ - INFO - ✅ ACT initialized: device=cpu, dtype=torch.float64
+2025-10-13 21:45:48,144 - __main__ - INFO - Running real verification test: mnist
+2025-10-13 21:45:48,144 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-13 21:45:48,144 - __main__ - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-13 21:45:48,175 - __main__ - INFO - Loading ONNX model: models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx
+2025-10-13 21:45:48,298 - __main__ - INFO - Creating input specs with epsilon=0.1, norm=inf
+2025-10-13 21:45:48,299 - __main__ - INFO - Creating output spec for class 7
+2025-10-13 21:45:48,299 - __main__ - INFO - Created test case: mnist_integration_test
+2025-10-13 21:45:48,299 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: (1, 1, 28, 28)
+2025-10-13 21:45:48,314 - __main__ - INFO - Converted PyTorch model to ACT Net with 4 layers:
+2025-10-13 21:45:48,314 - __main__ - INFO -   Layer 0: CONV2D
+2025-10-13 21:45:48,314 - __main__ - INFO -   Layer 1: RELU
+2025-10-13 21:45:48,314 - __main__ - INFO -   Layer 2: FLATTEN
+2025-10-13 21:45:48,314 - __main__ - INFO -   Layer 3: DENSE
+2025-10-13 21:45:48,319 - __main__ - INFO - Testing with Gurobi MILP solver...
+2025-10-13 21:45:48,439 - gurobipy - INFO - Restricted license - for non-production use only - expires 2026-11-23
+2025-10-13 21:45:48,448 - __main__ - INFO - ✅ Gurobi MILP verification completed: CERTIFIED
+2025-10-13 21:45:48,448 - __main__ - INFO - ✅ Property VERIFIED for Gurobi MILP
+2025-10-13 21:45:48,448 - __main__ - INFO - Real verification completed: True
+2025-10-13 21:45:48,448 - __main__ - INFO - Real verification validation: 1/1 tests passed
+2025-10-13 22:19:30,053 - __main__ - INFO - ✅ Device management integration successful
+2025-10-13 22:19:30,054 - __main__ - INFO - Validating real verification integration...
+2025-10-13 22:19:30,055 - __main__ - INFO - ✅ ACT initialized: device=cuda:0, dtype=torch.float64
+2025-10-13 22:23:45,548 - __main__ - INFO - ✅ Device management integration successful
+2025-10-13 22:23:45,548 - __main__ - INFO - Validating real verification integration...
+2025-10-13 22:23:45,548 - __main__ - INFO - ✅ ACT initialized: device=cuda:0, dtype=torch.float64
+2025-10-13 22:23:45,548 - __main__ - INFO - Running real verification test: mnist
+2025-10-13 22:23:45,548 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-13 22:23:45,548 - __main__ - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-13 22:23:45,564 - __main__ - INFO - Loading ONNX model: models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx
+2025-10-13 22:23:45,658 - __main__ - INFO - Creating input specs with epsilon=0.1, norm=inf
+2025-10-13 22:23:45,660 - __main__ - INFO - Creating output spec for class 7
+2025-10-13 22:23:45,660 - __main__ - INFO - Created test case: mnist_integration_test
+2025-10-13 22:23:45,660 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: (1, 1, 28, 28)
+2025-10-13 22:23:46,111 - __main__ - INFO - Converted PyTorch model to ACT Net with 4 layers:
+2025-10-13 22:23:46,111 - __main__ - INFO -   Layer 0: CONV2D
+2025-10-13 22:23:46,111 - __main__ - INFO -   Layer 1: RELU
+2025-10-13 22:23:46,111 - __main__ - INFO -   Layer 2: FLATTEN
+2025-10-13 22:23:46,111 - __main__ - INFO -   Layer 3: DENSE
+2025-10-13 22:23:46,111 - __main__ - INFO - Testing with Gurobi MILP solver...
+2025-10-13 22:23:46,238 - gurobipy - INFO - Restricted license - for non-production use only - expires 2026-11-23
+2025-10-13 22:23:46,247 - __main__ - INFO - ✅ Gurobi MILP verification completed: CERTIFIED
+2025-10-13 22:23:46,247 - __main__ - INFO - ✅ Property VERIFIED for Gurobi MILP
+2025-10-13 22:23:46,247 - __main__ - INFO - Real verification completed: True
+2025-10-13 22:23:46,247 - __main__ - INFO - Real verification validation: 1/1 tests passed
+2025-10-13 22:32:52,476 - __main__ - INFO - ✅ Device management integration successful
+2025-10-13 22:32:52,479 - __main__ - INFO - Validating real verification integration...
+2025-10-13 22:32:52,479 - __main__ - INFO - ✅ ACT initialized: device=cuda:0, dtype=torch.float64
+2025-10-13 22:32:52,479 - __main__ - INFO - Running real verification test: mnist
+2025-10-13 22:32:52,479 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-13 22:32:52,480 - __main__ - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-13 22:32:52,507 - __main__ - INFO - Loading ONNX model: models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx
+2025-10-13 22:32:52,657 - __main__ - INFO - Creating input specs with epsilon=0.1, norm=inf
+2025-10-13 22:32:52,659 - __main__ - INFO - Creating output spec for class 7
+2025-10-13 22:32:52,659 - __main__ - INFO - Created test case: mnist_integration_test
+2025-10-13 22:32:52,659 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: (1, 1, 28, 28)
+2025-10-13 22:32:52,675 - __main__ - INFO - Converted PyTorch model to ACT Net with 4 layers:
+2025-10-13 22:32:52,675 - __main__ - INFO -   Layer 0: CONV2D
+2025-10-13 22:32:52,675 - __main__ - INFO -   Layer 1: RELU
+2025-10-13 22:32:52,675 - __main__ - INFO -   Layer 2: FLATTEN
+2025-10-13 22:32:52,675 - __main__ - INFO -   Layer 3: DENSE
+2025-10-13 22:32:52,742 - __main__ - ERROR - Real verification setup failed: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu!
+2025-10-13 22:32:52,742 - __main__ - INFO - Real verification validation: 0/1 tests passed
+2025-10-13 22:35:49,904 - __main__ - INFO - ✅ Device management integration successful
+2025-10-13 22:35:49,906 - __main__ - INFO - Validating real verification integration...
+2025-10-13 22:35:49,906 - __main__ - INFO - ✅ ACT initialized: device=cuda:0, dtype=torch.float64
+2025-10-13 22:35:49,907 - __main__ - INFO - Running real verification test: mnist
+2025-10-13 22:35:49,907 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-13 22:35:49,907 - __main__ - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-13 22:35:49,924 - __main__ - INFO - Loading ONNX model: models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx
+2025-10-13 22:35:49,996 - __main__ - INFO - Creating input specs with epsilon=0.1, norm=inf
+2025-10-13 22:35:49,998 - __main__ - INFO - Creating output spec for class 7
+2025-10-13 22:35:49,998 - __main__ - INFO - Created test case: mnist_integration_test
+2025-10-13 22:35:49,998 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: (1, 1, 28, 28)
+2025-10-13 22:35:49,999 - __main__ - INFO - Converted PyTorch model to ACT Net with 4 layers:
+2025-10-13 22:35:49,999 - __main__ - INFO -   Layer 0: CONV2D
+2025-10-13 22:35:49,999 - __main__ - INFO -   Layer 1: RELU
+2025-10-13 22:35:49,999 - __main__ - INFO -   Layer 2: FLATTEN
+2025-10-13 22:35:49,999 - __main__ - INFO -   Layer 3: DENSE
+2025-10-13 22:35:49,999 - __main__ - INFO - Testing with Gurobi MILP solver...
+2025-10-13 22:35:50,117 - gurobipy - INFO - Restricted license - for non-production use only - expires 2026-11-23
+2025-10-13 22:35:50,126 - __main__ - INFO - ✅ Gurobi MILP verification completed: CERTIFIED
+2025-10-13 22:35:50,126 - __main__ - INFO - ✅ Property VERIFIED for Gurobi MILP
+2025-10-13 22:35:50,126 - __main__ - INFO - Real verification completed: True
+2025-10-13 22:35:50,126 - __main__ - INFO - Real verification validation: 1/1 tests passed
+2025-10-13 22:36:11,143 - __main__ - INFO - ✅ Device management integration successful
+2025-10-13 22:36:11,143 - __main__ - INFO - Validating real verification integration...
+2025-10-13 22:36:11,143 - __main__ - INFO - ✅ ACT initialized: device=cuda:0, dtype=torch.float64
+2025-10-13 22:36:11,143 - __main__ - INFO - Running real verification test: mnist
+2025-10-13 22:36:11,143 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-13 22:36:11,143 - __main__ - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-13 22:36:11,160 - __main__ - INFO - Loading ONNX model: models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx
+2025-10-13 22:36:11,230 - __main__ - INFO - Creating input specs with epsilon=0.1, norm=inf
+2025-10-13 22:36:11,231 - __main__ - INFO - Creating output spec for class 7
+2025-10-13 22:36:11,231 - __main__ - INFO - Created test case: mnist_integration_test
+2025-10-13 22:36:11,231 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: (1, 1, 28, 28)
+2025-10-13 22:36:11,233 - __main__ - INFO - Converted PyTorch model to ACT Net with 4 layers:
+2025-10-13 22:36:11,233 - __main__ - INFO -   Layer 0: CONV2D
+2025-10-13 22:36:11,233 - __main__ - INFO -   Layer 1: RELU
+2025-10-13 22:36:11,233 - __main__ - INFO -   Layer 2: FLATTEN
+2025-10-13 22:36:11,233 - __main__ - INFO -   Layer 3: DENSE
+2025-10-13 22:36:11,233 - __main__ - INFO - Testing with Gurobi MILP solver...
+2025-10-13 22:36:11,350 - gurobipy - INFO - Restricted license - for non-production use only - expires 2026-11-23
+2025-10-13 22:36:11,359 - __main__ - INFO - ✅ Gurobi MILP verification completed: CERTIFIED
+2025-10-13 22:36:11,359 - __main__ - INFO - ✅ Property VERIFIED for Gurobi MILP
+2025-10-13 22:36:11,359 - __main__ - INFO - Real verification completed: True
+2025-10-13 22:36:11,359 - __main__ - INFO - Real verification validation: 1/1 tests passed
+2025-10-13 22:36:28,390 - __main__ - INFO - ✅ Device management integration successful
+2025-10-13 22:36:28,391 - __main__ - INFO - Validating real verification integration...
+2025-10-13 22:36:28,391 - __main__ - INFO - ✅ ACT initialized: device=cuda:0, dtype=torch.float64
+2025-10-13 22:36:28,391 - __main__ - INFO - Running real verification test: mnist
+2025-10-13 22:36:28,391 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-13 22:36:28,391 - __main__ - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-13 22:36:28,411 - __main__ - INFO - Loading ONNX model: models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx
+2025-10-13 22:36:28,483 - __main__ - INFO - Creating input specs with epsilon=0.1, norm=inf
+2025-10-13 22:36:28,485 - __main__ - INFO - Creating output spec for class 7
+2025-10-13 22:36:28,485 - __main__ - INFO - Created test case: mnist_integration_test
+2025-10-13 22:36:28,485 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: (1, 1, 28, 28)
+2025-10-13 22:36:28,486 - __main__ - INFO - Converted PyTorch model to ACT Net with 4 layers:
+2025-10-13 22:36:28,486 - __main__ - INFO -   Layer 0: CONV2D
+2025-10-13 22:36:28,486 - __main__ - INFO -   Layer 1: RELU
+2025-10-13 22:36:28,486 - __main__ - INFO -   Layer 2: FLATTEN
+2025-10-13 22:36:28,486 - __main__ - INFO -   Layer 3: DENSE
+2025-10-13 22:36:28,486 - __main__ - INFO - Testing with Gurobi MILP solver...
+2025-10-13 22:36:28,604 - __main__ - WARNING - ❌ Gurobi MILP solver failed: GurobiSolver.begin() got an unexpected keyword argument 'device'
+2025-10-13 22:36:28,604 - __main__ - INFO -   Note: Gurobi license may not be available
+2025-10-13 22:36:28,605 - __main__ - INFO - Testing with PyTorch LP solver...
+2025-10-13 22:36:28,705 - __main__ - WARNING - ❌ PyTorch LP solver failed: TorchLPSolver.begin() got an unexpected keyword argument 'device'
+2025-10-13 22:36:28,705 - __main__ - INFO -   Note: PyTorch LP solver may not support this constraint
+2025-10-13 22:36:28,706 - __main__ - INFO - Real verification completed: False
+2025-10-13 22:36:28,706 - __main__ - INFO - Real verification validation: 0/1 tests passed
+2025-10-13 22:36:49,223 - __main__ - INFO - ✅ Device management integration successful
+2025-10-13 22:36:49,223 - __main__ - INFO - Validating real verification integration...
+2025-10-13 22:36:49,223 - __main__ - INFO - ✅ ACT initialized: device=cuda:0, dtype=torch.float64
+2025-10-13 22:36:49,223 - __main__ - INFO - Running real verification test: mnist
+2025-10-13 22:36:49,223 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-13 22:36:49,223 - __main__ - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-13 22:36:49,241 - __main__ - INFO - Loading ONNX model: models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx
+2025-10-13 22:36:49,314 - __main__ - INFO - Creating input specs with epsilon=0.1, norm=inf
+2025-10-13 22:36:49,316 - __main__ - INFO - Creating output spec for class 7
+2025-10-13 22:36:49,316 - __main__ - INFO - Created test case: mnist_integration_test
+2025-10-13 22:36:49,316 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: (1, 1, 28, 28)
+2025-10-13 22:36:49,318 - __main__ - INFO - Converted PyTorch model to ACT Net with 4 layers:
+2025-10-13 22:36:49,318 - __main__ - INFO -   Layer 0: CONV2D
+2025-10-13 22:36:49,318 - __main__ - INFO -   Layer 1: RELU
+2025-10-13 22:36:49,318 - __main__ - INFO -   Layer 2: FLATTEN
+2025-10-13 22:36:49,318 - __main__ - INFO -   Layer 3: DENSE
+2025-10-13 22:36:49,318 - __main__ - INFO - Testing with Gurobi MILP solver...
+2025-10-13 22:36:49,433 - gurobipy - INFO - Restricted license - for non-production use only - expires 2026-11-23
+2025-10-13 22:36:49,442 - __main__ - INFO - ✅ Gurobi MILP verification completed: CERTIFIED
+2025-10-13 22:36:49,442 - __main__ - INFO - ✅ Property VERIFIED for Gurobi MILP
+2025-10-13 22:36:49,442 - __main__ - INFO - Real verification completed: True
+2025-10-13 22:36:49,442 - __main__ - INFO - Real verification validation: 1/1 tests passed
+2025-10-13 22:42:17,152 - __main__ - INFO - ✅ Device management integration successful
+2025-10-13 22:42:17,169 - __main__ - INFO - Validating real verification integration...
+2025-10-13 22:42:17,169 - __main__ - INFO - ✅ ACT initialized: device=cuda:0, dtype=torch.float64
+2025-10-13 22:42:17,169 - __main__ - INFO - Running real verification test: mnist
+2025-10-13 22:42:17,169 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-13 22:42:17,170 - __main__ - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-13 22:42:17,199 - __main__ - INFO - Loading ONNX model: models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx
+2025-10-13 22:42:17,332 - __main__ - INFO - Creating input specs with epsilon=0.1, norm=inf
+2025-10-13 22:42:17,334 - __main__ - INFO - Creating output spec for class 7
+2025-10-13 22:42:17,334 - __main__ - INFO - Created test case: mnist_integration_test
+2025-10-13 22:42:17,334 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: (1, 1, 28, 28)
+2025-10-13 22:42:17,360 - __main__ - INFO - Converted PyTorch model to ACT Net with 4 layers:
+2025-10-13 22:42:17,360 - __main__ - INFO -   Layer 0: CONV2D
+2025-10-13 22:42:17,360 - __main__ - INFO -   Layer 1: RELU
+2025-10-13 22:42:17,360 - __main__ - INFO -   Layer 2: FLATTEN
+2025-10-13 22:42:17,360 - __main__ - INFO -   Layer 3: DENSE
+2025-10-13 22:42:17,360 - __main__ - INFO - Testing with Gurobi MILP solver...
+2025-10-13 22:42:17,507 - gurobipy - INFO - Restricted license - for non-production use only - expires 2026-11-23
+2025-10-13 22:42:17,515 - __main__ - INFO - ✅ Gurobi MILP verification completed: CERTIFIED
+2025-10-13 22:42:17,515 - __main__ - INFO - ✅ Property VERIFIED for Gurobi MILP
+2025-10-13 22:42:17,515 - __main__ - INFO - Real verification completed: True
+2025-10-13 22:42:17,516 - __main__ - INFO - Real verification validation: 1/1 tests passed

@@ -32,7 +32,7 @@ from act.back_end.verify_status import VerifStatus, VerifResult, seed_from_input
 from act.back_end.bab import verify_bab
 from act.back_end.solver.solver_gurobi import GurobiSolver
 from act.back_end.solver.solver_torch import TorchLPSolver
-from act.back_end.device_manager import initialize_device_dtype, get_current_settings
+from act.front_end.device_manager import get_current_settings
 from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
 
 logger = logging.getLogger(__name__)
@@ -95,13 +95,13 @@ class BackEndVerifierValidator:
         """
         self.mock_factory = MockInputFactory()
         
-        # Initialize ACT device management
+        # Get current ACT device management settings (auto-initialization already happened)
         try:
-            device, dtype = initialize_device_dtype(device, "float64")
+            device, dtype = get_current_settings()
             logger.info(f"Initialized ACT device: {device} with dtype {dtype}")
         except Exception as e:
-            logger.warning(f"Device initialization failed: {e}, using CPU")
-            device, dtype = initialize_device_dtype("cpu", "float64")
+            logger.warning(f"Device settings access failed: {e}")
+            device, dtype = torch.device("cpu"), torch.float64
     
     def _convert_model_to_act_network(self, model: nn.Module, input_shape: Tuple[int, ...]) -> Tuple[Net, List[int], List[int]]:
         """
@@ -188,7 +188,7 @@ class BackEndVerifierValidator:
         start_time = time.time()
         
         try:
-            # Get current device and dtype from global settings
+            # Get current device and dtype from PyTorch global settings
             current_device, current_dtype = get_current_settings()
             
             model_converted = test_case.model.to(dtype=current_dtype)
