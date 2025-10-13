@@ -54,3 +54,47 @@
 2025-10-13 00:17:46,664 - __main__ - INFO - verify_bab validation completed: 0/1 passed (0.0%)
 2025-10-13 00:17:46,665 - __main__ - INFO - ✅ verify_bab validation completed: 0/1 passed
 2025-10-13 00:17:46,665 - __main__ - INFO - 📊 Back-end correctness validation: ✅ SUCCESS (3/3 tests passed)
+2025-10-13 17:59:46,124 - act.pipeline.integration - INFO - Validating real verification integration...
+2025-10-13 17:59:46,129 - act.pipeline.integration - INFO - ✅ ACT initialized: device=cpu, dtype=torch.float64
+2025-10-13 17:59:46,129 - act.pipeline.integration - INFO - Running real verification test: mnist
+2025-10-13 17:59:46,129 - act.pipeline.integration - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-13 17:59:46,129 - act.pipeline.integration - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-13 17:59:46,158 - act.pipeline.integration - INFO - Loading ONNX model: models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx
+2025-10-13 17:59:46,336 - act.pipeline.integration - INFO - Creating input specs with epsilon=0.1, norm=inf
+2025-10-13 17:59:46,337 - act.pipeline.integration - INFO - Creating output spec for class 7
+2025-10-13 17:59:46,337 - act.pipeline.integration - INFO - Created test case: mnist_integration_test
+2025-10-13 17:59:46,337 - act.pipeline.integration - INFO - Converting PyTorch model to ACT Net, input shape: (1, 1, 28, 28)
+2025-10-13 17:59:46,350 - act.pipeline.integration - INFO - Converted PyTorch model to ACT Net with 4 layers:
+2025-10-13 17:59:46,350 - act.pipeline.integration - INFO -   Layer 0: CONV2D
+2025-10-13 17:59:46,350 - act.pipeline.integration - INFO -   Layer 1: RELU
+2025-10-13 17:59:46,350 - act.pipeline.integration - INFO -   Layer 2: FLATTEN
+2025-10-13 17:59:46,350 - act.pipeline.integration - INFO -   Layer 3: DENSE
+2025-10-13 17:59:46,356 - act.pipeline.integration - INFO - Testing with Gurobi MILP solver...
+2025-10-13 17:59:46,480 - act.pipeline.integration - WARNING - ❌ Gurobi MILP solver failed: Flatten: input size 196 != output size -1
+2025-10-13 17:59:46,481 - act.pipeline.integration - INFO -   Note: Gurobi license may not be available
+2025-10-13 17:59:46,481 - act.pipeline.integration - INFO - Testing with PyTorch LP solver...
+2025-10-13 17:59:46,577 - act.pipeline.integration - WARNING - ❌ PyTorch LP solver failed: Flatten: input size 196 != output size -1
+2025-10-13 17:59:46,577 - act.pipeline.integration - INFO -   Note: PyTorch LP solver may not support this constraint
+2025-10-13 17:59:46,577 - act.pipeline.integration - INFO - Real verification completed: False
+2025-10-13 17:59:46,577 - act.pipeline.integration - INFO - Real verification validation: 0/1 tests passed
+2025-10-13 18:05:19,498 - act.pipeline.integration - INFO - Validating real verification integration...
+2025-10-13 18:05:19,503 - act.pipeline.integration - INFO - ✅ ACT initialized: device=cpu, dtype=torch.float64
+2025-10-13 18:05:19,503 - act.pipeline.integration - INFO - Running real verification test: mnist
+2025-10-13 18:05:19,503 - act.pipeline.integration - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-13 18:05:19,503 - act.pipeline.integration - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-13 18:05:19,518 - act.pipeline.integration - INFO - Loading ONNX model: models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx
+2025-10-13 18:05:19,636 - act.pipeline.integration - INFO - Creating input specs with epsilon=0.1, norm=inf
+2025-10-13 18:05:19,636 - act.pipeline.integration - INFO - Creating output spec for class 7
+2025-10-13 18:05:19,637 - act.pipeline.integration - INFO - Created test case: mnist_integration_test
+2025-10-13 18:05:19,637 - act.pipeline.integration - INFO - Converting PyTorch model to ACT Net, input shape: (1, 1, 28, 28)
+2025-10-13 18:05:19,637 - act.pipeline.integration - INFO - Converted PyTorch model to ACT Net with 4 layers:
+2025-10-13 18:05:19,637 - act.pipeline.integration - INFO -   Layer 0: CONV2D
+2025-10-13 18:05:19,637 - act.pipeline.integration - INFO -   Layer 1: RELU
+2025-10-13 18:05:19,637 - act.pipeline.integration - INFO -   Layer 2: FLATTEN
+2025-10-13 18:05:19,637 - act.pipeline.integration - INFO -   Layer 3: DENSE
+2025-10-13 18:05:19,637 - act.pipeline.integration - INFO - Testing with Gurobi MILP solver...
+2025-10-13 18:05:19,754 - gurobipy - INFO - Restricted license - for non-production use only - expires 2026-11-23
+2025-10-13 18:05:19,763 - act.pipeline.integration - INFO - ✅ Gurobi MILP verification completed: CERTIFIED
+2025-10-13 18:05:19,763 - act.pipeline.integration - INFO - ✅ Property VERIFIED for Gurobi MILP
+2025-10-13 18:05:19,763 - act.pipeline.integration - INFO - Real verification completed: True
+2025-10-13 18:05:19,763 - act.pipeline.integration - INFO - Real verification validation: 1/1 tests passed

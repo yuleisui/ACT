@@ -24,7 +24,7 @@ sys.path.insert(0, str(act_root))
 from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
 from act.front_end.loaders import ModelLoader, DatasetLoader, SpecLoader
 from act.front_end.batch import SampleRecord
-from act.back_end.device_manager import initialize_device_dtype, ensure_initialized, summary
+from act.front_end.device_manager import get_current_settings
 from act.back_end.core import Net, Layer, Bounds
 from act.back_end.verify_status import VerifStatus, VerifResult, verify_once, seed_from_input_spec
 from act.back_end.solver.solver_gurobi import GurobiSolver
@@ -105,9 +105,9 @@ class ACTFrontendBridge:
         self.config = config or ACTIntegrationConfig()
         self.device = self.config.device
         
-        # Initialize device and dtype using unified approach
+        # Get current device/dtype settings (auto-initialization already happened)
         try:
-            device, dtype = initialize_device_dtype(self.config.device, "float64")
+            device, dtype = get_current_settings()
             logger.info(f"✅ ACT initialized: device={device}, dtype={dtype}")
         except Exception as e:
             logger.error(f"Device initialization failed: {e}")
@@ -118,7 +118,7 @@ class ACTFrontendBridge:
         self.model_dir = Path(self.config.model_dir)
         
         # Initialize front-end loaders
-        self.model_loader = ModelLoader(device=self.device)
+        self.model_loader = ModelLoader()
         self.data_loader = DatasetLoader()
         self.spec_loader = SpecLoader()
     
@@ -544,7 +544,9 @@ class ACTFrontendBridge:
             elif isinstance(module, nn.Flatten):
                 # Create ACT FLATTEN layer
                 input_shape = current_shape
-                output_shape = (input_shape[0], -1)  # Flatten to [batch, features]
+                # Calculate explicit feature count instead of using -1
+                total_features = torch.prod(torch.tensor(input_shape[1:])).item()
+                output_shape = (input_shape[0], total_features)  # Explicit dimensions
                 
                 flatten_layer = Layer(
                     id=layer_id,
@@ -559,8 +561,7 @@ class ACTFrontendBridge:
                 layers.append(flatten_layer)
                 
                 # Update current shape but keep same variables
-                total_features = torch.prod(torch.tensor(input_shape[1:])).item()
-                current_shape = (input_shape[0], total_features)
+                current_shape = output_shape
                 layer_id += 1
                 
             elif isinstance(module, nn.Linear):
@@ -857,109 +858,6 @@ def create_mnist_test_case(
     )
 
 
-def simple_integration_test() -> ValidationResult:
-    """Simple integration test following driver.py patterns."""
-    logger.info("Running simple integration test (following driver.py)...")
-    
-    # Create integration bridge
-    bridge = create_integration_bridge()
-    
-    try:
-        # Create a simple test model like driver.py
-        class SimpleNet(nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.fc1 = nn.Linear(3, 4)
-                self.relu = nn.ReLU()
-                self.fc2 = nn.Linear(4, 2)
-            
-            def forward(self, x):
-                x = self.relu(self.fc1(x))
-                x = self.fc2(x)
-                return x
-        
-        # Create model and test input (following driver.py style)
-        model = SimpleNet()
-        test_input = torch.randn(3)  # Use standard PyTorch creation
-        
-        # Convert to ACT Net
-        net = bridge._pytorch_to_act_net(model, test_input)
-        
-        # Create specifications like driver.py
-        input_spec = InputSpec(
-            kind=InKind.BOX,
-            lb=torch.full((3,), -1.0),
-            ub=torch.full((3,), +1.0)
-        )
-        
-        output_spec = OutputSpec(
-            kind=OutKind.MARGIN_ROBUST,
-            y_true=0,
-            margin=0.0
-        )
-        
-        # Create root box
-        root_box = seed_from_input_spec(input_spec)
-        
-        # Define forward function (matching driver.py signature)
-        @torch.no_grad()
-        def forward_fn(x: torch.Tensor) -> torch.Tensor:
-            # Simple forward pass like driver.py
-            return model(x.view(-1))
-        
-        # Try verification with PyTorch solver (more reliable than Gurobi for testing)
-        try:
-            solver = TorchLPSolver()
-            result = verify_bab(
-                net,
-                entry_id=0,
-                input_ids=list(range(3)),
-                output_ids=list(range(2)), 
-                input_spec=input_spec,
-                output_spec=output_spec,
-                root_box=root_box,
-                solver=solver,
-                model_fn=forward_fn,
-                max_depth=3,  # Small depth for testing
-                max_nodes=10, # Small nodes for testing
-                time_budget_s=30.0
-            )
-            
-            logger.info(f"✅ Simple verification successful: {result.status}")
-            
-            return ValidationResult(
-                test_name="simple_integration",
-                passed=True,
-                execution_time=1.0,
-                metadata={
-                    'status': result.status,
-                    'network_layers': len(net.layers),
-                    'verification_type': 'ACT_abstraction',
-                    'solver': 'PyTorch_LP'
-                }
-            )
-            
-        except Exception as e:
-            logger.warning(f"Verification failed: {e}")
-            
-            return ValidationResult(
-                test_name="simple_integration",
-                passed=False,
-                execution_time=0.0,
-                error_message=f"Verification error: {e}",
-                metadata={'conversion_successful': True}
-            )
-            
-    except Exception as e:
-        logger.error(f"Simple integration test failed: {e}")
-        return ValidationResult(
-            test_name="simple_integration",
-            passed=False,
-            execution_time=0.0,
-            error_message=f"Setup error: {e}"
-        )
-
-
 def validate_frontend_integration() -> List[ValidationResult]:
     """Validate real verification integration with ACT solvers."""
     results = []
@@ -990,7 +888,7 @@ if __name__ == "__main__":
     log_dir = pipeline_dir / "log"
     log_dir.mkdir(exist_ok=True)
     log_file_path = log_dir / "integration_tests.log"
-    
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -999,158 +897,39 @@ if __name__ == "__main__":
             logging.FileHandler(log_file_path)
         ]
     )
-    
+
     print("Running ACT Integration Tests with Simplified Device Management...")
-    print("=" * 60)
-    
-    # Print device status
-    print(f"🔧 Device Status: {summary()}")
-    print("=" * 60)
-    
-    # Simple test first (like driver.py)
-    result = simple_integration_test()
-    print(f"Simple test: {'PASSED' if result.passed else 'FAILED'}")
-    if not result.passed:
-        print(f"Error: {result.error_message}")
-    if result.metadata:
-        for key, value in result.metadata.items():
-            print(f"  {key}: {value}")
-    
-    print("=" * 60)
-
-
-def validate_integration_bridge() -> bool:
-    """
-    Extended validation of the integration bridge functionality.
-    
-    Tests:
-    - ACTFrontendBridge with different datasets
-    - Device management integration  
-    - Model loading with various formats
-    - Specification handling
-    - Error handling and graceful degradation
-    
-    Returns:
-        True if all validations pass, False otherwise
-    """
-    logger.info("🧪 Validating Integration Bridge...")
-    tests_passed = 0
-    total_tests = 0
-    
-    # Test 1: Device management integration (already working)
-    total_tests += 1
     try:
-        ensure_initialized()
-        device_info = summary()
+        # Auto-initialization already happened via _auto_initialize()
+        current_device, current_dtype = get_current_settings()
+        cuda_available = torch.cuda.is_available()
+        
+        device_info = f"device={current_device}, dtype={current_dtype}, cuda_available={cuda_available}"
         if "device=" in device_info and "dtype=" in device_info:
             logger.info("✅ Device management integration successful")
-            tests_passed += 1
         else:
             logger.error("❌ Device management integration failed")
     except Exception as e:
         logger.error(f"❌ Device management integration failed: {e}")
-    
-    # Test 2: Simple integration test (basic functionality)
-    total_tests += 1
-    try:
-        result = simple_integration_test()
-        if result.passed:
-            logger.info("✅ Simple integration test successful")
-            tests_passed += 1
-        else:
-            logger.error(f"❌ Simple integration test failed: {result.error_message}")
-    except Exception as e:
-        logger.error(f"❌ Simple integration test failed: {e}")
-    
-    # Test 3: ACTFrontendBridge initialization
-    total_tests += 1
-    try:
-        bridge = ACTFrontendBridge()
-        if hasattr(bridge, 'model_loader') and hasattr(bridge, 'data_loader') and hasattr(bridge, 'spec_loader'):
-            logger.info("✅ ACTFrontendBridge initialization successful")
-            tests_passed += 1
-        else:
-            logger.error("❌ ACTFrontendBridge missing required components")
-    except Exception as e:
-        logger.error(f"❌ ACTFrontendBridge initialization failed: {e}")
-    
-    # Test 4: Test case creation from mock config
-    total_tests += 1
-    try:
-        from act.pipeline.config import load_config
-        
-        # Load test scenario
-        scenario_config = load_config("test_scenarios")
-        scenarios = scenario_config.get("scenarios", {})
-        
-        if scenarios:
-            scenario_name = list(scenarios.keys())[0]
-            scenario_data = scenarios[scenario_name]
-            
-            # Create test case using correct class
-            test_case = IntegrationTestCase(
-                dataset_name="mnist",
-                model_path="test_model.onnx",
-                spec_type="local_lp",
-                sample_indices=[0],
-                epsilon=0.1
-            )
-            
-            if test_case.dataset_name == "mnist":
-                logger.info("✅ Test case creation from config successful")
-                tests_passed += 1
-            else:
-                logger.error("❌ Test case creation failed")
-        else:
-            logger.error("❌ No test scenarios found")
-    except Exception as e:
-        logger.error(f"❌ Test case creation failed: {e}")
-    
-    # Test 5: Integration result handling
-    total_tests += 1
-    try:
-        # Create a validation result (correct class name)
-        result = ValidationResult(
-            test_name="mock_test",
-            passed=True,
-            execution_time=1.0,
-            error_message=None,
-            metadata={"test": "data"}
-        )
-        
-        if (result.passed and 
-            result.execution_time > 0 and
-            result.test_name == "mock_test"):
-            logger.info("✅ Integration result handling successful")
-            tests_passed += 1
-        else:
-            logger.error("❌ Integration result handling failed")
-    except Exception as e:
-        logger.error(f"❌ Integration result handling failed: {e}")
-    
-    # Test 6: Error handling and graceful degradation
-    total_tests += 1
-    try:
-        # Test with invalid configuration using correct class
-        invalid_test_case = IntegrationTestCase(
-            dataset_name="nonexistent_dataset",
-            model_path="nonexistent_model.onnx",
-            spec_type="invalid_spec",
-            sample_indices=[0],
-            epsilon=-1.0  # Invalid epsilon
-        )
-        
-        # Bridge should handle this gracefully without crashing
-        bridge = ACTFrontendBridge()
-        # Just check that we can create invalid test cases without immediate errors
-        logger.info("✅ Error handling and graceful degradation successful")
-        tests_passed += 1
-    except Exception as e:
-        logger.error(f"❌ Error handling test failed: {e}")
-    
-    # Summary
-    success = tests_passed == total_tests
-    status = "✅ SUCCESS" if success else "❌ FAILED"
-    logger.info(f"📊 Integration bridge validation: {status} ({tests_passed}/{total_tests} tests passed)")
-    
-    return success
+
+    # Simple integration test (like driver.py)
+    results = validate_frontend_integration()
+    print(f"\n📊 Validation Results:")
+    for result in results:
+        status = '✅ PASSED' if result.passed else '❌ FAILED'
+        print(f'  {result.test_name}: {status}')
+        print(f'    Execution time: {result.execution_time:.2f}s')
+        if result.error_message:
+            print(f'    Error: {result.error_message}')
+        # Safely print solver-level verification results if available
+        if result.metadata and isinstance(result.metadata, dict):
+            vrs = result.metadata.get('verification_results')
+            if vrs:
+                for vr in vrs:
+                    try:
+                        solver = vr.get('solver') if isinstance(vr, dict) else vr[0]
+                        status = vr.get('status') if isinstance(vr, dict) else vr[1]
+                        print(f'    Solver {solver}: {status}')
+                    except Exception:
+                        # Fallback: print raw entry
+                        print(f'    Solver entry: {vr}')

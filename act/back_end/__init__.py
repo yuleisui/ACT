@@ -22,8 +22,8 @@ Example usage:
 # Core data structures
 from .core import Bounds, Con, ConSet, Fact, Layer, Net
 
-# Device management  
-from .device_manager import initialize_device_dtype, ensure_initialized, summary, temp_device_dtype, wrap_model_fn
+# Device management (moved to front_end)
+# from .device_manager import initialize_device_dtype, ensure_initialized, summary, temp_device_dtype, wrap_model_fn
 
 # Utilities
 from .utils import box_join, changed_or_maskdiff, update_cache, affine_bounds

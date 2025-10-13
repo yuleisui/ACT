@@ -34,25 +34,10 @@ class ModelMetadata:
 
 class ModelLoader:
     """Self-contained ONNX model loading for front-end preprocessing"""
-    
-    def __init__(self, device: str = "cpu", dtype: torch.dtype = torch.float32):
-        """
-        Initialize ModelLoader
-        
-        Args:
-            device: Target device ("cpu", "cuda", "cuda:0", etc.)
-            dtype: Default tensor dtype for model
-        """
-        self.device = device
-        self.dtype = dtype
-        self._validate_device()
-        
-    def _validate_device(self):
-        """Validate device availability"""
-        if self.device.startswith("cuda") and not torch.cuda.is_available():
-            print(f"⚠️  CUDA requested but not available, falling back to CPU")
-            self.device = "cpu"
-            
+    def __init__(self):
+        """Initialize ModelLoader"""
+        pass
+                
     def load_onnx_model(self, onnx_path: str) -> torch.nn.Module:
         """
         Load ONNX model and convert to PyTorch for front-end use
@@ -75,10 +60,6 @@ class ModelLoader:
             onnx_model = onnx.load(onnx_path)
             onnx.checker.check_model(onnx_model)
             
-            # Convert to PyTorch using torch.onnx
-            # Note: For more complex models, consider using onnx2torch library
-            dummy_input = self._create_dummy_input(onnx_model)
-            
             # Try to convert using torch.jit.trace as fallback
             try:
                 # Attempt direct conversion (works for many simple models)
@@ -87,7 +68,6 @@ class ModelLoader:
                 
                 # Create a temporary PyTorch model structure
                 pytorch_model = self._convert_onnx_to_pytorch(onnx_model)
-                pytorch_model = pytorch_model.to(self.device).to(self.dtype)
                 pytorch_model.eval()
                 
                 return pytorch_model
@@ -99,17 +79,6 @@ class ModelLoader:
                 
         except Exception as e:
             raise RuntimeError(f"Failed to load ONNX model {onnx_path}: {e}")
-            
-    def _create_dummy_input(self, onnx_model) -> torch.Tensor:
-        """Create dummy input tensor for model conversion"""
-        input_info = onnx_model.graph.input[0]
-        shape = []
-        for dim in input_info.type.tensor_type.shape.dim:
-            if dim.dim_value > 0:
-                shape.append(dim.dim_value)
-            else:
-                shape.append(1)  # Use 1 for dynamic dimensions
-        return torch.randn(shape, dtype=self.dtype, device=self.device)
         
     def _convert_onnx_to_pytorch(self, onnx_model) -> torch.nn.Module:
         """
@@ -481,104 +450,7 @@ class ModelLoader:
             model_size_mb=model_size_mb,
             total_params=total_params
         )
-        
-    def create_preprocessor_from_model(self, model_path: str, 
-                                     dataset_hint: str = None,
-                                     **kwargs) -> Preprocessor:
-        """
-        Auto-create appropriate preprocessor based on model signature
-        
-        Args:
-            model_path: Path to model file
-            dataset_hint: Optional hint ("mnist", "cifar10", etc.) for defaults
-            **kwargs: Additional preprocessor arguments
-            
-        Returns:
-            Configured ImgPre or TextPre instance
-        """
-        signature = self.extract_model_signature(model_path)
-        input_shape = signature.input_shape
-        
-        # Determine preprocessor type based on input shape
-        if len(input_shape) == 4:  # (N, C, H, W) - image
-            _, C, H, W = input_shape
-            return self._create_image_preprocessor(C, H, W, dataset_hint, **kwargs)
-        elif len(input_shape) == 3:  # (N, C, H*W) or (N, H, W) - image variants
-            if input_shape[1] in [1, 3]:  # Channel first
-                C, H, W = input_shape[1], int(np.sqrt(input_shape[2])), int(np.sqrt(input_shape[2]))
-            else:  # Likely (N, H, W)
-                C, H, W = 1, input_shape[1], input_shape[2]
-            return self._create_image_preprocessor(C, H, W, dataset_hint, **kwargs)
-        elif len(input_shape) == 2:  # (N, features) - could be flattened image or text
-            features = input_shape[1]
-            
-            # Check if it's a flattened image (common sizes)
-            if features == 784:  # 28*28, likely MNIST
-                return self._create_image_preprocessor(1, 28, 28, dataset_hint or "mnist", **kwargs)
-            elif features == 3072:  # 32*32*3, likely CIFAR
-                return self._create_image_preprocessor(3, 32, 32, dataset_hint or "cifar10", **kwargs)
-            elif features <= 1000:  # Likely text sequence
-                return self._create_text_preprocessor(features, **kwargs)
-            else:
-                # Default to flattened image
-                side = int(np.sqrt(features))
-                if side * side == features:
-                    return self._create_image_preprocessor(1, side, side, dataset_hint, **kwargs)
-                else:
-                    # Fall back to text
-                    return self._create_text_preprocessor(features, **kwargs)
-        else:
-            raise ValueError(f"Unsupported input shape: {input_shape}")
-            
-    def _create_image_preprocessor(self, C: int, H: int, W: int, 
-                                 dataset_hint: str = None, **kwargs) -> ImgPre:
-        """Create image preprocessor with dataset-specific defaults"""
-        
-        # Dataset-specific normalization defaults
-        norm_defaults = {
-            "mnist": {"mean": (0.1307,), "std": (0.3081,)},
-            "cifar10": {"mean": (0.4914, 0.4822, 0.4465), "std": (0.2470, 0.2435, 0.2616)},
-            "cifar100": {"mean": (0.5071, 0.4867, 0.4408), "std": (0.2675, 0.2565, 0.2761)},
-            "imagenet": {"mean": (0.485, 0.456, 0.406), "std": (0.229, 0.224, 0.225)},
-        }
-        
-        # Apply dataset defaults if hint provided
-        if dataset_hint and dataset_hint.lower() in norm_defaults:
-            defaults = norm_defaults[dataset_hint.lower()]
-            kwargs.setdefault("mean", defaults["mean"])
-            kwargs.setdefault("std", defaults["std"])
-            
-        return ImgPre(H=H, W=W, C=C, device=self.device, **kwargs)
-        
-    def _create_text_preprocessor(self, seq_len: int, **kwargs) -> TextPre:
-        """Create text preprocessor"""
-        return TextPre(seq_len=seq_len, device=self.device, **kwargs)
-        
-    def prepare_for_abstraction(self, pytorch_model: torch.nn.Module) -> Any:
-        """
-        Convert PyTorch model to abstraction framework format
-        
-        Args:
-            pytorch_model: PyTorch model from load_onnx_model()
-            
-        Returns:
-            Model in abstraction framework format
-            
-        Note:
-            This is a placeholder for integration with the abstraction framework.
-            The actual implementation would depend on the abstraction Net format.
-        """
-        # TODO: Implement conversion to abstraction framework's Net format
-        # This would involve:
-        # 1. Extract layers (Conv2D, Linear, ReLU, etc.)
-        # 2. Convert weights and biases to abstraction format
-        # 3. Create abstraction Net object
-        
-        # For now, return the PyTorch model as-is
-        # Real implementation would create abstraction Net
-        print("⚠️  prepare_for_abstraction not yet implemented")
-        print("📋 Returning PyTorch model - needs abstraction Net conversion")
-        return pytorch_model
+  
         
     def get_model_info(self, onnx_path: str) -> Dict[str, Any]:
         """
@@ -606,39 +478,3 @@ class ModelLoader:
                 "error": str(e),
                 "status": "❌ Failed to load model"
             }
-
-
-def demo_model_loader():
-    """Demo function to test ModelLoader functionality"""
-    print("🔧 ModelLoader Demo")
-    print("=" * 50)
-    
-    # Test with existing model
-    model_path = "../models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx"
-    
-    if os.path.exists(model_path):
-        loader = ModelLoader(device="cpu")
-        
-        # Test signature extraction
-        try:
-            signature = loader.extract_model_signature(model_path)
-            print(f"📋 Model signature: {signature}")
-            
-            # Test preprocessor creation
-            preprocessor = loader.create_preprocessor_from_model(model_path, "mnist")
-            print(f"🔧 Auto-created preprocessor: {type(preprocessor).__name__}")
-            print(f"📐 Preprocessor shape: {preprocessor.signature.input_shape}")
-            
-            # Test model info
-            info = loader.get_model_info(model_path)
-            print(f"ℹ️  Model info: {info['status']}")
-            
-        except Exception as e:
-            print(f"❌ Demo failed: {e}")
-    else:
-        print(f"⚠️  Model not found: {model_path}")
-        print("📋 Run demo from project root directory")
-
-
-if __name__ == "__main__":
-    demo_model_loader()

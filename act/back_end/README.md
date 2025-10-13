@@ -252,7 +252,7 @@ dnnverif_torch/
   solver_gurobi.py
   solver_torch.py
   driver.py
-  device_manager.py
+  # device_manager.py (moved to act/front_end/)
 ```
 
 ---

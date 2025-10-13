@@ -31,14 +31,28 @@ class Fact:
     bounds: Bounds
     cons: ConSet
 
+# Supported layer types:
+# MLP: DENSE, BIAS, SCALE, RELU, LRELU, ABS, CLIP, ADD, MUL, CONCAT, BN
+# CNN: CONV2D, MAXPOOL2D, AVGPOOL2D, FLATTEN  
+# RNN: LSTM, GRU, RNN, EMBEDDING
+# Activations: SIGMOID, TANH, SOFTPLUS, SILU, GELU
+# Transformer: POSENC, LAYERNORM, ATT_SCORES, SOFTMAX, ATT_MIX, etc.
+
+# DENSE layer params
+# {"W": weight_tensor, "W_pos": pos_weights, "W_neg": neg_weights, "b": bias}
+
+# CONV2D layer params
+# {"weight": weight, "bias": bias, "stride": stride, "padding": padding,
+#  "input_shape": shape, "output_shape": shape}
+
 @dataclass
 class Layer:
-    id: int
-    kind: str                      # UPPER name
-    params: Dict[str, Any]
-    in_vars: List[int]
-    out_vars: List[int]
-    cache: Dict[str, Any] = field(default_factory=dict)  # prev_lb/prev_ub/masks
+    id: int                        # Unique layer identifier
+    kind: str                      # UPPER name (e.g., "DENSE", "CONV2D", "RELU")
+    params: Dict[str, Any]         # Layer-specific parameters (weights, biases, etc.)
+    in_vars: List[int]             # Input variable indices 
+    out_vars: List[int]            # Output variable indices
+    cache: Dict[str, Any] = field(default_factory=dict)         # Runtime cache (prev_lb/prev_ub/masks)
 
 @dataclass
 class Net:

@@ -2,14 +2,16 @@
 from __future__ import annotations
 from typing import Optional
 import torch
+from act.front_end.device_manager import get_default_device, get_default_dtype
 from act.front_end.preprocessor_base import Preprocessor, ModelSignature
 from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
 from act.front_end.utils_image import to_torch_image, resize_center_crop_chw, chw_to_hwc_uint8
 
 class ImgPre(Preprocessor):
     def __init__(self, H: int, W: int, C: int = 3,
-                 mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225),
-                 device="cpu", dtype=torch.float32):
+                 mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
+        device = get_default_device()
+        dtype = get_default_dtype()
         # Handle mean/std for different channel counts
         if C == 1:
             mean = mean[0] if isinstance(mean, (tuple, list)) else mean

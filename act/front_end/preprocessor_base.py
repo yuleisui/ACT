@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional, List
 import torch
 import numpy as np
+from act.front_end.device_manager import get_default_device, get_default_dtype
 from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
 
 @dataclass
@@ -15,10 +16,10 @@ class ModelSignature:
 
 class Preprocessor:
     """Base preprocessor: raw <-> model tensors <-> verifier flat vector."""
-    def __init__(self, signature: ModelSignature, device="cpu", dtype=torch.float32):
+    def __init__(self, signature: ModelSignature):
         self.signature = signature
-        self.device = torch.device(device)
-        self.dtype = dtype
+        self.device = get_default_device()
+        self.dtype = get_default_dtype()
 
     # ---------- RAW -> MODEL ----------
     def prepare_sample(self, sample) -> torch.Tensor:

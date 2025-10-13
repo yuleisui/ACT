@@ -9,6 +9,8 @@ This front-end prepares **samples, labels, and specs** for DNN verification usin
 - `preprocessor_base.py` — `Preprocessor` base + `ModelSignature`
 - `preprocessor_image.py` — `ImgPre` for images (normalize + canonicalize)
 - `preprocessor_text.py` — `TextPre` for token ids (simple tokenizer)
+- `loaders/` — `ModelLoader`, `DatasetLoader`, `SpecLoader` for file loading
+- `device_manager.py` — Simplified device/dtype management using PyTorch global defaults
 - `mocks.py` — mock samples/specs for testing
 - `batch.py` — `run_batch` (optional `seed_from_input_spec_fn` callback)
 - `demo_driver.py` — demo with stub verifier

@@ -218,25 +218,6 @@ class DatasetLoader:
                     
         return images
         
-    def load_vnnlib_anchor_data(self, anchor_path: str) -> List[Tuple[np.ndarray, int]]:
-        """
-        Load anchor points for VNNLIB specifications
-        
-        Args:
-            anchor_path: Path to CSV file containing anchor points
-            
-        Returns:
-            List of (anchor_array, label_int) tuples
-            
-        Note:
-            This loads the base data points that VNNLIB constraints will be applied to.
-            The actual VNNLIB constraints are loaded separately by SpecLoader.
-        """
-        print(f"📍 Loading VNNLIB anchor data from {anchor_path}")
-        
-        # Reuse CSV loading logic
-        return self.load_csv_data(anchor_path)
-        
     def get_dataset_info(self, path: str) -> Dict[str, Any]:
         """
         Get information about a dataset without fully loading it
