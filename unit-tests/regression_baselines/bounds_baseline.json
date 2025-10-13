@@ -1,32 +1,32 @@
 {
   "performance": {
     "simple_linear_small_uniform": {
-      "mean_time": 0.010180990037042648,
-      "std_time": 0.0005777141269917592,
+      "mean_time": 0.05879362131236121,
+      "std_time": 0.0001395617343467241,
       "iterations": 5,
       "output_shape": [
         5
       ]
     },
     "mnist_mlp_mnist_linf": {
-      "mean_time": 0.011298197030555457,
-      "std_time": 0.000946604047152173,
+      "mean_time": 0.05868635367369279,
+      "std_time": 0.00041504686458463205,
       "iterations": 3,
       "output_shape": [
         10
       ]
     },
     "small_cnn_cifar_linf": {
-      "mean_time": 0.20508409600006416,
-      "std_time": 0.0011053733101987545,
+      "mean_time": 0.18835372698958963,
+      "std_time": 0.10734376299660653,
       "iterations": 2,
       "output_shape": [
         10
       ]
     },
     "deep_conv_mnist_l2": {
-      "mean_time": 0.013596220989711583,
-      "std_time": 0.0014217392927235236,
+      "mean_time": 0.06170839600963518,
+      "std_time": 9.112100815400481e-05,
       "iterations": 2,
       "output_shape": [
         10
@@ -51,7 +51,7 @@
       ]
     },
     "small_cnn_cifar_linf": {
-      "lb_hash": "305fa3b87bc1ee27996b7fa6f9cc4af6",
+      "lb_hash": "d49ed8a0598d16122b028105b3a6f25c",
       "ub_hash": "0678583f733315cefba8ac5c048e15fa",
       "bounds_width": 155.73806762695312,
       "output_shape": [
@@ -61,13 +61,13 @@
     "mixed_network_adversarial_bounds": {
       "lb_hash": "8a8c923b69afee13e424a6a5d40c1941",
       "ub_hash": "78ef861b1f28b5071d50b3f391760972",
-      "bounds_width": 2.432349443435669,
+      "bounds_width": 2.432349681854248,
       "output_shape": [
         3
       ]
     }
   },
-  "timestamp": "2025-10-13T00:36:41.257958",
+  "timestamp": "2025-10-13T11:02:01.159540",
   "test_configs": {
     "performance": [
       {
@@ -112,10 +112,7 @@
   },
   "metadata": {
     "capture_method": "manual",
-    "python_version": "3.9.23",
-    "torch_version": "1.12.1+cu102",
-    "last_auto_update": "2025-10-13T00:37:21.661376",
-    "auto_update_improvements": 1,
-    "auto_update_reason": "Performance improvement with correctness maintained"
+    "python_version": "3.13.5",
+    "torch_version": "2.8.0+cu128"
   }
 }
