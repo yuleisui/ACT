@@ -14,7 +14,7 @@ import torch
 import subprocess
 
 from act.interval.base_verifier import BaseVerifier
-from act.input_parser.spec import Spec
+from act.interval.input_parser.spec import Spec
 
 class ERANVerifier(BaseVerifier):
     def __init__(self, method, spec : Spec, device: str = 'cpu'):

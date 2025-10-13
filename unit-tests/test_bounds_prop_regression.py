@@ -25,7 +25,7 @@ from datetime import datetime
 
 from act.interval.bounds_propagation import BoundsPropagate
 from act.interval.bounds_prop_helper import TrackingMode
-from act.util.bounds import Bounds
+from act.interval.util.bounds import Bounds
 from test_configs import MockFactory, get_regression_test_configs
 
 
@@ -190,17 +190,31 @@ class BoundsRegressionTester:
                 'output_shape': list(result.shape)
             }
             
-            # Check for performance changes
+            # Check for performance changes with adaptive thresholds
             baseline_time = baseline.performance[test_name]['mean_time']
+            baseline_std = baseline.performance[test_name]['std_time']
             percent_change = ((current_time - baseline_time) / baseline_time) * 100
             
-            if current_time > baseline_time * 1.2:
-                failure_msg = f"Performance regression in {test_name}: {current_time:.4f}s vs baseline {baseline_time:.4f}s (+{percent_change:.1f}% above 20% threshold)"
+            # Use adaptive threshold based on test variance
+            # For high-variance tests, use larger tolerance (3 standard deviations)
+            # For low-variance tests, use standard 20% threshold
+            variance_ratio = baseline_std / baseline_time if baseline_time > 0 else 0
+            if variance_ratio > 0.3:  # High variance test (>30% coefficient of variation)
+                upper_threshold = baseline_time + 3 * baseline_std
+                lower_threshold = max(0, baseline_time - 3 * baseline_std)
+                threshold_type = "variance-based"
+            else:  # Low variance test, use standard 20% threshold
+                upper_threshold = baseline_time * 1.2
+                lower_threshold = baseline_time * 0.8
+                threshold_type = "20%"
+            
+            if current_time > upper_threshold:
+                failure_msg = f"Performance regression in {test_name}: {current_time:.4f}s vs baseline {baseline_time:.4f}s (+{percent_change:.1f}% above {threshold_type} threshold)"
                 print(f"⚠️  {failure_msg}")
                 performance_failures.append(failure_msg)
                 success = False
-            elif current_time < baseline_time * 0.8:  # 20% improvement threshold
-                improvement_msg = f"Performance improvement in {test_name}: {current_time:.4f}s vs baseline {baseline_time:.4f}s (-{-percent_change:.1f}% improvement)"
+            elif current_time < lower_threshold:
+                improvement_msg = f"Performance improvement in {test_name}: {current_time:.4f}s vs baseline {baseline_time:.4f}s (-{-percent_change:.1f}% improvement, {threshold_type} threshold)"
                 print(f"🚀 {improvement_msg}")
                 performance_improvements.append(improvement_msg)
             else:

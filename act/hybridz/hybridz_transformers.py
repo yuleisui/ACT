@@ -17,7 +17,7 @@ import psutil
 import time
 
 from act.hybridz.hybridz_operations import HybridZonotopeOps
-from act.util.stats import ACTStats
+from act.interval.util.stats import ACTStats
 
 def setup_gurobi_license():
     if 'GRB_LICENSE_FILE' not in os.environ:

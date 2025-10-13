@@ -30,18 +30,18 @@ from .utils import box_join, changed_or_maskdiff, update_cache, affine_bounds
 from .utils import pwl_meta, bound_var_interval, scale_interval
 
 # Transfer functions
-from .tf_mlp import (
+from .transfer_funs.tf_mlp import (
     tf_dense, tf_bias, tf_scale, tf_relu, tf_lrelu, tf_abs, tf_clip,
     tf_add, tf_mul, tf_concat, tf_bn
 )
-from .tf_cnn import (
+from .transfer_funs.tf_cnn import (
     tf_conv2d, tf_maxpool2d, tf_avgpool2d, tf_flatten
 )
-from .tf_rnn import (
+from .transfer_funs.tf_rnn import (
     tf_lstm, tf_gru, tf_rnn, tf_embedding
 )
-from .tf_transformer import (
-    tf_posenc, tf_layernorm, tf_gelu, tf_att_scores,
+from .transfer_funs.tf_transformer import (
+    tf_embedding, tf_posenc, tf_layernorm, tf_gelu, tf_att_scores,
     tf_softmax, tf_att_mix, tf_mha_split, tf_mha_join, tf_mask_add
 )
 
@@ -52,9 +52,9 @@ from .analyze import dispatch_tf, analyze
 from .cons_exportor import export_to_solver, to_numpy
 
 # Solver interfaces
-from .solver_base import Solver, SolverCaps, SolveStatus
-from .solver_gurobi import GurobiSolver
-from .solver_torch import TorchLPSolver
+from .solver.solver_base import Solver, SolverCaps, SolveStatus
+from .solver.solver_gurobi import GurobiSolver
+from .solver.solver_torch import TorchLPSolver
 
 # Verification specifications
 from .verify_status import (

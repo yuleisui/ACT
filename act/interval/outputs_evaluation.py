@@ -28,9 +28,9 @@
 import torch
 from typing import List, Optional
 
-from act.input_parser.type import VerifyResult
-from act.util.stats import ACTLog
-from act.util.bounds import Bounds
+from act.interval.input_parser.type import VerifyResult
+from act.interval.util.stats import ACTLog
+from act.interval.util.bounds import Bounds
 
 
 class OutputsEvaluate:

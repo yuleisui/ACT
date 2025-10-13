@@ -20,8 +20,8 @@ import torchvision
 import torchvision.transforms as transforms
 import os
 
-from act.input_parser.type import SpecType
-from act.input_parser.vnnlib_parser import VNNLIBParser
+from act.interval.input_parser.type import SpecType
+from act.interval.input_parser.vnnlib_parser import VNNLIBParser
 
 class Dataset:
     def __init__(self,

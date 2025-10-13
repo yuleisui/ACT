@@ -27,8 +27,8 @@ from act.front_end.batch import SampleRecord
 from act.back_end.device_manager import initialize_device_dtype, ensure_initialized, summary
 from act.back_end.core import Net, Layer, Bounds
 from act.back_end.verify_status import VerifStatus, VerifResult, verify_once, seed_from_input_spec
-from act.back_end.solver_gurobi import GurobiSolver
-from act.back_end.solver_torch import TorchLPSolver
+from act.back_end.solver.solver_gurobi import GurobiSolver
+from act.back_end.solver.solver_torch import TorchLPSolver
 from act.back_end.bab import verify_bab
 
 logger = logging.getLogger(__name__)

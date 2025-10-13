@@ -4,10 +4,10 @@ from collections import deque
 from typing import Dict, Tuple
 from act.back_end.core import Bounds, Fact, Net, ConSet
 from act.back_end.utils import box_join, changed_or_maskdiff, update_cache
-from act.back_end.tf_mlp import *
-from act.back_end.tf_transformer import *
-from act.back_end.tf_cnn import *
-from act.back_end.tf_rnn import *
+from act.back_end.transfer_funs.tf_mlp import *
+from act.back_end.transfer_funs.tf_transformer import *
+from act.back_end.transfer_funs.tf_cnn import *
+from act.back_end.transfer_funs.tf_rnn import *
 
 @torch.no_grad()
 def dispatch_tf(L, before, after, net):

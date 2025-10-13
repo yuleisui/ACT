@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from typing import Optional, Tuple
 from act.back_end.core import ConSet
-from act.back_end.solver_base import Solver
+from act.back_end.solver.solver_base import Solver
 
 def to_numpy(x) -> np.ndarray:
     try:

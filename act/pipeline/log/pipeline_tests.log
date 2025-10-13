@@ -39,3 +39,18 @@
 2025-10-12 23:29:40,436 - __main__ - INFO - Starting verify_bab validation with 1 test cases
 2025-10-12 23:29:40,437 - act.pipeline.utils - INFO - Test 1/1 - Memory: 313.9MB, CPU: 0.0%, GPU: 0.0MB (max: 0.0MB)
 2025-10-12 23:29:40,444 - __main__ - WARNING - Could not infer output size, using default
+2025-10-13 00:17:15,319 - __main__ - INFO - 🧪 Validating Back-End verify_bab Correctness...
+2025-10-13 00:17:15,330 - act.pipeline.config - INFO - Loaded configuration: /import/ravel/2/z3310488/scratch/Abstract-Constraint-Transformer/act/pipeline/configs/mock_inputs.yaml
+2025-10-13 00:17:15,332 - __main__ - INFO - Initialized ACT device: cpu with dtype torch.float64
+2025-10-13 00:17:15,332 - __main__ - INFO - ✅ BackEndVerifierValidator initialization successful
+2025-10-13 00:17:15,333 - __main__ - INFO - Initialized ACT device: cpu with dtype torch.float64
+2025-10-13 00:17:15,342 - act.pipeline.config - INFO - Loaded configuration: /import/ravel/2/z3310488/scratch/Abstract-Constraint-Transformer/act/pipeline/configs/test_scenarios.yaml
+2025-10-13 00:17:15,349 - __main__ - INFO - ✅ Generated 9 test cases from mock factory
+2025-10-13 00:17:15,350 - __main__ - INFO - Initialized ACT device: cpu with dtype torch.float64
+2025-10-13 00:17:15,355 - __main__ - INFO - Starting verify_bab validation with 1 test cases
+2025-10-13 00:17:15,356 - act.pipeline.utils - INFO - Test 1/1 - Memory: 315.3MB, CPU: 0.0%, GPU: 0.0MB (max: 0.0MB)
+2025-10-13 00:17:15,363 - __main__ - WARNING - Could not infer output size, using default
+2025-10-13 00:17:46,662 - __main__ - INFO - Test 1: SAT (expected: UNSAT)
+2025-10-13 00:17:46,664 - __main__ - INFO - verify_bab validation completed: 0/1 passed (0.0%)
+2025-10-13 00:17:46,665 - __main__ - INFO - ✅ verify_bab validation completed: 0/1 passed
+2025-10-13 00:17:46,665 - __main__ - INFO - 📊 Back-end correctness validation: ✅ SUCCESS (3/3 tests passed)

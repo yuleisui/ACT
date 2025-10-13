@@ -30,8 +30,8 @@ from act.pipeline.config import load_config
 from act.back_end.core import Net, Layer, Bounds
 from act.back_end.verify_status import VerifStatus, VerifResult, seed_from_input_spec
 from act.back_end.bab import verify_bab
-from act.back_end.solver_gurobi import GurobiSolver
-from act.back_end.solver_torch import TorchLPSolver
+from act.back_end.solver.solver_gurobi import GurobiSolver
+from act.back_end.solver.solver_torch import TorchLPSolver
 from act.back_end.device_manager import initialize_device_dtype, get_current_settings
 from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
 

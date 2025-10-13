@@ -29,16 +29,16 @@ from typing import Dict, List, Optional, Any, Tuple
 import torch
 import numpy as np
 
-from act.input_parser.spec import Spec
-from act.input_parser.type import VerifyResult
-from act.input_parser.adaptor import InputAdaptor
-from act.refinement.bab_spec_refinement import create_bab_refinement
-from act.util.stats import ACTLog, ACTStats
-from act.util.inference import perform_model_inference
-from act.util.bounds import Bounds
-from .bounds_propagation import BoundsPropagate
-from .bounds_prop_helper import TrackingMode
-from .outputs_evaluation import OutputsEvaluate
+from act.interval.input_parser.spec import Spec
+from act.interval.input_parser.type import VerifyResult
+from act.interval.input_parser.adaptor import InputAdaptor
+from act.interval.refinement.bab_spec_refinement import create_bab_refinement
+from act.interval.util.stats import ACTLog, ACTStats
+from act.interval.util.inference import perform_model_inference
+from act.interval.util.bounds import Bounds
+from act.interval.bounds_propagation import BoundsPropagate
+from act.interval.bounds_prop_helper import TrackingMode
+from act.interval.outputs_evaluation import OutputsEvaluate
 
 class BaseVerifier:
     def __init__(self, spec: Spec, device: str = 'cpu', enable_metadata_tracking: bool = True):

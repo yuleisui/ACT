@@ -2,7 +2,7 @@
 from __future__ import annotations
 from typing import List, Optional
 import numpy as np
-from act.back_end.solver_base import Solver, SolverCaps, SolveStatus
+from act.back_end.solver.solver_base import Solver, SolverCaps, SolveStatus
 
 try:
     import gurobipy as gp

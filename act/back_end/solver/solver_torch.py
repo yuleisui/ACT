@@ -5,7 +5,7 @@ from typing import List, Optional, Tuple
 import numpy as np
 import torch
 
-from act.back_end.solver_base import Solver, SolveStatus, SolverCaps
+from act.back_end.solver.solver_base import Solver, SolveStatus, SolverCaps
 
 class TorchLPSolver(Solver):
     """Continuous LP solver using Torch + Adam with penalty and box projection.

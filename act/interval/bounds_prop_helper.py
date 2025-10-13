@@ -43,8 +43,8 @@ from onnx2pytorch.operations.transpose import Transpose as OnnxTranspose
 from onnx2pytorch.operations.base import OperatorWrapper
 from dataclasses import dataclass
 
-from act.util.stats import ACTLog, ACTStats
-from act.util.device import DeviceManager, DeviceConsistencyError
+from act.interval.util.stats import ACTLog, ACTStats
+from act.interval.util.device import DeviceManager, DeviceConsistencyError
 
 
 # =============================================================================

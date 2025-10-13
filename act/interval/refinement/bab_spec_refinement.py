@@ -24,7 +24,7 @@ import time
 from typing import List, Tuple, Optional, Dict, Any
 from dataclasses import dataclass, field
 
-from act.input_parser.type import VerifyResult
+from act.interval.input_parser.type import VerifyResult
 
 @dataclass
 class Counterexample:

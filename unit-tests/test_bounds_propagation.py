@@ -25,7 +25,7 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from act.interval.bounds_propagation import BoundsPropagate
-from act.util.bounds import Bounds
+from act.interval.util.bounds import Bounds
 from act.interval.bounds_prop_helper import TrackingMode
 
 # Import shared test configurations

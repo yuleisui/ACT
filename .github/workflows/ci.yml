@@ -41,9 +41,9 @@ jobs:
           import sys
           sys.path.insert(0, '.')
           try:
-              from act.util.options import get_parser
+              from act.interval.util.options import get_parser
               from act.interval.bounds_propagation import BoundsPropagate
-              from act.util.stats import ACTLog
+              from act.interval.util.stats import ACTLog
               print('✅ All critical imports working')
           except ImportError as e:
               print(f'❌ Import failed: {e}')
