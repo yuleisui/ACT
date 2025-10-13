@@ -1,1 +1,0 @@
-# This file marks the wrapper_external_verifiers directory as a Python package.

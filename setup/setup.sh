@@ -89,7 +89,7 @@ setup_abcrown() {
 
     # Step 8: Create empty config file for abcrown CLI parameter mode
     echo "[ACT] Creating empty_config.yaml for CLI-only abcrown runs..."
-    echo "{}" > ../act/wrapper_external_verifiers/abcrown/empty_config.yaml
+    echo "{}" > ../act/wrapper_exts/abcrown/empty_config.yaml
 
     # Step 9: Patch the abcrown module __init__.py
     ABCROWN_SUBMODULE_DIR="../modules/abcrown"

@@ -36,7 +36,7 @@ act/
 │   ├── stats.py                    # Statistics and performance tracking
 │   └── inference.py                # Model inference utilities
 │
-└── wrapper_external_verifiers/     # External verifier integrations
+└── wrapper_exts/                   # External verifier integrations
     ├── abcrown/                    # αβ-CROWN integration module
     │   ├── abcrown_verifier.py     # αβ-CROWN wrapper and interface
     │   └── abcrown_runner.py       # αβ-CROWN backend execution script
@@ -149,7 +149,7 @@ act/
   - Batch processing support
   - Output format standardization
 
-### **`wrapper_external_verifiers/` - External Verifier Integrations**
+### **`wrapper_exts/` - External Verifier Integrations**
 
 #### **`abcrown/` - αβ-CROWN Integration**
 - **`abcrown_verifier.py`**: αβ-CROWN wrapper and interface
@@ -178,7 +178,7 @@ The flattened modular architecture provides several key advantages:
 ### **Modular Design**
 - **Clear Separation**: Core ACT modules (hybridz, interval) are separated from external verifier wrappers
 - **Independent Development**: Modules can be developed, tested, and maintained separately
-- **Easy Extension**: Add new verifiers by creating new modules in `wrapper_external_verifiers/`
+- **Easy Extension**: Add new verifiers by creating new modules in `wrapper_exts/`
 - **Clean Dependencies**: Centralized utilities in `util/` eliminate code duplication
 
 ### **Flat Structure Benefits**
