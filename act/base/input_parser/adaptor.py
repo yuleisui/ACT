@@ -30,8 +30,8 @@ from typing import Tuple, List
 import torch
 import numpy as np
 
-from act.interval.input_parser.spec import Spec
-from act.interval.util.stats import ACTLog
+from act.base.input_parser.spec import Spec
+from act.base.util.stats import ACTLog
 
 
 class InputAdaptor:

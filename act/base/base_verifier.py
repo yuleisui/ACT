@@ -1,4 +1,4 @@
-#===- act.interval.base_verifier.py - Base Verifier ----#
+#===- act.base.base_verifier.py - Base Verifier ----#
 #
 #                 ACT: Abstract Constraints Transformer
 #
@@ -29,16 +29,16 @@ from typing import Dict, List, Optional, Any, Tuple
 import torch
 import numpy as np
 
-from act.interval.input_parser.spec import Spec
-from act.interval.input_parser.type import VerifyResult
-from act.interval.input_parser.adaptor import InputAdaptor
-from act.interval.refinement.bab_spec_refinement import create_bab_refinement
-from act.interval.util.stats import ACTLog, ACTStats
-from act.interval.util.inference import perform_model_inference
-from act.interval.util.bounds import Bounds
-from act.interval.bounds_propagation import BoundsPropagate
-from act.interval.bounds_prop_helper import TrackingMode
-from act.interval.outputs_evaluation import OutputsEvaluate
+from act.base.input_parser.spec import Spec
+from act.base.input_parser.type import VerifyResult
+from act.base.input_parser.adaptor import InputAdaptor
+from act.base.refinement.bab_spec_refinement import create_bab_refinement
+from act.base.util.stats import ACTLog, ACTStats
+from act.base.util.inference import perform_model_inference
+from act.base.util.bounds import Bounds
+from act.base.bounds_propagation import BoundsPropagate
+from act.base.bounds_prop_helper import TrackingMode
+from act.base.outputs_evaluation import OutputsEvaluate
 
 class BaseVerifier:
     def __init__(self, spec: Spec, device: str = 'cpu', enable_metadata_tracking: bool = True):
@@ -96,7 +96,7 @@ class BaseVerifier:
         """
         Execute the complete interval verification pipeline for all samples.
         
-        Processes each sample through interval bound propagation, applies BaB refinement
+        Processes each sample through base bound propagation, applies BaB refinement
         when enabled, and aggregates results.
         
         Returns:
@@ -237,7 +237,7 @@ class BaseVerifier:
         """
         Perform interval constraint solving for a single sample.
         
-        Applies interval bound propagation through the network and evaluates results
+        Applies base bound propagation through the network and evaluates results
         against verification constraints to determine if the sample is safe.
         
         Args:
@@ -247,7 +247,7 @@ class BaseVerifier:
         Returns:
             VerifyResult indicating the verification result (SAT/UNSAT/UNKNOWN)
         """
-        ACTLog.log_verification_info(f"Performing Interval propagation")
+        ACTLog.log_verification_info(f"Performing Base propagation")
 
         # Get ReLU constraints from BaB refinement if available
         relu_constraints = getattr(self, 'current_relu_constraints', None)

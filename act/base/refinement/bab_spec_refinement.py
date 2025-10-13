@@ -24,7 +24,7 @@ import time
 from typing import List, Tuple, Optional, Dict, Any
 from dataclasses import dataclass, field
 
-from act.interval.input_parser.type import VerifyResult
+from act.base.input_parser.type import VerifyResult
 
 @dataclass
 class Counterexample:
@@ -453,7 +453,7 @@ class BaBRefinement:
                 true_label = incomplete_verifier.spec.output_spec.labels[0].item()
 
             # Use output evaluation directly without temporary verifier
-            from act.interval.outputs_evaluation import OutputsEvaluate
+            from act.base.outputs_evaluation import OutputsEvaluate
             verdict = OutputsEvaluate.evaluate_output_bounds(
                 concrete_output, concrete_output, output_constraints, true_label
             )

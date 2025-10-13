@@ -1,4 +1,4 @@
-#===- act.interval.bounds_propagation.py interval bounds propagation --#
+#===- act.base.bounds_propagation.py base bounds propagation --#
 #
 #                 ACT: Abstract Constraints Transformer
 #
@@ -19,8 +19,8 @@
 #
 #
 # Purpose:
-# Interval bounds propagation through neural network layers with comprehensive
-# layer support. Implements tight interval arithmetic for linear layers,
+# Base bounds propagation through neural network layers with comprehensive
+# layer support. Implements tight plain interval arithmetic for linear layers,
 # convolutions, activations, and ONNX operations with BaB constraint integration.
 #
 #===----------------------------------------------------------------------===#
@@ -29,10 +29,10 @@ import torch
 import torch.nn as nn
 from typing import Tuple, Optional
 
-from act.interval.util.stats import ACTLog
-from act.interval.util.device import DeviceManager
-from act.interval.util.bounds import Bounds, WeightDecomposer
-from act.interval.bounds_prop_helper import (
+from act.base.util.stats import ACTLog
+from act.base.util.device import DeviceManager
+from act.base.util.bounds import Bounds, WeightDecomposer
+from act.base.bounds_prop_helper import (
     BoundsPropMetadata, 
     BoundsPropagationMetadata, 
     TrackingMode,
@@ -53,7 +53,7 @@ from onnx2pytorch.operations.base import OperatorWrapper
 
 class BoundsPropagate:
     """
-    Interval bound propagation through neural network layers using interval arithmetic.
+    Base bound propagation through neural network layers using plain interval arithmetic.
     """
     
     def __init__(self, relu_constraints: Optional[list] = None, mode: TrackingMode = TrackingMode.DEBUG):
@@ -107,7 +107,7 @@ class BoundsPropagate:
         bounds = Bounds(input_lb_clean, input_ub_clean, _internal=True)
         
         # Logging handled by metadata tracker performance settings
-        self.metadata_tracker.log_if_enabled("Starting interval bound propagation through network layers")
+        self.metadata_tracker.log_if_enabled("Starting base bound propagation through network layers")
         
         # Reset ReLU layer index for this propagation
         self.relu_layer_index = 0
@@ -135,7 +135,7 @@ class BoundsPropagate:
                 elif isinstance(layer, (OnnxAdd, OnnxDiv, OnnxClip, OperatorWrapper)):
                     bounds = self._handle_onnx_op(layer, bounds)
                 else:
-                    raise UnsupportedLayerError(f"Layer type {type(layer)} not supported in interval propagation")
+                    raise UnsupportedLayerError(f"Layer type {type(layer)} not supported in base propagation")
                 
                 # Validation and metadata tracking handled by metadata tracker
                 # Validate layer output once for all layer types (determines category internally)
@@ -156,7 +156,7 @@ class BoundsPropagate:
             # Track layer count for metadata
             layer_count = idx + 1
         
-        ACTLog.log_verification_info("Interval bound propagation completed successfully")
+        ACTLog.log_verification_info("Base bound propagation completed successfully")
         
         # Finalize propagation and collect comprehensive metadata
         metadata = self.metadata_tracker.finalize_propagation(bounds.lb)

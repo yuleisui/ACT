@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, refactor ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, refactor ]
   workflow_dispatch:
 
 env:
@@ -41,9 +41,9 @@ jobs:
           import sys
           sys.path.insert(0, '.')
           try:
-              from act.interval.util.options import get_parser
-              from act.interval.bounds_propagation import BoundsPropagate
-              from act.interval.util.stats import ACTLog
+              from act.base.util.options import get_parser
+              from act.base.bounds_propagation import BoundsPropagate
+              from act.base.util.stats import ACTLog
               print('✅ All critical imports working')
           except ImportError as e:
               print(f'❌ Import failed: {e}')
@@ -79,17 +79,32 @@ jobs:
           cd setup/
           ACT_CI_MODE=true source setup.sh main
 
-      - name: Run HybridZ verification
+      - name: Run HybridZ verification (from project root)
         shell: bash -l {0}
         run: |
           source "$(conda info --base)/etc/profile.d/conda.sh"
           conda activate act-main
-          # Ensure we're in the repo root for module execution
           cd ${{ github.workspace }}
           python -m act.main \
             --verifier hybridz \
             --method hybridz_relaxed \
             --model_path models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
+            --dataset mnist --spec_type local_lp \
+            --start 0 --end 1 --epsilon 0.01 --norm inf \
+            --relaxation_ratio 1.0 \
+            --mean 0.1307 --std 0.3081 \
+            --ci
+
+      - name: Run HybridZ verification (from act directory)
+        shell: bash -l {0}
+        run: |
+          source "$(conda info --base)/etc/profile.d/conda.sh"
+          conda activate act-main
+          cd ${{ github.workspace }}/act
+          python main.py \
+            --verifier hybridz \
+            --method hybridz_relaxed \
+            --model_path ../models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
             --dataset mnist --spec_type local_lp \
             --start 0 --end 1 --epsilon 0.01 --norm inf \
             --relaxation_ratio 1.0 \
@@ -124,7 +139,7 @@ jobs:
           cd setup/
           ACT_CI_MODE=true source setup.sh main
 
-      - name: Run HybridZ verification
+      - name: Run HybridZ verification (from project root)
         shell: bash -l {0}
         run: |
           source "$(conda info --base)/etc/profile.d/conda.sh"
@@ -134,6 +149,22 @@ jobs:
             --verifier hybridz \
             --method hybridz_relaxed \
             --model_path models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
+            --dataset mnist --spec_type local_lp \
+            --start 0 --end 1 --epsilon 0.01 --norm inf \
+            --relaxation_ratio 1.0 \
+            --mean 0.1307 --std 0.3081 \
+            --ci
+
+      - name: Run HybridZ verification (from act directory)
+        shell: bash -l {0}
+        run: |
+          source "$(conda info --base)/etc/profile.d/conda.sh"
+          conda activate act-main
+          cd ${{ github.workspace }}/act
+          python main.py \
+            --verifier hybridz \
+            --method hybridz_relaxed \
+            --model_path ../models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
             --dataset mnist --spec_type local_lp \
             --start 0 --end 1 --epsilon 0.01 --norm inf \
             --relaxation_ratio 1.0 \
@@ -176,7 +207,7 @@ jobs:
             sed -i 's/^from abcrown import abCrown/# from abcrown import abCrown/' "$INIT_FULL_PATH"
           fi
 
-      - name: Run abCrown verification
+      - name: Run abCrown verification (from project root)
         shell: bash -l {0}
         run: |
           source "$(conda info --base)/etc/profile.d/conda.sh"
@@ -186,6 +217,20 @@ jobs:
             --verifier abcrown \
             --method alpha_beta \
             --model_path models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
+            --dataset mnist --spec_type local_lp \
+            --start 0 --end 1 --epsilon 0.1 --norm inf \
+            --mean 0.1307 --std 0.3081
+
+      - name: Run abCrown verification (from act directory)
+        shell: bash -l {0}
+        run: |
+          source "$(conda info --base)/etc/profile.d/conda.sh"
+          conda activate act-abcrown
+          cd ${{ github.workspace }}/act
+          python main.py \
+            --verifier abcrown \
+            --method alpha_beta \
+            --model_path ../models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
             --dataset mnist --spec_type local_lp \
             --start 0 --end 1 --epsilon 0.1 --norm inf \
             --mean 0.1307 --std 0.3081
@@ -225,7 +270,7 @@ jobs:
             sed -i '' -e 's/^from abcrown import abCrown/# from abcrown import abCrown/' "$INIT_FULL_PATH"
           fi
 
-      - name: Run abCrown verification
+      - name: Run abCrown verification (from project root)
         shell: bash -l {0}
         run: |
           source "$(conda info --base)/etc/profile.d/conda.sh"
@@ -235,6 +280,20 @@ jobs:
             --verifier abcrown \
             --method alpha_beta \
             --model_path models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
+            --dataset mnist --spec_type local_lp \
+            --start 0 --end 1 --epsilon 0.1 --norm inf \
+            --mean 0.1307 --std 0.3081
+
+      - name: Run abCrown verification (from act directory)
+        shell: bash -l {0}
+        run: |
+          source "$(conda info --base)/etc/profile.d/conda.sh"
+          conda activate act-abcrown
+          cd ${{ github.workspace }}/act
+          python main.py \
+            --verifier abcrown \
+            --method alpha_beta \
+            --model_path ../models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
             --dataset mnist --spec_type local_lp \
             --start 0 --end 1 --epsilon 0.1 --norm inf \
             --mean 0.1307 --std 0.3081
@@ -268,7 +327,7 @@ jobs:
           cd setup/
           ACT_CI_MODE=true source setup.sh eran
 
-      - name: Run ERAN verification
+      - name: Run ERAN verification (from project root)
         shell: bash -l {0}
         run: |
           source "$(conda info --base)/etc/profile.d/conda.sh"
@@ -278,6 +337,20 @@ jobs:
             --verifier eran \
             --method deepzono \
             --model_path models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
+            --dataset mnist --spec_type local_lp \
+            --start 0 --end 5 --epsilon 0.01 --norm inf \
+            --mean 0.1307 --std 0.3081
+
+      - name: Run ERAN verification (from act directory)
+        shell: bash -l {0}
+        run: |
+          source "$(conda info --base)/etc/profile.d/conda.sh"
+          conda activate act-eran
+          cd ${{ github.workspace }}/act
+          python main.py \
+            --verifier eran \
+            --method deepzono \
+            --model_path ../models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
             --dataset mnist --spec_type local_lp \
             --start 0 --end 5 --epsilon 0.01 --norm inf \
             --mean 0.1307 --std 0.3081

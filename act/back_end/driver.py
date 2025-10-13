@@ -7,11 +7,11 @@ with ACT's existing command-line interface and argument parsing system.
 
 Usage:
     # From project root:
-    python -m act.back_end.driver --device cuda --verifier act --method interval
+    python -m act.back_end.driver --device cuda --verifier act --method base
     python -m act.back_end.driver --device cpu --verifier act --demo_input_dim 4 --demo_output_dim 2
     
     # Or directly:
-    cd act/back_end && python driver.py --device cuda --verifier act --method interval
+    cd act/back_end && python driver.py --device cuda --verifier act --method base
 """
 
 import torch
@@ -25,7 +25,7 @@ sys.path.insert(0, project_root)
 sys.path.insert(0, abstraction_dir)
 
 # Import ACT options
-from act.interval.util.options import get_parser
+from act.base.util.options import get_parser
 
 # Import back_end components (use relative imports for package)
 from act.back_end.device_manager import initialize_device_dtype, ensure_initialized, summary
@@ -66,7 +66,7 @@ def main():
         print("No arguments provided. Using defaults:")
         print("  --device cuda (with CPU fallback)")
         print("  --verifier act")
-        print("  --method interval")
+        print("  --method base")
         print("  --solver auto (Gurobi first, PyTorch fallback)")
         print("  --dtype float64 (maximum precision)")
         print("  --demo_input_dim 3")
@@ -76,7 +76,7 @@ def main():
         print("\n" + "=" * 60)
         
         # Set default args
-        args = parser.parse_args(['--device', 'cuda', '--verifier', 'act', '--method', 'interval'])
+        args = parser.parse_args(['--device', 'cuda', '--verifier', 'act', '--method', 'base'])
     else:
         args = parser.parse_args()
     
@@ -89,7 +89,7 @@ def main():
     print("Device Status:")
     print(f"  {summary()}")
     print(f"  Verifier: {getattr(args, 'verifier', 'act')}")
-    print(f"  Method: {getattr(args, 'method', 'interval')}")
+    print(f"  Method: {getattr(args, 'method', 'base')}")
     print(f"  Solver: {getattr(args, 'solver', 'auto')}")
     print(f"  Dtype: {args.dtype} ({dtype})")
     print()
@@ -215,7 +215,7 @@ def main():
     print("\n" + "=" * 60)
     print("ACT Integration Summary:")
     print("✅ Device management integrated with --device argument")
-    print("✅ Command-line parsing via act.interval.util.options")
+    print("✅ Command-line parsing via act.base.util.options")
     print("✅ Configurable dtype system (--dtype float16/32/64)")
     print("✅ ACT constraint generation and solving")
     print("✅ Multiple solver backends: Gurobi MILP + PyTorch LP")

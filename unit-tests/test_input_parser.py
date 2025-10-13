@@ -9,10 +9,10 @@ import torch
 import sys
 import os
 # Import real ACT components
-from act.interval.input_parser.model import Model
-from act.interval.input_parser.dataset import Dataset  
-from act.interval.input_parser.spec import Spec, InputSpec, OutputSpec
-from act.interval.base_verifier import BaseVerifier
+from act.base.input_parser.model import Model
+from act.base.input_parser.dataset import Dataset  
+from act.base.input_parser.spec import Spec, InputSpec, OutputSpec
+from act.base.base_verifier import BaseVerifier
     
 # Add act to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'act'))

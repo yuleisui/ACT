@@ -11,46 +11,15 @@
 
 import torch
 import torch.nn.functional as F
-import os
-import sys
-import psutil
 import time
 
-from act.hybridz.hybridz_operations import HybridZonotopeOps
-from act.interval.util.stats import ACTStats
+from hybridz.hybridz_operations import HybridZonotopeOps
+from act.base.util.path_config import configure_torch_print, ensure_gurobi_license
+from act.base.util.stats import ACTStats
 
-def setup_gurobi_license():
-    if 'GRB_LICENSE_FILE' not in os.environ:
-        if 'ACTHOME' in os.environ:
-            license_path = os.path.join(os.environ['ACTHOME'], 'gurobi', 'gurobi.lic')
-            print(f"[ACT] Using ACTHOME environment variable: {os.environ['ACTHOME']}")
-        else:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            solver_dir = os.path.dirname(current_dir)  
-            verifier_dir = os.path.dirname(solver_dir)  
-            project_root = os.path.dirname(verifier_dir) 
-            license_path = os.path.join(project_root, 'gurobi', 'gurobi.lic')
-            print(f"[ACT] Auto-detecting project root from file location")
-        
-        license_path = os.path.abspath(license_path)
-        
-        if os.path.exists(license_path):
-            os.environ['GRB_LICENSE_FILE'] = license_path
-            print(f"[ACT] Gurobi license found and set: {license_path}")
-        else:
-            print(f"[WARN] Gurobi license not found at: {license_path}")
-            print(f"[INFO] Please ensure gurobi.lic is placed in: {os.path.dirname(license_path)}")
-    else:
-        print(f"[ACT] Using existing Gurobi license: {os.environ['GRB_LICENSE_FILE']}")
+ensure_gurobi_license()
 
-setup_gurobi_license()
-
-torch.set_printoptions(
-    linewidth=500,
-    threshold=10000,
-    sci_mode=False,
-    precision=4
-)
+configure_torch_print()
 
 class HybridZonotopeElem:
 
@@ -109,7 +78,7 @@ class HybridZonotopeElem:
             self.nc = 0
 
     def set_method(self, method, time_limit=None):
-        valid_methods = ['interval', 'hybridz', 'hybridz_relaxed', 'hybridz_relaxed_with_bab']
+        valid_methods = ['base', 'hybridz', 'hybridz_relaxed', 'hybridz_relaxed_with_bab']
         if method not in valid_methods:
             raise ValueError(f"Invalid method '{method}'. Valid methods: {valid_methods}")
 
@@ -416,7 +385,7 @@ class HybridZonotopeGrid:
         self.nc = self.b_tensor.shape[0] if self.b_tensor is not None and self.b_tensor.numel() > 0 else 0
 
     def set_method(self, method, time_limit=None):
-        valid_methods = ['interval', 'hybridz', 'hybridz_relaxed', 'hybridz_relaxed_with_bab']
+        valid_methods = ['base', 'hybridz', 'hybridz_relaxed', 'hybridz_relaxed_with_bab']
         if method not in valid_methods:
             raise ValueError(f"Invalid method '{method}'. Valid methods: {valid_methods}")
 

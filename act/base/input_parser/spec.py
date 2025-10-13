@@ -13,9 +13,9 @@ from typing import Optional
 import torch
 import sys
 
-from act.interval.input_parser.dataset import Dataset
-from act.interval.input_parser.model import Model
-from act.interval.input_parser.type import LPNormType, SpecType, VerifyResult
+from act.base.input_parser.dataset import Dataset
+from act.base.input_parser.model import Model
+from act.base.input_parser.type import LPNormType, SpecType, VerifyResult
 
 class BaseSpec:
     def __init__(self, dataset : Dataset = None, model : Model = None, status: VerifyResult = VerifyResult.UNKNOWN):

@@ -27,7 +27,7 @@
 import torch
 from typing import Tuple
 
-from act.interval.util.stats import ACTLog
+from act.base.util.stats import ACTLog
 
 
 class DeviceConsistencyError(Exception):

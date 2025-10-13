@@ -46,26 +46,24 @@ import os
 import configparser
 
 # Import commendline paser
-from act.interval.util.options import get_parser
+from act.base.util.options import get_parser
+from act.base.util.path_config import get_config_root
 
 # Import ACT modules
-from act.interval.input_parser.model import Model
-from act.interval.input_parser.dataset import Dataset
-from act.interval.input_parser.spec import Spec, InputSpec, OutputSpec
-from act.interval.input_parser.type import VerifyResult
+from act.base.input_parser.model import Model
+from act.base.input_parser.dataset import Dataset
+from act.base.input_parser.spec import Spec, InputSpec, OutputSpec
+from act.base.input_parser.type import VerifyResult
 from act.wrapper_exts.eran.eran_verifier import ERANVerifier
 from act.wrapper_exts.abcrown.abcrown_verifier import abCrownVerifier
-from act.interval.base_verifier import BaseVerifier
+from act.base.base_verifier import BaseVerifier
 from act.hybridz.hybridz_verifier import HybridZonotopeVerifier
 
 def load_verifier_default_configs(verifier, method, dataset):
     if not verifier or not dataset:
         return {}
     
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(current_dir)
-    config_root = os.path.join(project_root, 'configs')
-    config_root = os.path.abspath(config_root)
+    config_root = get_config_root()
     
     config_file = os.path.join(config_root, f"{verifier}_defaults.ini")
     if not os.path.exists(config_file):
@@ -215,9 +213,9 @@ def main():
         verifier = abCrownVerifier(method, spec)
         verifier.verify(proof=None, public_inputs=None)
 
-    elif verifier_type == 'interval':
-        if method != 'interval':
-            raise ValueError(f"Interval verifier only supports 'interval' method, got {method}.")
+    elif verifier_type == 'base':
+        if method != 'base':
+            raise ValueError(f"Base verifier only supports 'base' method, got {method}.")
         verifier = BaseVerifier(spec, enable_metadata_tracking=args_dict["bounds_prop_metadata"])
 
         if args_dict["enable_spec_refinement"]:
@@ -247,8 +245,8 @@ def main():
             print("❓ The property status is unknown.")
 
     elif verifier_type == 'hybridz':
-        if method not in ['interval', 'hybridz', 'hybridz_relaxed', 'hybridz_relaxed_with_bab']:
-            raise ValueError(f"Hybrid Zonotope verifier only supports methods 'interval', 'hybridz', 'hybridz_relaxed', 'hybridz_relaxed_with_bab', got {method}.")
+        if method not in ['base', 'hybridz', 'hybridz_relaxed', 'hybridz_relaxed_with_bab']:
+            raise ValueError(f"Hybrid Zonotope verifier only supports methods 'base', 'hybridz', 'hybridz_relaxed', 'hybridz_relaxed_with_bab', got {method}.")
 
         if method == 'hybridz_relaxed_with_bab':
 
@@ -302,7 +300,7 @@ def main():
         else:
             print("❓ The property status is unknown.")
     else:
-        raise ValueError(f"Unsupported verifier: {verifier_type}. Supported verifiers: 'eran', 'abcrown', 'interval', 'hybridz'.")
+        raise ValueError(f"Unsupported verifier: {verifier_type}. Supported verifiers: 'eran', 'abcrown', 'base', 'hybridz'.")
 
 if __name__ == "__main__":
     main()

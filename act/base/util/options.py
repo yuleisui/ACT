@@ -17,7 +17,17 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
-# Authors: ACT Team
+# Authors: ACT Team   
+#                                                                         
+# External tool compatibility parameters are adapted from:               
+#   - α,β-CROWN: https://github.com/Verified-Intelligence/alpha-beta-CROWN 
+#     Copyright (C) 2021-2025 The α,β-CROWN Team                           
+#     Licensed under BSD 3-Clause License                                  
+#   - ERAN: https://github.com/eth-sri/eran                                
+#     Copyright ETH Zurich, Licensed under Apache 2.0 License     
+#   - This integration enables unified command-line interface across        
+#     different verification backends while maintaining ACT's native  
+#     capabilities and novel contributions.   
 #
 # Purpose:
 #   Centralised definition of native parameters and command-line options for
@@ -34,10 +44,10 @@ def get_parser():
     
     # ACT Core Verifier Selection
     parser.add_argument('--verifier', type=str, default=None, 
-                        choices=['interval', 'eran', 'abcrown', 'hybridz', 'act'],
-                        help='Backend verification engine. "interval": ACT native interval analysis, "eran": ERAN external verifier, "abcrown": αβ-CROWN external verifier, "hybridz": ACT novel hybrid zonotope verifier, "act": ACT torch-native abstraction framework')
+                        choices=['base', 'eran', 'abcrown', 'hybridz', 'act'],
+                        help='Backend verification engine. "base": ACT native base bounds analysis, "eran": ERAN external verifier, "abcrown": αβ-CROWN external verifier, "hybridz": ACT novel hybrid zonotope verifier, "act": ACT torch-native abstraction framework')
     parser.add_argument('--method', type=str, default=None, 
-                        help='Verification method. ERAN: [deepzono, refinezono, deeppoly, refinepoly], αβ-CROWN: [alpha, beta, alpha_beta], ACT-HybridZ: [hybridz, hybridz_relaxed, hybridz_relaxed_with_bab], ACT-Interval: [interval], ACT-Native: [interval, torch-native]')
+                        help='Verification method. ERAN: [deepzono, refinezono, deeppoly, refinepoly], αβ-CROWN: [alpha, beta, alpha_beta], ACT-HybridZ: [hybridz, hybridz_relaxed, hybridz_relaxed_with_bab], ACT-Base: [base], ACT-Native: [base, torch-native]')
     parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda'],
                         help='Computation device (cpu or cuda)')
     parser.add_argument('--dtype', type=str, default='float64', 
@@ -78,6 +88,23 @@ def get_parser():
                         help='ACT BaB: Split tolerance')
     parser.add_argument('--bab_verbose', action='store_true', default=True,
                         help='ACT BaB: Enable verbose output')
+
+    # ================================================================================
+    # EXTERNAL TOOL COMPATIBILITY PARAMETERS
+    # ================================================================================
+    # The following parameters are designed for compatibility with external verification
+    # tools (ERAN and αβ-CROWN) to enable unified interface calls. Parameter names and
+    # descriptions are adapted from:
+    # 
+    # - αβ-CROWN (α,β-CROWN): https://github.com/Verified-Intelligence/alpha-beta-CROWN
+    #   Copyright (C) 2021-2025 The α,β-CROWN Team
+    #   Licensed under BSD 3-Clause License
+    #   Primary authors: Huan Zhang, Zhouxing Shi, Xiangru Zhong
+    #
+    # - ERAN: https://github.com/eth-sri/eran
+    #   Copyright ETH Zurich
+    #   Licensed under Apache 2.0 License
+    # ================================================================================
 
     # Input Specification (adapted from αβ-CROWN specification hierarchy)
     parser.add_argument('--input_lb', type=float, nargs='+', default=None,
@@ -138,6 +165,8 @@ def get_parser():
                         help='Prefix to add to VNNLIB specification paths (for correcting malformed CSV files)')
     parser.add_argument("--rhs_offset", type=float, default=None,
                         help='Offset to add to right-hand side of constraints (advanced usage)')
+    # ================================================================================
+
     
     # ACT Torch-native Abstraction Framework Demo Parameters
     parser.add_argument('--demo_input_dim', type=int, default=3,

@@ -13,8 +13,9 @@ import os
 import torch
 import subprocess
 
-from act.interval.base_verifier import BaseVerifier
-from act.interval.input_parser.spec import Spec
+from act.base.base_verifier import BaseVerifier
+from act.base.input_parser.spec import Spec
+from act.base.util.path_config import get_eran_tf_verify_path
 
 class ERANVerifier(BaseVerifier):
     def __init__(self, method, spec : Spec, device: str = 'cpu'):
@@ -76,12 +77,7 @@ class ERANVerifier(BaseVerifier):
         conda_env_name = "act-eran"
         
         # Dynamic path detection for ERAN runner
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        solver_dir = os.path.dirname(current_dir) 
-        verifier_dir = os.path.dirname(solver_dir)  
-        project_root = os.path.dirname(verifier_dir)  
-        eran_tf_verify_path = os.path.join(project_root, 'modules', 'eran', 'tf_verify')
-        eran_tf_verify_path = os.path.abspath(eran_tf_verify_path)
+        eran_tf_verify_path = get_eran_tf_verify_path()
 
         cmd = ["conda", "run", "--no-capture-output", "-n", conda_env_name, "python3", "-u", "__main__.py"] + args_list
 

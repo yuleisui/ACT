@@ -20,8 +20,9 @@ import torchvision
 import torchvision.transforms as transforms
 import os
 
-from act.interval.input_parser.type import SpecType
-from act.interval.input_parser.vnnlib_parser import VNNLIBParser
+from act.base.input_parser.type import SpecType
+from act.base.input_parser.vnnlib_parser import VNNLIBParser
+from act.base.util.path_config import get_data_root
 
 class Dataset:
     def __init__(self,
@@ -85,11 +86,7 @@ class Dataset:
 
     def _download_and_load_builtin(self, name):
         self._data_source = name
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        verifier_dir = os.path.dirname(current_dir) 
-        project_root = os.path.dirname(verifier_dir)  
-        data_root = os.path.join(project_root, 'data')
-        data_root = os.path.abspath(data_root)
+        data_root = get_data_root()
         
         print(f"[ACT] Data directory: {data_root}")
 

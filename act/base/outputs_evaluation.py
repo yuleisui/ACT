@@ -1,4 +1,4 @@
-#===- verifier.interval.outputs_evaluation.py output bounds evaluation --#
+#===- act.base.outputs_evaluation.py output bounds evaluation --#
 #
 #                 ACT: Abstract Constraints Transformer
 #
@@ -28,9 +28,9 @@
 import torch
 from typing import List, Optional
 
-from act.interval.input_parser.type import VerifyResult
-from act.interval.util.stats import ACTLog
-from act.interval.util.bounds import Bounds
+from act.base.input_parser.type import VerifyResult
+from act.base.util.stats import ACTLog
+from act.base.util.bounds import Bounds
 
 
 class OutputsEvaluate:

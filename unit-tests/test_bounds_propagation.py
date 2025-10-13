@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Unit tests for act.interval.bounds_propagation APIs.
+Unit tests for act.base.bounds_propagation APIs.
 Tests the REAL production BoundsPropagate class using shared configurations.
 
 This module tests:
@@ -24,9 +24,9 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from act.interval.bounds_propagation import BoundsPropagate
-from act.interval.util.bounds import Bounds
-from act.interval.bounds_prop_helper import TrackingMode
+from act.base.bounds_propagation import BoundsPropagate
+from act.base.util.bounds import Bounds
+from act.base.bounds_prop_helper import TrackingMode
 
 # Import shared test configurations
 from test_configs import MockFactory, get_unit_test_configs
