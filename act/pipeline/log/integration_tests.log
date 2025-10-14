@@ -300,3 +300,268 @@
 2025-10-13 22:42:17,515 - __main__ - INFO - ✅ Property VERIFIED for Gurobi MILP
 2025-10-13 22:42:17,515 - __main__ - INFO - Real verification completed: True
 2025-10-13 22:42:17,516 - __main__ - INFO - Real verification validation: 1/1 tests passed
+2025-10-14 20:56:33,413 - __main__ - INFO - ✅ Device management integration successful
+2025-10-14 20:56:33,414 - __main__ - INFO - Validating real verification integration...
+2025-10-14 20:56:33,414 - __main__ - INFO - ✅ ACT initialized: device=cuda:0, dtype=torch.float64
+2025-10-14 20:56:33,414 - __main__ - INFO - Running real verification test: mnist
+2025-10-14 20:56:33,415 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-14 20:56:33,415 - __main__ - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-14 20:56:54,757 - __main__ - INFO - ✅ Device management integration successful
+2025-10-14 20:56:54,757 - __main__ - INFO - Validating real verification integration...
+2025-10-14 20:56:54,757 - __main__ - INFO - ✅ ACT initialized: device=cuda:0, dtype=torch.float64
+2025-10-14 20:56:54,757 - __main__ - INFO - Running real verification test: mnist
+2025-10-14 20:56:54,757 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-14 20:56:54,757 - __main__ - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-14 20:57:59,956 - __main__ - INFO - ✅ Device management integration successful
+2025-10-14 20:57:59,958 - __main__ - INFO - Validating real verification integration...
+2025-10-14 20:57:59,958 - __main__ - INFO - ✅ ACT initialized: device=cuda:0, dtype=torch.float64
+2025-10-14 20:57:59,958 - __main__ - INFO - Running real verification test: mnist
+2025-10-14 20:57:59,958 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-14 20:57:59,958 - __main__ - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-14 20:57:59,990 - __main__ - INFO - Loading ONNX model: models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx
+2025-10-14 20:58:00,060 - __main__ - INFO - Creating input specs with epsilon=0.1, norm=inf
+2025-10-14 20:58:00,060 - __main__ - INFO - Creating output spec for class 7
+2025-10-14 20:58:00,061 - __main__ - INFO - Created test case: mnist_integration_test
+2025-10-14 20:58:00,061 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: (1, 1, 28, 28)
+2025-10-14 20:58:00,068 - __main__ - INFO - Converted PyTorch model to ACT Net with 4 layers:
+2025-10-14 20:58:00,068 - __main__ - INFO -   Layer 0: CONV2D
+2025-10-14 20:58:00,068 - __main__ - INFO -   Layer 1: RELU
+2025-10-14 20:58:00,068 - __main__ - INFO -   Layer 2: FLATTEN
+2025-10-14 20:58:00,068 - __main__ - INFO -   Layer 3: DENSE
+2025-10-14 20:58:00,074 - __main__ - INFO - Testing with Gurobi MILP solver...
+2025-10-14 20:58:00,345 - gurobipy - INFO - Restricted license - for non-production use only - expires 2026-11-23
+2025-10-14 20:58:00,354 - __main__ - INFO - ✅ Gurobi MILP verification completed: CERTIFIED
+2025-10-14 20:58:00,354 - __main__ - INFO - ✅ Property VERIFIED for Gurobi MILP
+2025-10-14 20:58:00,354 - __main__ - INFO - Real verification completed: True
+2025-10-14 20:58:00,354 - __main__ - INFO - Real verification validation: 1/1 tests passed
+2025-10-14 22:36:51,604 - __main__ - INFO - ✅ Device management integration successful
+2025-10-14 22:36:51,608 - __main__ - INFO - Validating real verification integration...
+2025-10-14 22:36:51,608 - __main__ - INFO - ✅ ACT initialized: device=cpu, dtype=torch.float64
+2025-10-14 22:36:51,608 - __main__ - INFO - Running real verification test: mnist
+2025-10-14 22:36:51,608 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-14 22:36:51,608 - __main__ - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-14 22:36:51,623 - __main__ - INFO - Loading ONNX model: models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx
+2025-10-14 22:36:51,630 - __main__ - INFO - Creating input specs with epsilon=0.1, norm=inf
+2025-10-14 22:36:51,630 - __main__ - INFO - Creating output spec for class 7
+2025-10-14 22:36:51,630 - __main__ - INFO - Created test case: mnist_integration_test
+2025-10-14 22:36:51,630 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: (1, 1, 28, 28)
+2025-10-14 22:36:51,630 - __main__ - INFO - Converted PyTorch model to ACT Net with 4 layers:
+2025-10-14 22:36:51,630 - __main__ - INFO -   Layer 0: CONV2D
+2025-10-14 22:36:51,630 - __main__ - INFO -   Layer 1: RELU
+2025-10-14 22:36:51,630 - __main__ - INFO -   Layer 2: FLATTEN
+2025-10-14 22:36:51,630 - __main__ - INFO -   Layer 3: DENSE
+2025-10-14 22:36:51,631 - __main__ - INFO - Testing with Gurobi MILP solver...
+2025-10-14 22:36:51,705 - gurobipy - INFO - Set parameter WLSAccessID
+2025-10-14 22:36:51,705 - gurobipy - INFO - Set parameter WLSSecret
+2025-10-14 22:36:51,705 - gurobipy - INFO - Set parameter LicenseID to value 2711348
+2025-10-14 22:36:51,736 - gurobipy - INFO - Academic license 2711348 - for non-commercial use only - registered to y.___@unsw.edu.au
+2025-10-14 22:36:51,736 - gurobipy - INFO - Warning: Gurobi version mismatch between Python 12.0.2 and C library 12.0.3
+2025-10-14 22:36:51,747 - __main__ - INFO - ✅ Gurobi MILP verification completed: CERTIFIED
+2025-10-14 22:36:51,747 - __main__ - INFO - ✅ Property VERIFIED for Gurobi MILP
+2025-10-14 22:36:51,747 - __main__ - INFO - Testing with PyTorch LP solver...
+2025-10-14 22:38:14,153 - __main__ - WARNING - ❌ PyTorch LP solver failed: forward_fn() missing 1 required positional argument: 'x'
+2025-10-14 22:38:14,155 - __main__ - INFO -   Note: PyTorch LP solver may not support this constraint
+2025-10-14 22:38:14,155 - __main__ - INFO - Real verification completed: True
+2025-10-14 22:38:14,155 - __main__ - INFO - Real verification validation: 1/1 tests passed
+2025-10-14 22:41:31,545 - __main__ - INFO - ✅ Device management integration successful
+2025-10-14 22:41:31,547 - __main__ - INFO - Validating real verification integration...
+2025-10-14 22:41:31,547 - __main__ - INFO - ✅ ACT initialized: device=cuda:0, dtype=torch.float64
+2025-10-14 22:41:31,547 - __main__ - INFO - Running real verification test: mnist
+2025-10-14 22:41:31,547 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-14 22:41:31,547 - __main__ - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-14 22:41:31,597 - __main__ - INFO - Loading ONNX model: models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx
+2025-10-14 22:41:31,691 - __main__ - INFO - Creating input specs with epsilon=0.1, norm=inf
+2025-10-14 22:41:31,692 - __main__ - INFO - Creating output spec for class 7
+2025-10-14 22:41:31,692 - __main__ - INFO - Created test case: mnist_integration_test
+2025-10-14 22:41:31,692 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: (1, 1, 28, 28)
+2025-10-14 22:41:31,699 - __main__ - INFO - Converted PyTorch model to ACT Net with 4 layers:
+2025-10-14 22:41:31,699 - __main__ - INFO -   Layer 0: CONV2D
+2025-10-14 22:41:31,699 - __main__ - INFO -   Layer 1: RELU
+2025-10-14 22:41:31,699 - __main__ - INFO -   Layer 2: FLATTEN
+2025-10-14 22:41:31,700 - __main__ - INFO -   Layer 3: DENSE
+2025-10-14 22:41:31,706 - __main__ - INFO - Testing with Gurobi MILP solver...
+2025-10-14 22:41:31,934 - gurobipy - INFO - Set parameter WLSAccessID
+2025-10-14 22:41:31,979 - __main__ - INFO - ✅ Gurobi MILP verification completed: CERTIFIED
+2025-10-14 22:41:31,979 - __main__ - INFO - ✅ Property VERIFIED for Gurobi MILP
+2025-10-14 22:41:31,979 - __main__ - INFO - Testing with PyTorch LP solver...
+2025-10-14 22:46:39,297 - __main__ - WARNING - ❌ PyTorch LP solver failed: index 7 is out of bounds for axis 0 with size 1
+2025-10-14 22:46:39,299 - __main__ - INFO -   Note: PyTorch LP solver may not support this constraint
+2025-10-14 22:46:39,299 - __main__ - INFO - Real verification completed: True
+2025-10-14 22:46:39,300 - __main__ - INFO - Real verification validation: 1/1 tests passed
+2025-10-14 22:47:00,613 - __main__ - INFO - ✅ Device management integration successful
+2025-10-14 22:47:00,613 - __main__ - INFO - Validating real verification integration...
+2025-10-14 22:47:00,613 - __main__ - INFO - ✅ ACT initialized: device=cuda:0, dtype=torch.float64
+2025-10-14 22:47:00,613 - __main__ - INFO - Running real verification test: mnist
+2025-10-14 22:47:00,613 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-14 22:47:00,613 - __main__ - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-14 22:47:00,766 - __main__ - INFO - Loading ONNX model: models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx
+2025-10-14 22:47:00,973 - __main__ - INFO - Creating input specs with epsilon=0.1, norm=inf
+2025-10-14 22:47:00,973 - __main__ - INFO - Creating output spec for class 7
+2025-10-14 22:47:00,973 - __main__ - INFO - Created test case: mnist_integration_test
+2025-10-14 22:47:00,973 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: (1, 1, 28, 28)
+2025-10-14 22:47:01,004 - __main__ - INFO - Converted PyTorch model to ACT Net with 4 layers:
+2025-10-14 22:47:01,004 - __main__ - INFO -   Layer 0: CONV2D
+2025-10-14 22:47:01,004 - __main__ - INFO -   Layer 1: RELU
+2025-10-14 22:47:01,004 - __main__ - INFO -   Layer 2: FLATTEN
+2025-10-14 22:47:01,004 - __main__ - INFO -   Layer 3: DENSE
+2025-10-14 22:47:01,057 - __main__ - INFO - Testing with Gurobi MILP solver...
+2025-10-14 22:47:01,597 - gurobipy - INFO - Set parameter WLSAccessID
+2025-10-14 22:47:01,597 - gurobipy - INFO - Set parameter WLSSecret
+2025-10-14 22:47:01,597 - gurobipy - INFO - Set parameter LicenseID to value 2711348
+2025-10-14 22:47:01,660 - gurobipy - INFO - Academic license 2711348 - for non-commercial use only - registered to y.___@unsw.edu.au
+2025-10-14 22:47:01,673 - __main__ - INFO - ✅ Gurobi MILP verification completed: CERTIFIED
+2025-10-14 22:47:01,673 - __main__ - INFO - ✅ Property VERIFIED for Gurobi MILP
+2025-10-14 22:47:01,673 - __main__ - INFO - Testing with PyTorch LP solver...
+2025-10-14 22:47:11,741 - __main__ - INFO - ✅ Device management integration successful
+2025-10-14 22:47:11,741 - __main__ - INFO - Validating real verification integration...
+2025-10-14 22:47:11,741 - __main__ - INFO - ✅ ACT initialized: device=cpu, dtype=torch.float64
+2025-10-14 22:47:11,741 - __main__ - INFO - Running real verification test: mnist
+2025-10-14 22:47:11,741 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-14 22:47:11,741 - __main__ - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-14 22:47:11,756 - __main__ - INFO - Loading ONNX model: models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx
+2025-10-14 22:47:11,763 - __main__ - INFO - Creating input specs with epsilon=0.1, norm=inf
+2025-10-14 22:47:11,763 - __main__ - INFO - Creating output spec for class 7
+2025-10-14 22:47:11,764 - __main__ - INFO - Created test case: mnist_integration_test
+2025-10-14 22:47:11,764 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: (1, 1, 28, 28)
+2025-10-14 22:47:11,764 - __main__ - INFO - Converted PyTorch model to ACT Net with 4 layers:
+2025-10-14 22:47:11,764 - __main__ - INFO -   Layer 0: CONV2D
+2025-10-14 22:47:11,764 - __main__ - INFO -   Layer 1: RELU
+2025-10-14 22:47:11,764 - __main__ - INFO -   Layer 2: FLATTEN
+2025-10-14 22:47:11,764 - __main__ - INFO -   Layer 3: DENSE
+2025-10-14 22:47:11,764 - __main__ - INFO - Testing with Gurobi MILP solver...
+2025-10-14 22:47:11,834 - gurobipy - INFO - Set parameter WLSAccessID
+2025-10-14 22:47:11,835 - gurobipy - INFO - Set parameter WLSSecret
+2025-10-14 22:47:11,835 - gurobipy - INFO - Set parameter LicenseID to value 2711348
+2025-10-14 22:47:11,840 - gurobipy - INFO - Academic license 2711348 - for non-commercial use only - registered to y.___@unsw.edu.au
+2025-10-14 22:47:11,840 - gurobipy - INFO - Warning: Gurobi version mismatch between Python 12.0.2 and C library 12.0.3
+2025-10-14 22:47:11,852 - __main__ - INFO - ✅ Gurobi MILP verification completed: CERTIFIED
+2025-10-14 22:47:11,852 - __main__ - INFO - ✅ Property VERIFIED for Gurobi MILP
+2025-10-14 22:47:11,852 - __main__ - INFO - Testing with PyTorch LP solver...
+2025-10-14 22:47:58,387 - __main__ - INFO - ✅ Device management integration successful
+2025-10-14 22:47:58,387 - __main__ - INFO - Validating real verification integration...
+2025-10-14 22:47:58,387 - __main__ - INFO - ✅ ACT initialized: device=cuda:0, dtype=torch.float64
+2025-10-14 22:47:58,387 - __main__ - INFO - Running real verification test: mnist
+2025-10-14 22:47:58,387 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-14 22:47:58,387 - __main__ - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-14 22:47:58,418 - __main__ - INFO - Loading ONNX model: models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx
+2025-10-14 22:47:58,488 - __main__ - INFO - Creating input specs with epsilon=0.1, norm=inf
+2025-10-14 22:47:58,489 - __main__ - INFO - Creating output spec for class 7
+2025-10-14 22:47:58,489 - __main__ - INFO - Created test case: mnist_integration_test
+2025-10-14 22:47:58,489 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: (1, 1, 28, 28)
+2025-10-14 22:47:58,496 - __main__ - INFO - Converted PyTorch model to ACT Net with 4 layers:
+2025-10-14 22:47:58,496 - __main__ - INFO -   Layer 0: CONV2D
+2025-10-14 22:47:58,496 - __main__ - INFO -   Layer 1: RELU
+2025-10-14 22:47:58,497 - __main__ - INFO -   Layer 2: FLATTEN
+2025-10-14 22:47:58,497 - __main__ - INFO -   Layer 3: DENSE
+2025-10-14 22:47:58,503 - __main__ - INFO - Testing with Gurobi MILP solver...
+2025-10-14 22:47:58,725 - gurobipy - INFO - Set parameter WLSAccessID
+2025-10-14 22:47:58,726 - gurobipy - INFO - Set parameter WLSSecret
+2025-10-14 22:47:58,726 - gurobipy - INFO - Set parameter LicenseID to value 2711348
+2025-10-14 22:47:58,730 - gurobipy - INFO - Academic license 2711348 - for non-commercial use only - registered to y.___@unsw.edu.au
+2025-10-14 22:47:58,743 - __main__ - INFO - ✅ Gurobi MILP verification completed: CERTIFIED
+2025-10-14 22:47:58,743 - __main__ - INFO - ✅ Property VERIFIED for Gurobi MILP
+2025-10-14 22:47:58,743 - __main__ - INFO - Testing with PyTorch LP solver...
+2025-10-14 22:48:32,234 - __main__ - WARNING - ❌ PyTorch LP solver failed: index 7 is out of bounds for axis 0 with size 1
+2025-10-14 22:48:32,235 - __main__ - INFO -   Note: PyTorch LP solver may not support this constraint
+2025-10-14 22:48:32,235 - __main__ - INFO - Real verification completed: True
+2025-10-14 22:48:32,235 - __main__ - INFO - Real verification validation: 1/1 tests passed
+2025-10-14 22:51:35,777 - __main__ - INFO - ✅ Device management integration successful
+2025-10-14 22:51:35,780 - __main__ - INFO - Validating real verification integration...
+2025-10-14 22:51:35,780 - __main__ - INFO - ✅ ACT initialized: device=cuda:0, dtype=torch.float64
+2025-10-14 22:51:35,780 - __main__ - INFO - Running real verification test: mnist
+2025-10-14 22:51:35,780 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-14 22:51:35,780 - __main__ - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-14 22:51:35,951 - __main__ - INFO - Loading ONNX model: models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx
+2025-10-14 22:51:36,089 - __main__ - INFO - Creating input specs with epsilon=0.1, norm=inf
+2025-10-14 22:51:36,089 - __main__ - INFO - Creating output spec for class 7
+2025-10-14 22:51:36,089 - __main__ - INFO - Created test case: mnist_integration_test
+2025-10-14 22:51:36,090 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: (1, 1, 28, 28)
+2025-10-14 22:51:36,119 - __main__ - INFO - Converted PyTorch model to ACT Net with 4 layers:
+2025-10-14 22:51:36,120 - __main__ - INFO -   Layer 0: CONV2D
+2025-10-14 22:51:36,120 - __main__ - INFO -   Layer 1: RELU
+2025-10-14 22:51:36,120 - __main__ - INFO -   Layer 2: FLATTEN
+2025-10-14 22:51:36,120 - __main__ - INFO -   Layer 3: DENSE
+2025-10-14 22:51:36,173 - __main__ - INFO - Testing with Gurobi MILP solver...
+2025-10-14 22:51:36,698 - gurobipy - INFO - Set parameter WLSAccessID
+2025-10-14 22:51:36,698 - gurobipy - INFO - Set parameter WLSSecret
+2025-10-14 22:51:36,698 - gurobipy - INFO - Set parameter LicenseID to value 2711348
+2025-10-14 22:51:36,764 - gurobipy - INFO - Academic license 2711348 - for non-commercial use only - registered to y.___@unsw.edu.au
+2025-10-14 22:51:36,777 - __main__ - INFO - ✅ Gurobi MILP verification completed: CERTIFIED
+2025-10-14 22:51:36,777 - __main__ - INFO - ✅ Property VERIFIED for Gurobi MILP
+2025-10-14 22:51:36,777 - __main__ - INFO - Testing with PyTorch LP solver...
+2025-10-14 22:52:16,746 - __main__ - INFO - ✅ Device management integration successful
+2025-10-14 22:52:16,748 - __main__ - INFO - Validating real verification integration...
+2025-10-14 22:52:16,748 - __main__ - INFO - ✅ ACT initialized: device=cuda:0, dtype=torch.float64
+2025-10-14 22:52:16,748 - __main__ - INFO - Running real verification test: mnist
+2025-10-14 22:52:16,748 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-14 22:52:16,748 - __main__ - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-14 22:52:16,817 - __main__ - INFO - Loading ONNX model: models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx
+2025-10-14 22:52:16,887 - __main__ - INFO - Creating input specs with epsilon=0.1, norm=inf
+2025-10-14 22:52:16,887 - __main__ - INFO - Creating output spec for class 7
+2025-10-14 22:52:16,888 - __main__ - INFO - Created test case: mnist_integration_test
+2025-10-14 22:52:16,888 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: (1, 1, 28, 28)
+2025-10-14 22:52:16,895 - __main__ - INFO - Converted PyTorch model to ACT Net with 4 layers:
+2025-10-14 22:52:16,895 - __main__ - INFO -   Layer 0: CONV2D
+2025-10-14 22:52:16,895 - __main__ - INFO -   Layer 1: RELU
+2025-10-14 22:52:16,895 - __main__ - INFO -   Layer 2: FLATTEN
+2025-10-14 22:52:16,895 - __main__ - INFO -   Layer 3: DENSE
+2025-10-14 22:52:16,900 - __main__ - INFO - Testing with Gurobi MILP solver...
+2025-10-14 22:52:17,119 - gurobipy - INFO - Set parameter WLSAccessID
+2025-10-14 22:52:17,119 - gurobipy - INFO - Set parameter WLSSecret
+2025-10-14 22:52:17,119 - gurobipy - INFO - Set parameter LicenseID to value 2711348
+2025-10-14 22:52:17,140 - gurobipy - INFO - Academic license 2711348 - for non-commercial use only - registered to y.___@unsw.edu.au
+2025-10-14 22:52:17,153 - __main__ - INFO - ✅ Gurobi MILP verification completed: CERTIFIED
+2025-10-14 22:52:17,153 - __main__ - INFO - ✅ Property VERIFIED for Gurobi MILP
+2025-10-14 22:52:17,153 - __main__ - INFO - Testing with PyTorch LP solver...
+2025-10-14 22:53:12,780 - __main__ - INFO - ✅ Device management integration successful
+2025-10-14 22:53:12,781 - __main__ - INFO - Validating real verification integration...
+2025-10-14 22:53:12,781 - __main__ - INFO - ✅ ACT initialized: device=cuda:0, dtype=torch.float64
+2025-10-14 22:53:12,781 - __main__ - INFO - Running real verification test: mnist
+2025-10-14 22:53:12,781 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-14 22:53:12,781 - __main__ - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-14 22:53:12,823 - __main__ - INFO - Loading ONNX model: models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx
+2025-10-14 22:53:12,892 - __main__ - INFO - Creating input specs with epsilon=0.1, norm=inf
+2025-10-14 22:53:12,892 - __main__ - INFO - Creating output spec for class 7
+2025-10-14 22:53:12,892 - __main__ - INFO - Created test case: mnist_integration_test
+2025-10-14 22:53:12,892 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: (1, 1, 28, 28)
+2025-10-14 22:53:12,899 - __main__ - INFO - Converted PyTorch model to ACT Net with 4 layers:
+2025-10-14 22:53:12,899 - __main__ - INFO -   Layer 0: CONV2D
+2025-10-14 22:53:12,899 - __main__ - INFO -   Layer 1: RELU
+2025-10-14 22:53:12,899 - __main__ - INFO -   Layer 2: FLATTEN
+2025-10-14 22:53:12,899 - __main__ - INFO -   Layer 3: DENSE
+2025-10-14 22:53:12,906 - __main__ - INFO - Testing with Gurobi MILP solver...
+2025-10-14 22:53:13,116 - gurobipy - INFO - Set parameter WLSAccessID
+2025-10-14 22:53:13,116 - gurobipy - INFO - Set parameter WLSSecret
+2025-10-14 22:53:13,117 - gurobipy - INFO - Set parameter LicenseID to value 2711348
+2025-10-14 22:53:13,317 - gurobipy - INFO - Academic license 2711348 - for non-commercial use only - registered to y.___@unsw.edu.au
+2025-10-14 22:53:13,330 - __main__ - INFO - ✅ Gurobi MILP verification completed: CERTIFIED
+2025-10-14 22:53:13,330 - __main__ - INFO - ✅ Property VERIFIED for Gurobi MILP
+2025-10-14 22:53:13,330 - __main__ - INFO - Testing with PyTorch LP solver...
+2025-10-14 22:53:52,200 - __main__ - INFO - ✅ Device management integration successful
+2025-10-14 22:53:52,202 - __main__ - INFO - Validating real verification integration...
+2025-10-14 22:53:52,202 - __main__ - INFO - ✅ ACT initialized: device=cuda:0, dtype=torch.float64
+2025-10-14 22:53:52,202 - __main__ - INFO - Running real verification test: mnist
+2025-10-14 22:53:52,202 - __main__ - INFO - Creating test case: mnist, samples: [0, 1]
+2025-10-14 22:53:52,202 - __main__ - INFO - Loading dataset from: data/MNIST_csv/mnist_first_100_samples.csv
+2025-10-14 22:53:52,236 - __main__ - INFO - Loading ONNX model: models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx
+2025-10-14 22:53:52,307 - __main__ - INFO - Creating input specs with epsilon=0.1, norm=inf
+2025-10-14 22:53:52,307 - __main__ - INFO - Creating output spec for class 7
+2025-10-14 22:53:52,307 - __main__ - INFO - Created test case: mnist_integration_test
+2025-10-14 22:53:52,307 - __main__ - INFO - Converting PyTorch model to ACT Net, input shape: (1, 1, 28, 28)
+2025-10-14 22:53:52,315 - __main__ - INFO - Converted PyTorch model to ACT Net with 4 layers:
+2025-10-14 22:53:52,315 - __main__ - INFO -   Layer 0: CONV2D
+2025-10-14 22:53:52,315 - __main__ - INFO -   Layer 1: RELU
+2025-10-14 22:53:52,315 - __main__ - INFO -   Layer 2: FLATTEN
+2025-10-14 22:53:52,315 - __main__ - INFO -   Layer 3: DENSE
+2025-10-14 22:53:52,321 - __main__ - INFO - Testing with Gurobi MILP solver...
+2025-10-14 22:53:52,540 - gurobipy - INFO - Set parameter WLSAccessID
+2025-10-14 22:53:52,540 - gurobipy - INFO - Set parameter WLSSecret
+2025-10-14 22:53:52,540 - gurobipy - INFO - Set parameter LicenseID to value 2711348
+2025-10-14 22:53:52,545 - gurobipy - INFO - Academic license 2711348 - for non-commercial use only - registered to y.___@unsw.edu.au
+2025-10-14 22:53:52,558 - __main__ - INFO - ✅ Gurobi MILP verification completed: CERTIFIED
+2025-10-14 22:53:52,558 - __main__ - INFO - ✅ Property VERIFIED for Gurobi MILP
+2025-10-14 22:53:52,558 - __main__ - INFO - Testing with PyTorch LP solver...
+2025-10-14 22:58:51,731 - __main__ - WARNING - ❌ PyTorch LP solver failed: index 7 is out of bounds for axis 0 with size 1
+2025-10-14 22:58:51,733 - __main__ - INFO -   Note: PyTorch LP solver may not support this constraint
+2025-10-14 22:58:51,733 - __main__ - INFO - Real verification completed: True
+2025-10-14 22:58:51,734 - __main__ - INFO - Real verification validation: 1/1 tests passed

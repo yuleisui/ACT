@@ -1,7 +1,7 @@
 """
 🔧 Model Loading for Front-End Integration
 
-Self-contained ONNX model loading and conversion for front-end preprocessing.
+Clean torch tensor ONNX model loading and conversion using global device settings.
 Independent of existing ACT model loading to maintain clean separation.
 """
 
@@ -10,13 +10,14 @@ import os
 import torch
 import torch.nn as nn
 import onnx
-import numpy as np
-from typing import Dict, List, Tuple, Any, Optional, Union
+from typing import Dict, List, Tuple, Any, Optional
 from dataclasses import dataclass
+from pathlib import Path
 
 from act.front_end.preprocessor_base import ModelSignature, Preprocessor
 from act.front_end.preprocessor_image import ImgPre
 from act.front_end.preprocessor_text import TextPre
+from act.front_end.device_manager import get_current_settings
 
 
 @dataclass
@@ -33,10 +34,10 @@ class ModelMetadata:
 
 
 class ModelLoader:
-    """Self-contained ONNX model loading for front-end preprocessing"""
+    """Clean torch tensor ONNX model loading with global device settings"""
     def __init__(self):
-        """Initialize ModelLoader"""
-        pass
+        """Initialize ModelLoader with global device settings"""
+        self.device, self.dtype = get_current_settings()
                 
     def load_onnx_model(self, onnx_path: str) -> torch.nn.Module:
         """
@@ -102,7 +103,7 @@ class ModelLoader:
                 bias_name = node.input[2] if len(node.input) > 2 else None
                 
                 if weight_name in initializers:
-                    weight = torch.from_numpy(initializers[weight_name]).float()
+                    weight = torch.tensor(initializers[weight_name], device=self.device, dtype=self.dtype)
                     # Conv weight shape: [out_channels, in_channels, kernel_h, kernel_w]
                     out_channels, in_channels, kernel_h, kernel_w = weight.shape
                     
@@ -132,10 +133,10 @@ class ModelLoader:
                     conv_layer.weight.data = weight
                     
                     if bias_name and bias_name in initializers:
-                        bias = torch.from_numpy(initializers[bias_name]).float()
+                        bias = torch.tensor(initializers[bias_name], device=self.device, dtype=self.dtype)
                         conv_layer.bias.data = bias
                     else:
-                        conv_layer.bias.data = torch.zeros(out_channels)
+                        conv_layer.bias.data = torch.zeros(out_channels, device=self.device, dtype=self.dtype)
                     
                     layers.append(conv_layer)
             
@@ -145,7 +146,7 @@ class ModelLoader:
                 bias_name = node.input[2] if len(node.input) > 2 else None
                 
                 if weight_name in initializers:
-                    weight = torch.from_numpy(initializers[weight_name]).float()
+                    weight = torch.tensor(initializers[weight_name], device=self.device, dtype=self.dtype)
                     # Gemm weight shape: [out_features, in_features]
                     out_features, in_features = weight.shape
                     
@@ -153,10 +154,10 @@ class ModelLoader:
                     linear_layer.weight.data = weight
                     
                     if bias_name and bias_name in initializers:
-                        bias = torch.from_numpy(initializers[bias_name]).float()
+                        bias = torch.tensor(initializers[bias_name], device=self.device, dtype=self.dtype)
                         linear_layer.bias.data = bias
                     else:
-                        linear_layer.bias.data = torch.zeros(out_features)
+                        linear_layer.bias.data = torch.zeros(out_features, device=self.device, dtype=self.dtype)
                     
                     layers.append(linear_layer)
             
@@ -169,12 +170,12 @@ class ModelLoader:
                         break
                 
                 if weight_name:
-                    weight = torch.from_numpy(initializers[weight_name]).float()
+                    weight = torch.tensor(initializers[weight_name], device=self.device, dtype=self.dtype)
                     if weight.dim() == 2:
                         out_features, in_features = weight.shape
                         linear_layer = nn.Linear(in_features, out_features)
                         linear_layer.weight.data = weight
-                        linear_layer.bias.data = torch.zeros(out_features)
+                        linear_layer.bias.data = torch.zeros(out_features, device=self.device, dtype=self.dtype)
                         layers.append(linear_layer)
             
             elif node.op_type == "Add":
@@ -186,7 +187,7 @@ class ModelLoader:
                         break
                 
                 if bias_name and layers and isinstance(layers[-1], nn.Linear):
-                    bias = torch.from_numpy(initializers[bias_name]).float()
+                    bias = torch.tensor(initializers[bias_name], device=self.device, dtype=self.dtype)
                     layers[-1].bias.data = bias
             
             elif node.op_type == "LSTM":
@@ -198,7 +199,7 @@ class ModelLoader:
                 # Extract LSTM parameters from initializers
                 for input_name in node.input[1:]:  # Skip first input (data)
                     if input_name in initializers:
-                        param = torch.from_numpy(initializers[input_name]).float()
+                        param = torch.tensor(initializers[input_name], device=self.device, dtype=self.dtype)
                         if "W" in input_name:
                             if "input" in input_name.lower() or "i" in input_name.lower():
                                 input_weights.append(param)
@@ -241,7 +242,7 @@ class ModelLoader:
                 # Extract GRU parameters
                 for input_name in node.input[1:]:
                     if input_name in initializers:
-                        param = torch.from_numpy(initializers[input_name]).float()
+                        param = torch.tensor(initializers[input_name], device=self.device, dtype=self.dtype)
                         if "W" in input_name:
                             if "input" in input_name.lower() or "i" in input_name.lower():
                                 input_weights.append(param)
@@ -282,7 +283,7 @@ class ModelLoader:
                 # Extract RNN parameters
                 for input_name in node.input[1:]:
                     if input_name in initializers:
-                        param = torch.from_numpy(initializers[input_name]).float()
+                        param = torch.tensor(initializers[input_name], device=self.device, dtype=self.dtype)
                         if "W" in input_name:
                             if "input" in input_name.lower() or "i" in input_name.lower():
                                 input_weights.append(param)
@@ -323,7 +324,7 @@ class ModelLoader:
                         break
                 
                 if weight_name:
-                    weight = torch.from_numpy(initializers[weight_name]).float()
+                    weight = torch.tensor(initializers[weight_name], device=self.device, dtype=self.dtype)
                     if weight.dim() == 2:
                         num_embeddings, embedding_dim = weight.shape
                         embedding_layer = nn.Embedding(num_embeddings, embedding_dim)
@@ -366,115 +367,45 @@ class ModelLoader:
         
         return model
         
-    def extract_model_signature(self, onnx_path: str) -> ModelSignature:
-        """
-        Extract input/output metadata from ONNX model
+    def discover_all_models(self) -> Dict[str, List[str]]:
+        """Comprehensively discover all models in the project"""
+        models = {
+            "mnist": [],
+            "cifar10": [],
+            "other": []
+        }
         
-        Args:
-            onnx_path: Path to ONNX model file
-            
-        Returns:
-            ModelSignature with input/output shape information
-        """
-        onnx_model = onnx.load(onnx_path)
-        metadata = self._extract_metadata(onnx_model)
+        # Search entire models directory tree
+        models_root = Path("models")
+        if models_root.exists():
+            for model_file in models_root.rglob("*"):
+                if model_file.is_file() and model_file.suffix.lower() in [".onnx", ".pt", ".pth"]:
+                    model_path = str(model_file)
+                    model_name = model_file.name.lower()
+                    
+                    # Categorize by dataset type
+                    if "mnist" in model_name or "mnist" in str(model_file.parent).lower():
+                        models["mnist"].append(model_path)
+                    elif any(keyword in model_name for keyword in ["cifar", "cifar10"]):
+                        models["cifar10"].append(model_path)
+                    else:
+                        models["other"].append(model_path)
         
-        # Create ModelSignature from first input/output
-        input_shape = tuple(metadata.input_shapes[0]) if metadata.input_shapes else (1,)
-        output_shape = tuple(metadata.output_shapes[0]) if metadata.output_shapes else (1,)
+        return models
+    
+    def load_all_for_act_backend(self) -> Dict[str, torch.nn.Module]:
+        """Load all discovered models for ACT backend"""
+        discovered = self.discover_all_models()
+        act_ready_models = {}
         
-        return ModelSignature(
-            input_shape=input_shape,
-            output_shape=output_shape,
-            device=self.device,
-            dtype=self.dtype
-        )
-        
-    def _extract_metadata(self, onnx_model) -> ModelMetadata:
-        """Extract comprehensive metadata from ONNX model"""
-        
-        # Extract input information
-        input_names = []
-        input_shapes = []
-        input_dtypes = []
-        
-        for input_info in onnx_model.graph.input:
-            input_names.append(input_info.name)
-            
-            # Extract shape
-            shape = []
-            for dim in input_info.type.tensor_type.shape.dim:
-                if dim.dim_value > 0:
-                    shape.append(dim.dim_value)
-                else:
-                    shape.append(-1)  # Dynamic dimension
-            input_shapes.append(tuple(shape))
-            
-            # Extract dtype
-            dtype_map = {1: "float32", 2: "uint8", 3: "int8", 6: "int32", 7: "int64", 11: "float64"}
-            dtype_id = input_info.type.tensor_type.elem_type
-            input_dtypes.append(dtype_map.get(dtype_id, "unknown"))
-            
-        # Extract output information
-        output_names = []
-        output_shapes = []
-        output_dtypes = []
-        
-        for output_info in onnx_model.graph.output:
-            output_names.append(output_info.name)
-            
-            # Extract shape
-            shape = []
-            for dim in output_info.type.tensor_type.shape.dim:
-                if dim.dim_value > 0:
-                    shape.append(dim.dim_value)
-                else:
-                    shape.append(-1)  # Dynamic dimension
-            output_shapes.append(tuple(shape))
-            
-            # Extract dtype
-            dtype_id = output_info.type.tensor_type.elem_type
-            output_dtypes.append(dtype_map.get(dtype_id, "unknown"))
-            
-        # Calculate model size and parameters
-        model_size_mb = os.path.getsize(onnx_model.SerializeToString()) / (1024 * 1024) if hasattr(onnx_model, 'SerializeToString') else 0.0
-        total_params = sum(np.prod(init.dims) for init in onnx_model.graph.initializer)
-        
-        return ModelMetadata(
-            input_names=input_names,
-            output_names=output_names,
-            input_shapes=input_shapes,
-            output_shapes=output_shapes,
-            input_dtypes=input_dtypes,
-            output_dtypes=output_dtypes,
-            model_size_mb=model_size_mb,
-            total_params=total_params
-        )
-  
-        
-    def get_model_info(self, onnx_path: str) -> Dict[str, Any]:
-        """
-        Get comprehensive model information for debugging/analysis
-        
-        Returns:
-            Dictionary with model metadata and analysis
-        """
-        try:
-            onnx_model = onnx.load(onnx_path)
-            metadata = self._extract_metadata(onnx_model)
-            signature = self.extract_model_signature(onnx_path)
-            
-            return {
-                "path": onnx_path,
-                "metadata": metadata,
-                "signature": signature,
-                "device": self.device,
-                "dtype": str(self.dtype),
-                "status": "✅ Model loaded successfully"
-            }
-        except Exception as e:
-            return {
-                "path": onnx_path,
-                "error": str(e),
-                "status": "❌ Failed to load model"
-            }
+        for category, model_paths in discovered.items():
+            for model_path in model_paths:
+                try:
+                    model = self.load_onnx_model(model_path)
+                    model_name = f"{category}_{Path(model_path).stem}"
+                    act_ready_models[model_name] = model
+                    print(f"✅ Prepared '{model_name}' for ACT backend")
+                except Exception as e:
+                    print(f"❌ Failed to prepare {model_path}: {e}")
+                    
+        return act_ready_models

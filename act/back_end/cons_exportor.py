@@ -27,7 +27,13 @@ def export_to_solver(globalC: ConSet, solver: Solver,
                      objective: Optional[Tuple[np.ndarray, float]]=None, sense="min") -> int:
     # 0) pass a device hint (CPU) to CPU solvers; GPU solvers could use this
     dev_hint = "cpu"  # mainstream MILP/LP are CPU; keep for future backends
-    solver.begin("verify", device=dev_hint)
+    
+    # Only initialize solver if it hasn't been pre-configured
+    if hasattr(solver, 'n') and solver.n == 0:
+        print(f"🔧 export_to_solver: Initializing solver (current vars: {solver.n})")
+        solver.begin("verify", device=dev_hint)
+    else:
+        print(f"🔧 export_to_solver: Solver already initialized (current vars: {getattr(solver, 'n', 'unknown')})")
 
     # 1) global var set and merged boxes
     all_ids=set(); boxes={}

@@ -137,7 +137,7 @@ class ACTFrontendBridge:
         
         # Load real CSV data
         logger.info(f"Loading dataset from: {csv_file}")
-        data_pairs = self.data_loader.load_csv_data(str(csv_file))
+        data_pairs = self.data_loader.load_csv_torch(str(csv_file))
         
         # Extract requested samples
         samples = []
@@ -147,8 +147,8 @@ class ACTFrontendBridge:
             if idx >= len(data_pairs):
                 raise IndexError(f"Sample index {idx} out of bounds (dataset size: {len(data_pairs)})")
             
-            sample_array, label = data_pairs[idx]
-            samples.append(torch.from_numpy(sample_array).float())
+            sample_tensor, label = data_pairs[idx]  # load_csv_torch returns torch tensors directly
+            samples.append(sample_tensor)
             labels.append(label)
         
         samples_tensor = torch.stack(samples)
@@ -283,7 +283,7 @@ class ACTFrontendBridge:
         
         try:
             # Create ACT Net from PyTorch model
-            net = self._pytorch_to_act_net(model, sample)
+            net, entry_id, input_ids, output_ids = self._pytorch_to_act_net(model, sample)
             
             # Get verification specifications
             input_spec = complete_test_case.input_spec
@@ -292,10 +292,24 @@ class ACTFrontendBridge:
             # Create root box from input specification
             root_box = seed_from_input_spec(input_spec)
             
-            # Define forward function for verification
+            # Define forward function for verification (takes only input tensor x)
             @torch.no_grad()
-            def forward_fn(net, x):
-                return net.forward(x)
+            def forward_fn(x):
+                """Model function that takes input tensor and returns output tensor"""
+                # Ensure input tensor is on the same device as the model
+                model_device = next(model.parameters()).device
+                if x.device != model_device:
+                    x = x.to(model_device)
+                
+                # Handle input reshaping like demo_driver does
+                if x.numel() == 3072:  # CIFAR-10: 32x32x3 = 3072
+                    x_reshaped = x.view(1, 3, 32, 32)
+                elif x.numel() == 784:  # MNIST: 28x28 = 784  
+                    x_reshaped = x.view(1, 1, 28, 28)
+                else:
+                    x_reshaped = x if len(x.shape) == 4 else x.unsqueeze(0)
+                
+                return model(x_reshaped)
             
             # Configure solvers to test (like driver.py)
             solvers_to_test = [
@@ -306,7 +320,7 @@ class ACTFrontendBridge:
             verification_results = []
             verification_success = False
             
-            # Test each solver (similar to driver.py verification loop)
+            # Test each solver independently (no early exit)
             for solver_name, solver_factory in solvers_to_test:
                 logger.info(f"Testing with {solver_name} solver...")
                 
@@ -316,9 +330,9 @@ class ACTFrontendBridge:
                     # Run verification using verify_bab (same as driver.py)
                     result = verify_bab(
                         net, 
-                        entry_id=0, 
-                        input_ids=list(range(len(sample))),
-                        output_ids=list(range(output_spec.out_dim if hasattr(output_spec, 'out_dim') else 10)),
+                        entry_id=entry_id, 
+                        input_ids=input_ids,
+                        output_ids=output_ids,
                         input_spec=input_spec, 
                         output_spec=output_spec, 
                         root_box=root_box,
@@ -342,14 +356,14 @@ class ACTFrontendBridge:
                     if result.status == "CERTIFIED":
                         logger.info(f"✅ Property VERIFIED for {solver_name}")
                         verification_success = True
-                        break  # Success with first solver
+                        # Continue to test next solver (no break)
                     elif result.status == "COUNTEREXAMPLE":
                         logger.info(f"❌ Property VIOLATED - Counterexample found with {solver_name}")
                         if result.ce_x is not None:
                             ce_input_norm = torch.norm(torch.as_tensor(result.ce_x)).item()
                             logger.info(f"  Counterexample input norm: {ce_input_norm:.6f}")
                         verification_success = True  # Counterexample is also a valid result
-                        break
+                        # Continue to test next solver (no break)
                     else:
                         logger.info(f"❓ Property status UNKNOWN with {solver_name}")
                         # Continue to next solver
@@ -369,7 +383,6 @@ class ACTFrontendBridge:
                         logger.info("  Note: PyTorch LP solver may not support this constraint")
                     
                     # Continue to next solver
-                    continue
             
             # Create validation result based on verification outcome
             execution_time = sum(r.get('execution_time', 0.1) for r in verification_results)
@@ -404,8 +417,10 @@ class ACTFrontendBridge:
                 metadata={'error': str(e), 'real_verification_failed': True}
             )
     
-    def _pytorch_to_act_net(self, pytorch_model: nn.Module, sample_input: torch.Tensor) -> Net:
-        """Convert PyTorch model to ACT Net format with CNN/RNN support (following driver.py patterns)."""
+    def _pytorch_to_act_net(self, pytorch_model: nn.Module, sample_input: torch.Tensor) -> Tuple[Net, int, List[int], List[int]]:
+        """Convert PyTorch model to ACT Net format with CNN/RNN support (following driver.py patterns).
+        Returns: (net, entry_id, input_ids, output_ids)
+        """
         layers = []
         var_counter = 0
         layer_id = 0
@@ -466,7 +481,8 @@ class ACTFrontendBridge:
                         "output_shape": output_shape
                     },
                     in_vars=current_vars.copy(),
-                    out_vars=out_vars
+                    out_vars=out_vars,
+                    cache={}
                 )
                 layers.append(conv_layer)
                 
@@ -500,7 +516,8 @@ class ACTFrontendBridge:
                         "output_shape": output_shape
                     },
                     in_vars=current_vars.copy(),
-                    out_vars=out_vars
+                    out_vars=out_vars,
+                    cache={}
                 )
                 layers.append(maxpool_layer)
                 
@@ -532,7 +549,8 @@ class ACTFrontendBridge:
                         "output_shape": output_shape
                     },
                     in_vars=current_vars.copy(),
-                    out_vars=out_vars
+                    out_vars=out_vars,
+                    cache={}
                 )
                 layers.append(avgpool_layer)
                 
@@ -556,7 +574,8 @@ class ACTFrontendBridge:
                         "output_shape": output_shape
                     },
                     in_vars=current_vars.copy(),
-                    out_vars=current_vars.copy()  # Same variables, just reshaped
+                    out_vars=current_vars.copy(),  # Same variables, just reshaped
+                    cache={}
                 )
                 layers.append(flatten_layer)
                 
@@ -580,7 +599,8 @@ class ACTFrontendBridge:
                     kind="DENSE",
                     params={"W": W, "W_pos": W_pos, "W_neg": W_neg, "b": b},  # Match driver.py format
                     in_vars=current_vars.copy(),
-                    out_vars=out_vars
+                    out_vars=out_vars,
+                    cache={}
                 )
                 layers.append(dense_layer)
                 
@@ -631,7 +651,8 @@ class ACTFrontendBridge:
                         "output_shape": output_shape
                     },
                     in_vars=current_vars.copy(),
-                    out_vars=out_vars
+                    out_vars=out_vars,
+                    cache={}
                 )
                 layers.append(lstm_layer)
                 
@@ -683,7 +704,8 @@ class ACTFrontendBridge:
                         "output_shape": output_shape
                     },
                     in_vars=current_vars.copy(),
-                    out_vars=out_vars
+                    out_vars=out_vars,
+                    cache={}
                 )
                 layers.append(gru_layer)
                 
@@ -737,7 +759,8 @@ class ACTFrontendBridge:
                         "output_shape": output_shape
                     },
                     in_vars=current_vars.copy(),
-                    out_vars=out_vars
+                    out_vars=out_vars,
+                    cache={}
                 )
                 layers.append(rnn_layer)
                 
@@ -779,7 +802,8 @@ class ACTFrontendBridge:
                         "output_shape": output_shape
                     },
                     in_vars=current_vars.copy(),
-                    out_vars=out_vars
+                    out_vars=out_vars,
+                    cache={}
                 )
                 layers.append(embedding_layer)
                 
@@ -795,7 +819,8 @@ class ACTFrontendBridge:
                     kind="RELU",
                     params={},
                     in_vars=current_vars.copy(),
-                    out_vars=current_vars.copy()
+                    out_vars=current_vars.copy(),
+                    cache={}
                 )
                 layers.append(relu_layer)
                 layer_id += 1
@@ -831,7 +856,12 @@ class ACTFrontendBridge:
         for layer in layers:
             logger.info(f"  Layer {layer.id}: {layer.kind}")
         
-        return net
+        # Return tuple like demo_driver: (net, entry_id, input_ids, output_ids)
+        entry_id = 0  # First layer is entry point
+        input_ids = list(range(input_size))  # Input variable IDs
+        output_ids = layers[-1].out_vars if layers else []  # Output variable IDs from last layer
+        
+        return net, entry_id, input_ids, output_ids
 
 
 # Factory functions for easy usage
