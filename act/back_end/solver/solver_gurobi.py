@@ -2,14 +2,45 @@
 from __future__ import annotations
 from typing import List, Optional
 import numpy as np
+import os
 from act.back_end.solver.solver_base import Solver, SolverCaps, SolveStatus
 
 try:
     import gurobipy as gp
     from gurobipy import GRB
-except Exception:  # pragma: no cover - environment dependent
-    gp = None
-    GRB = None
+    GUROBI_AVAILABLE = True
+except ImportError:
+    print("Warning: Gurobi not available. HybridZonotopeOps will use alternative solvers.")
+    GUROBI_AVAILABLE = False
+
+def setup_gurobi_license():
+    """Setup Gurobi license path based on current folder layout."""
+    if 'GRB_LICENSE_FILE' not in os.environ:
+        if 'ACTHOME' in os.environ:
+            license_path = os.path.join(os.environ['ACTHOME'], 'gurobi', 'gurobi.lic')
+            print(f"[ACT] Using ACTHOME environment variable: {os.environ['ACTHOME']}")
+        else:
+            # Current file is at: act/back_end/solver/solver_gurobi.py
+            # Project root is: ../../../ from this file
+            # Gurobi license is at: gurobi/gurobi.lic from project root
+            current_file = os.path.abspath(__file__)
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_file))))
+            license_path = os.path.join(project_root, 'gurobi', 'gurobi.lic')
+            print(f"[ACT] Auto-detecting project root: {project_root}")
+        
+        license_path = os.path.abspath(license_path)
+        
+        if os.path.exists(license_path):
+            os.environ['GRB_LICENSE_FILE'] = license_path
+            print(f"[ACT] Gurobi license found and set: {license_path}")
+        else:
+            print(f"[WARN] Gurobi license not found at: {license_path}")
+            print(f"[INFO] Please ensure gurobi.lic is placed in: {os.path.dirname(license_path)}")
+    else:
+        print(f"[ACT] Using existing Gurobi license: {os.environ['GRB_LICENSE_FILE']}")
+
+setup_gurobi_license()
+
 
 class GurobiSolver(Solver):
     """Gurobi backend for exact LP/MILP solving (CPU-only)."""
