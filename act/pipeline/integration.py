@@ -472,7 +472,9 @@ class ACTFrontendBridge:
                     kind="CONV2D",
                     params={
                         "weight": weight,
-                        "bias": bias,
+                        "bias": bias
+                    },
+                    meta={
                         "stride": module.stride,
                         "padding": module.padding,
                         "dilation": module.dilation,
@@ -507,7 +509,8 @@ class ACTFrontendBridge:
                 maxpool_layer = Layer(
                     id=layer_id,
                     kind="MAXPOOL2D",
-                    params={
+                    params={},
+                    meta={
                         "kernel_size": module.kernel_size,
                         "stride": module.stride,
                         "padding": module.padding,
@@ -541,7 +544,8 @@ class ACTFrontendBridge:
                 avgpool_layer = Layer(
                     id=layer_id,
                     kind="AVGPOOL2D",
-                    params={
+                    params={},
+                    meta={
                         "kernel_size": module.kernel_size,
                         "stride": module.stride,
                         "padding": module.padding,
@@ -569,7 +573,8 @@ class ACTFrontendBridge:
                 flatten_layer = Layer(
                     id=layer_id,
                     kind="FLATTEN",
-                    params={
+                    params={},
+                    meta={
                         "input_shape": input_shape,
                         "output_shape": output_shape
                     },
@@ -598,6 +603,7 @@ class ACTFrontendBridge:
                     id=layer_id,
                     kind="DENSE",
                     params={"W": W, "W_pos": W_pos, "W_neg": W_neg, "b": b},  # Match driver.py format
+                    meta={},
                     in_vars=current_vars.copy(),
                     out_vars=out_vars,
                     cache={}
@@ -641,7 +647,9 @@ class ACTFrontendBridge:
                         "weight_ih": weight_ih,
                         "weight_hh": weight_hh,
                         "bias_ih": bias_ih,
-                        "bias_hh": bias_hh,
+                        "bias_hh": bias_hh
+                    },
+                    meta={
                         "input_size": input_size,
                         "hidden_size": hidden_size,
                         "num_layers": num_layers,
@@ -694,7 +702,9 @@ class ACTFrontendBridge:
                         "weight_ih": weight_ih,
                         "weight_hh": weight_hh,
                         "bias_ih": bias_ih,
-                        "bias_hh": bias_hh,
+                        "bias_hh": bias_hh
+                    },
+                    meta={
                         "input_size": input_size,
                         "hidden_size": hidden_size,
                         "num_layers": num_layers,
@@ -748,7 +758,9 @@ class ACTFrontendBridge:
                         "weight_ih": weight_ih,
                         "weight_hh": weight_hh,
                         "bias_ih": bias_ih,
-                        "bias_hh": bias_hh,
+                        "bias_hh": bias_hh
+                    },
+                    meta={
                         "input_size": input_size,
                         "hidden_size": hidden_size,
                         "num_layers": num_layers,
@@ -794,7 +806,9 @@ class ACTFrontendBridge:
                     id=layer_id,
                     kind="EMBEDDING",
                     params={
-                        "weight": weight,
+                        "weight": weight
+                    },
+                    meta={
                         "num_embeddings": num_embeddings,
                         "embedding_dim": embedding_dim,
                         "padding_idx": padding_idx,
@@ -818,6 +832,7 @@ class ACTFrontendBridge:
                     id=layer_id,
                     kind="RELU",
                     params={},
+                    meta={},
                     in_vars=current_vars.copy(),
                     out_vars=current_vars.copy(),
                     cache={}

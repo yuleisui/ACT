@@ -26,15 +26,15 @@ def tf_lstm(L: Layer, Bin: Bounds) -> Fact:
     bias_hh = L.params.get("bias_hh", None)
     
     # LSTM dimensions
-    input_size = L.params["input_size"]
-    hidden_size = L.params["hidden_size"]
-    num_layers = L.params.get("num_layers", 1)
-    batch_first = L.params.get("batch_first", False)
-    bidirectional = L.params.get("bidirectional", False)
+    input_size = L.meta["input_size"]
+    hidden_size = L.meta["hidden_size"]
+    num_layers = L.meta.get("num_layers", 1)
+    batch_first = L.meta.get("batch_first", False)
+    bidirectional = L.meta.get("bidirectional", False)
     
-    # Input shape information
-    input_shape = L.params["input_shape"]  # [batch, seq_len, input_size] or [seq_len, batch, input_size]
-    output_shape = L.params["output_shape"]
+    # Shape information
+    input_shape = L.meta["input_shape"]  # [batch, seq_len, input_size] or [seq_len, batch, input_size]
+    output_shape = L.meta["output_shape"]
     
     if batch_first:
         batch_size, seq_len, _ = input_shape
@@ -127,15 +127,15 @@ def tf_gru(L: Layer, Bin: Bounds) -> Fact:
     bias_hh = L.params.get("bias_hh", None)
     
     # GRU dimensions
-    input_size = L.params["input_size"]
-    hidden_size = L.params["hidden_size"]
-    num_layers = L.params.get("num_layers", 1)
-    batch_first = L.params.get("batch_first", False)
-    bidirectional = L.params.get("bidirectional", False)
+    input_size = L.meta["input_size"]
+    hidden_size = L.meta["hidden_size"]
+    num_layers = L.meta.get("num_layers", 1)
+    batch_first = L.meta.get("batch_first", False)
+    bidirectional = L.meta.get("bidirectional", False)
     
     # Input shape information
-    input_shape = L.params["input_shape"]
-    output_shape = L.params["output_shape"]
+    input_shape = L.meta["input_shape"]
+    output_shape = L.meta["output_shape"]
     
     if batch_first:
         batch_size, seq_len, _ = input_shape

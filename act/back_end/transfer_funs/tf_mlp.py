@@ -36,7 +36,7 @@ def tf_relu(L: Layer, Bin: Bounds) -> Fact:
     C.add_box(L.id,L.out_vars,B); return Fact(B,C)
 
 def tf_lrelu(L: Layer, Bin: Bounds) -> Fact:
-    a=float(L.params["alpha"]); l,u=Bin.lb,Bin.ub; on=l>=0; off=u<=0; amb=~(on|off)
+    a=float(L.meta["alpha"]); l,u=Bin.lb,Bin.ub; on=l>=0; off=u<=0; amb=~(on|off)
     lb=torch.minimum(a*torch.minimum(l,0.0), torch.maximum(l,0.0))
     ub=torch.maximum(a*torch.maximum(u,0.0), torch.maximum(u,0.0))
     if torch.any(amb):
@@ -68,13 +68,13 @@ def tf_clip(L: Layer, Bin: Bounds) -> Fact:
 
 def tf_add(L: Layer, Bx: Bounds, By: Bounds) -> Fact:
     B=Bounds(Bx.lb+By.lb, Bx.ub+By.ub); C=ConSet()
-    C.replace(Con("EQ", tuple(L.out_vars + L.params["x_vars"] + L.params["y_vars"]), {"tag":f"add:{L.id}"}))
+    C.replace(Con("EQ", tuple(L.out_vars + L.meta["x_vars"] + L.meta["y_vars"]), {"tag":f"add:{L.id}"}))
     C.add_box(L.id,L.out_vars,B); return Fact(B,C)
 
 def tf_mul(L: Layer, Bx: Bounds, By: Bounds) -> Fact:
     cand=torch.stack([Bx.lb*By.lb, Bx.lb*By.ub, Bx.ub*By.lb, Bx.ub*By.ub], dim=0)
     B=Bounds(torch.min(cand,0).values, torch.max(cand,0).values); C=ConSet()
-    C.replace(Con("INEQ", tuple(L.out_vars + L.params["x_vars"] + L.params["y_vars"]),
+    C.replace(Con("INEQ", tuple(L.out_vars + L.meta["x_vars"] + L.meta["y_vars"]),
         {"tag":f"mcc:{L.id}","lx":Bx.lb,"ux":Bx.ub,"ly":By.lb,"uy":By.ub}))
     C.add_box(L.id,L.out_vars,B); return Fact(B,C)
 
@@ -113,13 +113,13 @@ def tf_silu(L: Layer, Bin: Bounds) -> Fact:
 
 def tf_max(L: Layer, By_list: List[Bounds]) -> Fact:
     lb=torch.maximum.reduce([b.lb for b in By_list]); ub=torch.maximum.reduce([b.ub for b in By_list])
-    B=Bounds(lb,ub); all_y=sum((L.params["y_vars_list"][i] for i in range(len(By_list))), [])
+    B=Bounds(lb,ub); all_y=sum((L.meta["y_vars_list"][i] for i in range(len(By_list))), [])
     C=ConSet(); C.replace(Con("INEQ", tuple(L.out_vars+all_y), {"tag":f"max:{L.id}","k":len(By_list),"mode":"convex"}))
     C.add_box(L.id,L.out_vars,B); return Fact(B,C)
 
 def tf_min(L: Layer, By_list: List[Bounds]) -> Fact:
     lb=torch.minimum.reduce([b.lb for b in By_list]); ub=torch.minimum.reduce([b.ub for b in By_list])
-    B=Bounds(lb,ub); all_y=sum((L.params["y_vars_list"][i] for i in range(len(By_list))), [])
+    B=Bounds(lb,ub); all_y=sum((L.meta["y_vars_list"][i] for i in range(len(By_list))), [])
     C=ConSet(); C.replace(Con("INEQ", tuple(L.out_vars+all_y), {"tag":f"min:{L.id}","k":len(By_list),"mode":"convex"}))
     C.add_box(L.id,L.out_vars,B); return Fact(B,C)
 
@@ -130,7 +130,7 @@ def tf_square(L: Layer, Bin: Bounds) -> Fact:
     C.add_box(L.id,L.out_vars,B); return Fact(B,C)
 
 def tf_power(L: Layer, Bin: Bounds) -> Fact:
-    p=float(L.params["p"]); f=lambda x: torch.pow(torch.clamp(x,min=0.0), p)
+    p=float(L.meta["p"]); f=lambda x: torch.pow(torch.clamp(x,min=0.0), p)
     B=Bounds(f(Bin.lb), f(Bin.ub)); C=ConSet()
     C.replace(Con("INEQ", tuple(L.out_vars+L.in_vars), {"tag":f"power:{L.id}","p":p,"segs":pwl_meta(Bin.lb,Bin.ub,2)}))
     C.add_box(L.id,L.out_vars,B); return Fact(B,C)

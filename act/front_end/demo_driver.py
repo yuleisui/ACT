@@ -122,7 +122,9 @@ def pytorch_to_act_net(pytorch_model: nn.Module, sample_input: torch.Tensor) -> 
                     kind="CONV2D", 
                     params={
                         "weight": weight,
-                        "bias": bias,
+                        "bias": bias
+                    },
+                    meta={
                         "stride": module.stride,
                         "padding": module.padding,
                         "input_shape": current_shape,
@@ -151,6 +153,7 @@ def pytorch_to_act_net(pytorch_model: nn.Module, sample_input: torch.Tensor) -> 
                     id=layer_id,
                     kind=activation_kind,
                     params={},
+                    meta={},
                     in_vars=current_vars.copy(),
                     out_vars=current_vars.copy(),  # In-place activation
                     cache={}
@@ -182,7 +185,8 @@ def pytorch_to_act_net(pytorch_model: nn.Module, sample_input: torch.Tensor) -> 
                 flatten_layer = Layer(
                     id=layer_id,
                     kind="FLATTEN",
-                    params={
+                    params={},
+                    meta={
                         "input_shape": input_shape,
                         "output_shape": output_shape
                     },
@@ -210,6 +214,7 @@ def pytorch_to_act_net(pytorch_model: nn.Module, sample_input: torch.Tensor) -> 
                     id=layer_id,
                     kind="DENSE",
                     params={"W": W, "W_pos": W_pos, "W_neg": W_neg, "b": b},
+                    meta={},
                     in_vars=current_vars.copy(),
                     out_vars=out_vars,
                     cache={}

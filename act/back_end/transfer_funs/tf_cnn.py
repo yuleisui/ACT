@@ -22,14 +22,14 @@ def tf_conv2d(L: Layer, Bin: Bounds) -> Fact:
     # Extract convolution parameters
     weight = L.params["weight"]  # [out_channels, in_channels, kernel_h, kernel_w]
     bias = L.params.get("bias", None)
-    stride = L.params.get("stride", 1)
-    padding = L.params.get("padding", 0)
-    dilation = L.params.get("dilation", 1)
-    groups = L.params.get("groups", 1)
+    stride = L.meta.get("stride", 1)
+    padding = L.meta.get("padding", 0)
+    dilation = L.meta.get("dilation", 1)
+    groups = L.meta.get("groups", 1)
     
     # Input shape information
-    input_shape = L.params["input_shape"]  # [batch, channels, height, width]
-    output_shape = L.params["output_shape"]  # [batch, out_channels, out_h, out_w]
+    input_shape = L.meta["input_shape"]  # [batch, channels, height, width]
+    output_shape = L.meta["output_shape"]  # [batch, out_channels, out_h, out_w]
     
     batch_size, in_channels, in_h, in_w = input_shape
     out_channels, _, kernel_h, kernel_w = weight.shape
@@ -91,14 +91,14 @@ def tf_maxpool2d(L: Layer, Bin: Bounds) -> Fact:
     Uses interval arithmetic to bound the max pooling operation.
     """
     # Extract pooling parameters
-    kernel_size = L.params["kernel_size"]
-    stride = L.params.get("stride", kernel_size)
-    padding = L.params.get("padding", 0)
-    dilation = L.params.get("dilation", 1)
+    kernel_size = L.meta["kernel_size"]
+    stride = L.meta.get("stride", kernel_size)
+    padding = L.meta.get("padding", 0)
+    dilation = L.meta.get("dilation", 1)
     
-    # Input/output shape information
-    input_shape = L.params["input_shape"]  # [batch, channels, height, width]
-    output_shape = L.params["output_shape"]  # [batch, channels, out_h, out_w]
+    # Shape information
+    input_shape = L.meta["input_shape"]  # [batch, channels, height, width]
+    output_shape = L.meta["output_shape"]  # [batch, channels, out_h, out_w]
     
     batch_size, channels, in_h, in_w = input_shape
     _, _, out_h, out_w = output_shape
@@ -142,8 +142,8 @@ def tf_flatten(L: Layer, Bin: Bounds) -> Fact:
     Simply reshapes the bounds without changing values.
     """
     # Extract shape information
-    input_shape = L.params["input_shape"]
-    output_shape = L.params["output_shape"]
+    input_shape = L.meta["input_shape"]
+    output_shape = L.meta["output_shape"]
     
     # Flatten is just a reshape operation - bounds remain the same
     input_size = torch.prod(torch.tensor(input_shape)).item()
@@ -233,13 +233,13 @@ def tf_avgpool2d(L: Layer, Bin: Bounds) -> Fact:
     Uses linear transformation to handle average pooling.
     """
     # Extract pooling parameters
-    kernel_size = L.params["kernel_size"]
-    stride = L.params.get("stride", kernel_size)
-    padding = L.params.get("padding", 0)
+    kernel_size = L.meta["kernel_size"]
+    stride = L.meta.get("stride", kernel_size)
+    padding = L.meta.get("padding", 0)
     
     # Input/output shape information
-    input_shape = L.params["input_shape"]
-    output_shape = L.params["output_shape"]
+    input_shape = L.meta["input_shape"]
+    output_shape = L.meta["output_shape"]
     
     batch_size, channels, in_h, in_w = input_shape
     _, _, out_h, out_w = output_shape
