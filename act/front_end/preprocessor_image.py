@@ -1,7 +1,8 @@
 
 from __future__ import annotations
-from typing import Optional
+from typing import Optional, Tuple, Any
 import torch
+from pathlib import Path
 from act.front_end.device_manager import get_default_device, get_default_dtype
 from act.front_end.preprocessor_base import Preprocessor, ModelSignature
 from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
@@ -25,7 +26,7 @@ class ImgPre(Preprocessor):
         
         sig = ModelSignature(modality="image", layout="NCHW", input_shape=(C, H, W),
                              meta={"mean": mean, "std": std})
-        super().__init__(sig, device=device, dtype=dtype)
+        super().__init__(sig)
         self.C, self.H, self.W = C, H, W
         self.mean = torch.tensor(mean, device=self.device, dtype=dtype).view(C,1,1)
         self.std  = torch.tensor(std,  device=self.device, dtype=dtype).view(C,1,1)
@@ -42,6 +43,66 @@ class ImgPre(Preprocessor):
         if isinstance(label, str):
             return int(label) if label.isdigit() else 0
         raise TypeError(f"Unsupported label type: {type(label)}")
+
+    def load_raw_sample_label_pairs(self, file_path: str) -> Tuple[torch.Tensor, int]:
+        """Load image and extract label from filename.
+        
+        Args:
+            file_path: Path to image file or directory containing images
+            
+        Returns:
+            Tuple of (prepared_image_tensor, prepared_label)
+        """
+        file_path = Path(file_path)
+        
+        # If it's a directory, look for images in data/raw/images
+        if file_path.is_dir() or not file_path.exists():
+            image_dir = Path("data/raw/images")
+            if not image_dir.exists():
+                raise FileNotFoundError(f"Image directory {image_dir} does not exist")
+            
+            # Find image files with supported extensions
+            image_extensions = ['.png', '.jpg', '.jpeg']
+            image_files = []
+            for ext in image_extensions:
+                image_files.extend(image_dir.glob(f"*{ext}"))
+                image_files.extend(image_dir.glob(f"*{ext.upper()}"))
+            
+            if not image_files:
+                raise FileNotFoundError(f"No image files found in {image_dir}")
+            
+            # Use the first image found
+            file_path = image_files[0]
+        
+        # Check if file exists and has valid extension
+        if not file_path.exists():
+            raise FileNotFoundError(f"Image file {file_path} does not exist")
+        
+        image_extensions = ['.png', '.jpg', '.jpeg']
+        if file_path.suffix.lower() not in image_extensions:
+            raise ValueError(f"Unsupported image extension: {file_path.suffix}")
+        
+        # Load image using PIL
+        try:
+            from PIL import Image
+            with Image.open(file_path) as img:
+                # Convert to RGB if needed
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                
+                # Prepare sample using existing method
+                sample_tensor = self.prepare_sample(img)
+                
+                # Extract label from filename (without extension)
+                label_str = file_path.stem
+                prepared_label = self.prepare_label(label_str)
+                
+                return sample_tensor, prepared_label
+                
+        except ImportError:
+            raise ImportError("PIL (Pillow) is required for image loading. Install with: pip install Pillow")
+        except Exception as e:
+            raise RuntimeError(f"Failed to load image {file_path}: {e}")
 
     def _apply_affine(self, x: torch.Tensor) -> torch.Tensor:
         return (x - self.mean) / self.std

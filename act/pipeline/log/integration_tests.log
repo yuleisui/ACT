@@ -561,3 +561,7 @@
 2025-10-14 22:53:52,558 - __main__ - INFO - ✅ Gurobi MILP verification completed: CERTIFIED
 2025-10-14 22:53:52,558 - __main__ - INFO - ✅ Property VERIFIED for Gurobi MILP
 2025-10-14 22:53:52,558 - __main__ - INFO - Testing with PyTorch LP solver...
+2025-10-14 22:58:51,731 - __main__ - WARNING - ❌ PyTorch LP solver failed: index 7 is out of bounds for axis 0 with size 1
+2025-10-14 22:58:51,733 - __main__ - INFO -   Note: PyTorch LP solver may not support this constraint
+2025-10-14 22:58:51,733 - __main__ - INFO - Real verification completed: True
+2025-10-14 22:58:51,734 - __main__ - INFO - Real verification validation: 1/1 tests passed

@@ -1,7 +1,8 @@
 
 from __future__ import annotations
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Tuple, Any
 import torch, numpy as np
+from pathlib import Path
 
 from act.front_end.device_manager import get_default_device, get_default_dtype
 from act.front_end.preprocessor_base import Preprocessor, ModelSignature
@@ -42,7 +43,7 @@ class TextPre(Preprocessor):
         device = get_default_device()
         dtype = get_default_dtype()
         sig = ModelSignature(modality="text", layout="[seq]", input_shape=(seq_len,), meta={})
-        super().__init__(sig, device=device, dtype=dtype)
+        super().__init__(sig)
         self.seq_len = seq_len
         self.tok = SimpleTokenizer(vocab=vocab)
 
@@ -58,6 +59,63 @@ class TextPre(Preprocessor):
         if isinstance(label, int): return int(label)
         if isinstance(label, str) and label.isdigit(): return int(label)
         return 0
+
+    def load_raw_sample_label_pairs(self, file_path: str) -> Tuple[torch.Tensor, int]:
+        """Load text file and extract label from filename.
+        
+        Args:
+            file_path: Path to text file or directory containing text files
+            
+        Returns:
+            Tuple of (prepared_text_tensor, prepared_label)
+        """
+        file_path = Path(file_path)
+        
+        # If it's a directory, look for text files in data/raw/texts
+        if file_path.is_dir() or not file_path.exists():
+            text_dir = Path("data/raw/texts")
+            if not text_dir.exists():
+                raise FileNotFoundError(f"Text directory {text_dir} does not exist")
+            
+            # Find text files with .txt extension
+            text_files = list(text_dir.glob("*.txt"))
+            
+            if not text_files:
+                raise FileNotFoundError(f"No text files found in {text_dir}")
+            
+            # Use the first text file found
+            file_path = text_files[0]
+        
+        # Check if file exists and has valid extension
+        if not file_path.exists():
+            raise FileNotFoundError(f"Text file {file_path} does not exist")
+        
+        if file_path.suffix.lower() != '.txt':
+            raise ValueError(f"Unsupported text file extension: {file_path.suffix}")
+        
+        try:
+            # Read text content
+            with open(file_path, 'r', encoding='utf-8') as f:
+                text_content = f.read().strip()
+            
+            if not text_content:
+                raise ValueError(f"Text file {file_path} is empty")
+            
+            # Build vocabulary from the text content if vocab is empty
+            if len(self.tok.vocab) <= 2:  # Only has <pad> and <unk>
+                self.tok.build_vocab([text_content], min_freq=1)
+            
+            # Prepare sample using existing method
+            sample_tensor = self.prepare_sample(text_content)
+            
+            # Extract label from filename (without extension)
+            label_str = file_path.stem
+            prepared_label = self.prepare_label(label_str)
+            
+            return sample_tensor, prepared_label
+            
+        except Exception as e:
+            raise RuntimeError(f"Failed to load text file {file_path}: {e}")
 
     def canonicalize_input_spec(self, input_spec_raw: InputSpec, *, center=None, eps: Optional[float]=None) -> InputSpec:
         if input_spec_raw.kind == InKind.BOX:
