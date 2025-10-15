@@ -34,6 +34,8 @@ import torch.nn as nn
 from act.front_end.model_inference import model_inference
 from act.front_end.model_synthesis import model_synthesis
 from act.back_end.core import Net, Layer
+from act.back_end.layer_schema import LayerKind
+from act.back_end.layer_validation import create_layer
 from act.back_end.solver.solver_torch import TorchLPSolver
 from act.back_end.solver.solver_gurobi import GurobiSolver
 
@@ -129,7 +131,7 @@ class TorchToACT:
 
     def _add(self, kind: str, params: Dict[str, torch.Tensor], meta: Dict[str, Any],
              in_vars: List[int], out_vars: List[int]) -> int:
-        layer = Layer(
+        layer = create_layer(
             id=len(self.layers),
             kind=kind,
             params=params,
@@ -146,102 +148,13 @@ class TorchToACT:
     # --- mapping helpers ---
 
     def _emit_input(self):
-        """Emit INPUT layer from the InputLayer module."""
-        N = _prod(self.shape[1:])
-        out_vars = self._alloc_ids(N)
-        params = {"shape": torch.tensor(self.shape)}
-        center = getattr(self.input_layer, "center", None)
-        if isinstance(center, torch.Tensor):
-            params["center"] = center
-        meta = {"desc": getattr(self.input_layer, "desc", "input")}
-        self._add("INPUT", params=params, meta=meta, in_vars=[], out_vars=out_vars)
+        """Emit INPUT layer using the to_act_layers() protocol."""
+        new_layers, out_vars = self.input_layer.to_act_layers(len(self.layers), [])
+        self.layers.extend(new_layers)
         self.prev_out = out_vars
 
-    def _handle_adapter(self, mod: nn.Module):
-        """Break InputAdapterLayer into primitive ACT ops."""
-        # Read attributes safely (None if absent)
-        permute_axes = getattr(mod, "permute_axes", None)
-        reorder_idx  = getattr(mod, "reorder_idx", None)
-        slice_idx    = getattr(mod, "slice_idx", None)
-        pad_values   = getattr(mod, "pad_values", None)
-        affine_a     = getattr(mod, "affine_a", None)
-        affine_c     = getattr(mod, "affine_c", None)
-        linproj_A    = getattr(mod, "linproj_A", None)
-        linproj_b    = getattr(mod, "linproj_b", None)
 
-        # PERMUTE
-        if permute_axes is not None and len(self.shape) >= 2:
-            out_vars = self._same_size_forward()
-            self._add("PERMUTE", params={},
-                      meta={"axes": tuple(int(a) for a in permute_axes), "in_shape": self.shape},
-                      in_vars=self.prev_out, out_vars=out_vars)
-            B, *rest = self.shape
-            rest = [rest[i] for i in permute_axes]
-            self.shape = (B, *rest)
-            self.prev_out = out_vars
 
-        # REORDER (by flat index)
-        if reorder_idx is not None:
-            idx = reorder_idx.reshape(-1) if isinstance(reorder_idx, torch.Tensor) else torch.as_tensor(reorder_idx).reshape(-1)
-            out_vars = self._same_size_forward()
-            self._add("REORDER", params={"idx": idx},
-                      meta={"in_shape": self.shape},
-                      in_vars=self.prev_out, out_vars=out_vars)
-            self.prev_out = out_vars
-
-        # SLICE (select subset of flat indices)
-        if slice_idx is not None:
-            sidx = slice_idx.reshape(-1) if isinstance(slice_idx, torch.Tensor) else torch.as_tensor(slice_idx).reshape(-1)
-            out_vars = self._same_size_forward()
-            self._add("SLICE", params={"idx": sidx},
-                      meta={"in_shape": self.shape},
-                      in_vars=self.prev_out, out_vars=out_vars)
-            # reflect logical feature count in shape (flattened)
-            self.shape = (1, int(sidx.numel()))
-            self.prev_out = out_vars
-
-        # PAD (append constants)
-        if pad_values is not None:
-            pvals = pad_values.reshape(-1) if isinstance(pad_values, torch.Tensor) else torch.as_tensor(pad_values).reshape(-1)
-            out_vars = self._same_size_forward()
-            self._add("PAD", params={"values": pvals},
-                      meta={"k": int(pvals.numel()), "in_shape": self.shape},
-                      in_vars=self.prev_out, out_vars=out_vars)
-            if len(self.shape) == 2:
-                self.shape = (1, self.shape[1] + int(pvals.numel()))
-            else:
-                # any shape → treat as flattened features
-                self.shape = (1, _prod(self.shape[1:]) + int(pvals.numel()))
-            self.prev_out = out_vars
-
-        # SCALE_SHIFT (elementwise affine)
-        if (affine_a is not None) or (affine_c is not None):
-            a = torch.as_tensor(1.0) if affine_a is None else torch.as_tensor(affine_a)
-            c = torch.as_tensor(0.0) if affine_c is None else torch.as_tensor(affine_c)
-            out_vars = self._same_size_forward()
-            self._add("SCALE_SHIFT",
-                      params={"a": a.reshape(-1) if a.ndim > 0 else a,
-                              "c": c.reshape(-1) if c.ndim > 0 else c},
-                      meta={"in_shape": self.shape},
-                      in_vars=self.prev_out, out_vars=out_vars)
-            self.prev_out = out_vars
-
-        # LINEAR_PROJ (A @ x + b)
-        if linproj_A is not None:
-            A = linproj_A if isinstance(linproj_A, torch.Tensor) else torch.as_tensor(linproj_A)
-            b = None
-            if linproj_b is not None:
-                b = linproj_b if isinstance(linproj_b, torch.Tensor) else torch.as_tensor(linproj_b)
-            M = int(A.shape[0])
-            out_vars = self._alloc_ids(M)
-            params = {"A": A}
-            if b is not None:
-                params["b"] = b
-            self._add("LINEAR_PROJ", params=params,
-                      meta={"in_shape": self.shape, "out_features": M},
-                      in_vars=self.prev_out, out_vars=out_vars)
-            self.shape = (1, M)
-            self.prev_out = out_vars
 
     # --- main conversion ---
 
@@ -257,50 +170,18 @@ class TorchToACT:
                 # already emitted at start
                 continue
 
-            if tname == self._InputAdapterLayerTypeName:
-                self._handle_adapter(mod)
+            # Use standardized conversion with to_act_layers() protocol
+            if hasattr(mod, 'to_act_layers'):
+                new_layers, out_vars = mod.to_act_layers(len(self.layers), self.prev_out)
+                self.layers.extend(new_layers)
+                self.prev_out = out_vars
                 continue
 
-            if tname == self._InputSpecLayerTypeName:
-                kind = getattr(mod, "kind")
-                params: Dict[str, torch.Tensor] = {}
-                meta = {"kind": kind}
-
-                # Access registered buffers if present
-                lb = getattr(mod, "lb", None)
-                ub = getattr(mod, "ub", None)
-                center = getattr(mod, "center", None)
-                A = getattr(mod, "A", None)
-                b = getattr(mod, "b", None)
-                eps = getattr(mod, "eps", None)
-
-                if kind in ("BOX", "LINF_BALL"):
-                    if lb is not None:
-                        params["lb"] = lb
-                    if ub is not None:
-                        params["ub"] = ub
-                    if kind == "LINF_BALL" and eps is not None:
-                        meta["eps"] = float(eps)
-                    if center is not None and "lb" not in params and "ub" not in params:
-                        # optional center pass-through (used for seed if eps supplied)
-                        params["center"] = center
-                elif kind == "LIN_POLY":
-                    if A is None or b is None:
-                        raise AssertionError("InputSpecLayer(kind=LIN_POLY) requires buffers A and b.")
-                    params["A"] = A
-                    params["b"] = b
-                else:
-                    raise NotImplementedError(f"Unknown InputSpec kind: {kind}")
-
-                # constraint-only; keep the same var ids
-                self._add("INPUT_SPEC", params=params, meta=meta,
-                          in_vars=self.prev_out, out_vars=self.prev_out)
-                continue
-
+            # Handle standard PyTorch modules that don't have to_act_layers()
             if isinstance(mod, nn.Flatten):
                 out_vars = self._same_size_forward()
                 flattened_shape = (1, _prod(self.shape[1:]))
-                self._add("FLATTEN", params={}, 
+                self._add(LayerKind.FLATTEN.value, params={}, 
                           meta={"input_shape": self.shape, "output_shape": flattened_shape},
                           in_vars=self.prev_out, out_vars=out_vars)
                 self.shape = flattened_shape
@@ -312,13 +193,9 @@ class TorchToACT:
                 W = mod.weight.detach().clone()
                 bvec = mod.bias.detach().clone() if mod.bias is not None else torch.zeros(outF, dtype=W.dtype, device=W.device)
                 
-                # Decompose weight matrix into positive and negative parts for interval arithmetic
-                W_pos = torch.clamp(W, min=0)
-                W_neg = torch.clamp(W, max=0)
-                
                 out_vars = self._alloc_ids(outF)
-                self._add("DENSE", params={"W": W, "W_pos": W_pos, "W_neg": W_neg, "b": bvec},
-                          meta={"in_shape": self.shape, "out_shape": (1, outF)},
+                self._add(LayerKind.DENSE.value, params={"W": W, "b": bvec},
+                          meta={"input_shape": self.shape, "output_shape": (1, outF)},
                           in_vars=self.prev_out, out_vars=out_vars)
                 self.shape = (1, outF)
                 self.prev_out = out_vars
@@ -326,141 +203,143 @@ class TorchToACT:
 
             if isinstance(mod, nn.ReLU):
                 out_vars = self._same_size_forward()
-                self._add("RELU", params={}, meta={"in_shape": self.shape, "out_shape": self.shape},
+                self._add(LayerKind.RELU.value, params={}, 
+                          meta={"input_shape": self.shape, "output_shape": self.shape},
                           in_vars=self.prev_out, out_vars=out_vars)
                 self.prev_out = out_vars
                 continue
 
-            if tname == self._OutputSpecLayerTypeName:
-                kind = getattr(mod, "kind")
-                tparams: Dict[str, torch.Tensor] = {}
-                mparams: Dict[str, Any] = {"kind": kind}
-
-                # Access registered buffers if present
-                c = getattr(mod, "c", None)
-                lb = getattr(mod, "lb", None)
-                ub = getattr(mod, "ub", None)
-                y_true = getattr(mod, "y_true", None)
-                margin = getattr(mod, "margin", 0.0)
-                d = getattr(mod, "d", None)
-
-                if kind == "LINEAR_LE":
-                    if c is None or d is None:
-                        raise AssertionError("OutputSpecLayer(kind=LINEAR_LE) requires c (tensor) and d (scalar).")
-                    tparams["c"] = c
-                    mparams["d"] = float(d)
-                elif kind == "TOP1_ROBUST":
-                    if y_true is None:
-                        raise AssertionError("OutputSpecLayer(kind=TOP1_ROBUST) requires y_true.")
-                    mparams["y_true"] = int(y_true)
-                    mparams["margin"] = float(margin)
-                elif kind == "MARGIN_ROBUST":
-                    if y_true is None:
-                        raise AssertionError("OutputSpecLayer(kind=MARGIN_ROBUST) requires y_true.")
-                    mparams["y_true"] = int(y_true)
-                    mparams["margin"] = float(margin)
-                elif kind == "RANGE":
-                    if lb is None or ub is None:
-                        raise AssertionError("OutputSpecLayer(kind=RANGE) requires lb and ub tensors.")
-                    tparams["lb"] = lb
-                    tparams["ub"] = ub
+            if isinstance(mod, nn.Conv2d):
+                # Handle Conv2d layers
+                weight = mod.weight.detach().clone()
+                bias = mod.bias.detach().clone() if mod.bias is not None else None
+                
+                # Infer input shape for conv
+                if len(self.shape) == 2:  # (1, features) - need to reshape to spatial
+                    n_features = self.shape[1]
+                    if n_features == 3072:  # CIFAR-10
+                        input_shape = (1, 3, 32, 32)
+                    elif n_features == 784:  # MNIST
+                        input_shape = (1, 1, 28, 28)
+                    else:
+                        channels = mod.in_channels
+                        spatial_size = int((n_features / channels) ** 0.5)
+                        input_shape = (1, channels, spatial_size, spatial_size)
                 else:
-                    raise NotImplementedError(f"Unknown OutputSpec kind: {kind}")
-
-                # constraint-only; keep the same var ids
-                self._add("ASSERT", params=tparams, meta=mparams,
-                          in_vars=self.prev_out, out_vars=self.prev_out)
+                    input_shape = self.shape
+                
+                # Calculate output shape
+                batch, in_c, in_h, in_w = input_shape
+                out_c = mod.out_channels
+                out_h = (in_h + 2 * mod.padding[0] - mod.dilation[0] * (mod.kernel_size[0] - 1) - 1) // mod.stride[0] + 1
+                out_w = (in_w + 2 * mod.padding[1] - mod.dilation[1] * (mod.kernel_size[1] - 1) - 1) // mod.stride[1] + 1
+                output_shape = (1, out_c, out_h, out_w)
+                out_features = out_c * out_h * out_w
+                
+                params = {"weight": weight}
+                if bias is not None:
+                    params["bias"] = bias
+                    
+                meta = {
+                    "input_shape": input_shape,
+                    "output_shape": output_shape,
+                    "kernel_size": mod.kernel_size,
+                    "stride": mod.stride,
+                    "padding": mod.padding,
+                    "dilation": mod.dilation,
+                    "groups": mod.groups,
+                    "in_channels": in_c,
+                    "out_channels": out_c
+                }
+                
+                out_vars = self._alloc_ids(out_features)
+                self._add(LayerKind.CONV2D.value, params=params, meta=meta,
+                          in_vars=self.prev_out, out_vars=out_vars)
+                self.shape = (1, out_features)  # Flatten for next layer
+                self.prev_out = out_vars
                 continue
 
+            # Handle nested Sequential models (PyTorch models inside wrapper)
             if isinstance(mod, nn.Sequential):
-                # Handle nested Sequential (the actual model inside the wrapper)
-                # Flatten the Sequential and process each layer individually
                 for sub_mod in mod:
-                    if isinstance(sub_mod, nn.Flatten):
-                        out_vars = self._same_size_forward()
-                        flattened_shape = (1, _prod(self.shape[1:]))
-                        self._add("FLATTEN", params={}, 
-                                  meta={"input_shape": self.shape, "output_shape": flattened_shape},
-                                  in_vars=self.prev_out, out_vars=out_vars)
-                        self.shape = flattened_shape
+                    # Recursively process sub-modules using the same logic
+                    if hasattr(sub_mod, 'to_act_layers'):
+                        new_layers, out_vars = sub_mod.to_act_layers(len(self.layers), self.prev_out)
+                        self.layers.extend(new_layers)
                         self.prev_out = out_vars
-                    elif isinstance(sub_mod, nn.Linear):
-                        outF = int(sub_mod.out_features)
-                        W = sub_mod.weight.detach().clone()
-                        bvec = sub_mod.bias.detach().clone() if sub_mod.bias is not None else torch.zeros(outF, dtype=W.dtype, device=W.device)
-                        
-                        # Decompose weight matrix into positive and negative parts for interval arithmetic
-                        W_pos = torch.clamp(W, min=0)
-                        W_neg = torch.clamp(W, max=0)
-                        
-                        out_vars = self._alloc_ids(outF)
-                        self._add("DENSE", params={"W": W, "W_pos": W_pos, "W_neg": W_neg, "b": bvec},
-                                  meta={"in_shape": self.shape, "out_shape": (1, outF)},
-                                  in_vars=self.prev_out, out_vars=out_vars)
-                        self.shape = (1, outF)
-                        self.prev_out = out_vars
-                    elif isinstance(sub_mod, nn.ReLU):
-                        out_vars = self._same_size_forward()
-                        self._add("RELU", params={}, meta={"in_shape": self.shape, "out_shape": self.shape},
-                                  in_vars=self.prev_out, out_vars=out_vars)
-                        self.prev_out = out_vars
-                    elif isinstance(sub_mod, nn.Conv2d):
-                        # For CNN models - approximate with a linear transformation for verification
-                        # This is a simplified approach suitable for small networks
-                        
-                        # Try to infer output size by doing a forward pass
-                        try:
-                            # Create a dummy input with the current shape
-                            if len(self.shape) == 2:  # (1, features)
-                                # Assume square image and infer dimensions
+                    elif isinstance(sub_mod, (nn.Flatten, nn.Linear, nn.ReLU, nn.Conv2d)):
+                        # Reuse the same conversion logic as above
+                        if isinstance(sub_mod, nn.Flatten):
+                            out_vars = self._same_size_forward()
+                            flattened_shape = (1, _prod(self.shape[1:]))
+                            self._add(LayerKind.FLATTEN.value, params={}, 
+                                      meta={"input_shape": self.shape, "output_shape": flattened_shape},
+                                      in_vars=self.prev_out, out_vars=out_vars)
+                            self.shape = flattened_shape
+                            self.prev_out = out_vars
+                        elif isinstance(sub_mod, nn.Linear):
+                            outF = int(sub_mod.out_features)
+                            W = sub_mod.weight.detach().clone()
+                            bvec = sub_mod.bias.detach().clone() if sub_mod.bias is not None else torch.zeros(outF, dtype=W.dtype, device=W.device)
+                            
+                            out_vars = self._alloc_ids(outF)
+                            self._add(LayerKind.DENSE.value, params={"W": W, "b": bvec},
+                                      meta={"input_shape": self.shape, "output_shape": (1, outF)},
+                                      in_vars=self.prev_out, out_vars=out_vars)
+                            self.shape = (1, outF)
+                            self.prev_out = out_vars
+                        elif isinstance(sub_mod, nn.ReLU):
+                            out_vars = self._same_size_forward()
+                            self._add(LayerKind.RELU.value, params={}, 
+                                      meta={"input_shape": self.shape, "output_shape": self.shape},
+                                      in_vars=self.prev_out, out_vars=out_vars)
+                            self.prev_out = out_vars
+                        elif isinstance(sub_mod, nn.Conv2d):
+                            # Same Conv2d logic as above
+                            weight = sub_mod.weight.detach().clone()
+                            bias = sub_mod.bias.detach().clone() if sub_mod.bias is not None else None
+                            
+                            if len(self.shape) == 2:
                                 n_features = self.shape[1]
-                                if n_features == 3072:  # CIFAR-10
-                                    dummy_input = torch.zeros(1, 3, 32, 32, dtype=sub_mod.weight.dtype, device=sub_mod.weight.device)
-                                elif n_features == 784:  # MNIST
-                                    dummy_input = torch.zeros(1, 1, 28, 28, dtype=sub_mod.weight.dtype, device=sub_mod.weight.device)
+                                if n_features == 3072:
+                                    input_shape = (1, 3, 32, 32)
+                                elif n_features == 784:
+                                    input_shape = (1, 1, 28, 28)
                                 else:
-                                    # Generic case - assume reasonable square dimensions
                                     channels = sub_mod.in_channels
                                     spatial_size = int((n_features / channels) ** 0.5)
-                                    dummy_input = torch.zeros(1, channels, spatial_size, spatial_size, dtype=sub_mod.weight.dtype, device=sub_mod.weight.device)
+                                    input_shape = (1, channels, spatial_size, spatial_size)
                             else:
-                                dummy_input = torch.zeros(self.shape, dtype=sub_mod.weight.dtype, device=sub_mod.weight.device)
+                                input_shape = self.shape
                             
-                            # Forward pass to get output shape
-                            with torch.no_grad():
-                                dummy_output = sub_mod(dummy_input)
-                                out_features = _prod(dummy_output.shape[1:])
+                            batch, in_c, in_h, in_w = input_shape
+                            out_c = sub_mod.out_channels
+                            out_h = (in_h + 2 * sub_mod.padding[0] - sub_mod.dilation[0] * (sub_mod.kernel_size[0] - 1) - 1) // sub_mod.stride[0] + 1
+                            out_w = (in_w + 2 * sub_mod.padding[1] - sub_mod.dilation[1] * (sub_mod.kernel_size[1] - 1) - 1) // sub_mod.stride[1] + 1
+                            output_shape = (1, out_c, out_h, out_w)
+                            out_features = out_c * out_h * out_w
                             
-                            # Create a simple linear approximation of the conv layer
-                            # This is an approximation for verification purposes
-                            in_features = len(self.prev_out)
-                            W_approx = torch.randn(out_features, in_features, dtype=sub_mod.weight.dtype, device=sub_mod.weight.device) * 0.1
-                            # Create bias vector with correct size (output features, not conv channels)
-                            bvec = torch.zeros(out_features, dtype=W_approx.dtype, device=W_approx.device)
-                            if sub_mod.bias is not None:
-                                # Replicate the conv bias to match the approximated output size
-                                conv_bias = sub_mod.bias.detach().clone()
-                                # Tile the bias to match the spatial dimensions
-                                spatial_size = out_features // len(conv_bias)
-                                if spatial_size > 0:
-                                    bvec = conv_bias.repeat(spatial_size)[:out_features]
-                            
-                            # Decompose weight matrix into positive and negative parts for interval arithmetic
-                            W_pos = torch.clamp(W_approx, min=0)
-                            W_neg = torch.clamp(W_approx, max=0)
+                            params = {"weight": weight}
+                            if bias is not None:
+                                params["bias"] = bias
+                                
+                            meta = {
+                                "input_shape": input_shape,
+                                "output_shape": output_shape,
+                                "kernel_size": sub_mod.kernel_size,
+                                "stride": sub_mod.stride,
+                                "padding": sub_mod.padding,
+                                "dilation": sub_mod.dilation,
+                                "groups": sub_mod.groups,
+                                "in_channels": in_c,
+                                "out_channels": out_c
+                            }
                             
                             out_vars = self._alloc_ids(out_features)
-                            self._add("DENSE", params={"W": W_approx, "W_pos": W_pos, "W_neg": W_neg, "b": bvec},
-                                      meta={"in_shape": self.shape, "out_shape": (1, out_features), "conv_approx": True},
+                            self._add(LayerKind.CONV2D.value, params=params, meta=meta,
                                       in_vars=self.prev_out, out_vars=out_vars)
                             self.shape = (1, out_features)
                             self.prev_out = out_vars
-                            
-                        except Exception as e:
-                            # Fallback: skip conv and continue (for demo purposes)
-                            print(f"  ⚠️  Skipping conv layer due to approximation error: {e}")
-                            continue
-                            
                     else:
                         raise NotImplementedError(f"Unsupported sub-module in Sequential: {type(sub_mod).__name__}")
                 continue
@@ -473,7 +352,11 @@ class TorchToACT:
         succs = {i: ([] if i == len(self.layers) - 1 else [i + 1]) for i in range(len(self.layers))}
         net = Net(layers=self.layers, preds=preds, succs=succs)
 
-        # Final sanity
+        # Validate the created network structure
+        from act.back_end.layer_validation import validate_graph
+        validate_graph(self.layers)  # Pass layers list, not net
+
+        # Final sanity check
         net.assert_last_is_validation()
         return net
 

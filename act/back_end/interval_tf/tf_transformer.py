@@ -3,7 +3,7 @@ import torch
 from typing import List
 from act.back_end.core import Bounds, Con, ConSet, Fact, Layer
 from act.back_end.utils import pwl_meta, bound_var_interval, scale_interval
-from act.back_end.transfer_funs.tf_mlp import tf_concat
+from act.back_end.interval_tf.tf_mlp import tf_concat
 
 def tf_embedding(L: Layer) -> Fact:
     E=L.params["emb_vec"]; B=Bounds(E.clone(), E.clone()); C=ConSet(); C.add_box(L.id,L.out_vars,B); return Fact(B,C)

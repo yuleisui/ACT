@@ -1,48 +1,44 @@
 # Copilot Instructions for Abstract Constraint Transformer (ACT)
 
 ## Project Overview
-ACT is a unified neural network verification framework integrating multiple state-of-the-art verifiers (ERAN, αβ-CROWN) with novel Hybrid Zonotope methods. The core architecture follows a **plugin-based verifier pattern** with standardized input/output specifications.
+ACT is a unified neural network verification framework with a modern three-tier architecture: **Front-End** (data/model/spec processing), **Back-End** (verification core), and **Pipeline** (testing/integration). The framework supports PyTorch-native verification with automatic Torch→ACT conversion and spec-free verification.
 
 ## Architecture Essentials
 
-### Verifier Plugin Pattern
-All verifiers inherit from `BaseVerifier` in `act/interval/base_verifier.py`:
-- **Core method**: `verify(proof, public_inputs)` - main entry point
-- **Shared workflow**: Input validation → Abstract solving → BaB refinement (optional) → Result aggregation
-- **Standard result types**: `VerifyResult.{SAT, UNSAT, UNKNOWN, TIMEOUT}`
+### Three-Tier Architecture
+1. **Front-End** (`act/front_end/`) - User-facing components for data processing
+2. **Back-End** (`act/back_end/`) - Core verification engine with Torch-native analysis
+3. **Pipeline** (`act/pipeline/`) - Testing framework and Torch→ACT integration
 
-### Input Pipeline Flow
-1. **Dataset** (`input_parser/dataset.py`) - Loads MNIST/CIFAR/CSV/VNNLIB with normalization
-2. **InputSpec** (`input_parser/spec.py`) - Handles L∞/L2 perturbations and VNNLIB constraints  
-3. **OutputSpec** - Manages classification labels or custom output constraints
-4. **Model** (`input_parser/model.py`) - ONNX model loading with PyTorch conversion
+### Core Components
+
+#### Front-End (`act/front_end/`)
+- **Loaders** (`loaders/`) - `DatasetLoader`, `ModelLoader`, `SpecLoader` for MNIST/CIFAR/VNNLIB
+- **Specifications** (`specs.py`) - `InputSpec`/`OutputSpec` with `InKind`/`OutKind` enums
+- **Wrapper Layers** (`wrapper_layers.py`) - PyTorch modules for verification: `InputLayer`, `InputAdapterLayer`, `InputSpecLayer`, `OutputSpecLayer`
+- **Model Synthesis** (`model_synthesis.py`) - Advanced model generation and optimization
+- **Device Management** (`device_manager.py`) - GPU-first CUDA device handling
+- **Preprocessors** - Image (`preprocessor_image.py`) and text (`preprocessor_text.py`) processing
+
+#### Back-End (`act/back_end/`)
+- **Core Engine** (`core.py`) - `Net`, `Layer`, `Bounds`, `Con`, `ConSet` data structures
+- **Verification** (`verifier.py`) - Spec-free verification: `verify_once()`, `verify_bab()`
+- **Layer Schema** (`layer_schema.py`) - Layer type definitions and validation rules
+- **Solvers** (`solver/`) - `GurobiSolver`, `TorchLPSolver` for MILP/LP optimization
+- **Transfer Functions** (`transfer_funs/`) - MLP, CNN, RNN, Transformer analysis
+- **Branch-and-Bound** (`bab.py`) - BaB refinement with counterexample validation
+
+#### Pipeline (`act/pipeline/`)
+- **Torch2ACT Converter** (`torch2act.py`) - Automatic PyTorch→ACT Net conversion
+- **Testing Framework** - Mock generation, correctness validation, regression testing
+- **Integration Bridge** (`integration.py`) - Front-end integration for real verification
+- **Configuration** (`config.py`) - YAML-based test scenario management
 
 ### Key Data Structures
-- `SpecType`: `LOCAL_LP` (ε-ball), `LOCAL_VNNLIB` (anchored), `SET_VNNLIB` (global), `SET_BOX`
-- `LPNormType`: `LINF`, `L2`, `L1` for perturbation bounds
-- **VNNLIB parsing**: Complex constraint extraction in `vnnlib_parser.py`
-
-## Novel Hybrid Zonotope Features
-
-### Generator Merging Optimization
-Located in `hybridz_operations.py::MergeParallelGenerators()`:
-```python
-# Enable with --enable_generator_merging --cosine_threshold 0.95
-# Applied automatically at final Linear layer for performance
-center, G_c, G_b, A_c, A_b, b = MergeParallelGenerators(...)
-```
-
-### Relaxation Mechanisms
-- `--relaxation_ratio 0.0`: Full-precision MILP (exact)
-- `--relaxation_ratio 1.0`: Fully-relaxed LP (fast) 
-- `--relaxation_ratio 0.0-1.0`: Hybrid MILP+LP approach
-
-### Memory Management
-Automatic memory estimation with fallback to optimized algorithms:
-```python
-estimated_memory_gb, use_memory_optimized, debug_info = 
-    MemoryUsageEstimationIntersection(abstract_transformer_hz, input_hz)
-```
+- **Verification Results**: `VerifyResult.{SAT, UNSAT, UNKNOWN, TIMEOUT}`
+- **Specifications**: `InKind.{BOX, L_INF, LIN_POLY}`, `OutKind.{SAFETY, ASSERT}`
+- **Core ACT Types**: `Layer` (id, kind, params, meta, vars), `Net` (layers, graph)
+- **Bounds**: Box constraints with `lb`/`ub` tensors for variable ranges
 
 ## Development Workflows
 
@@ -55,10 +51,8 @@ conda activate act-main
 
 ### Running Verification
 ```bash
-cd verifier/
-python main.py \
-  --verifier hybridz --method hybridz_relaxed \
-  --model_path ../models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
+python act/main.py \
+  --model_path models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
   --dataset mnist --spec_type local_lp \
   --start 0 --end 1 --epsilon 0.03 --norm inf \
   --mean 0.1307 --std 0.3081
@@ -66,31 +60,31 @@ python main.py \
 
 ### Testing
 - **Unit tests**: `pytest unit-tests/` (uses `conftest.py` for path setup)
-- **CI patterns**: Environment variable `ACT_CI_MODE=true` for lightweight CI installs
-- **Mock patterns**: See `test_get_sample.py` for BaseVerifier mocking
+- **Pipeline tests**: `python act/pipeline/run_tests.py` for comprehensive validation
+- **Regression tests**: Baseline capture/comparison in `unit-tests/regression_baselines/`
 
 ## Configuration System
 
 ### Dataset Defaults
-Config files in `configs/` provide dataset-specific defaults:
+Config files in `configs/` provide verifier-specific defaults:
 ```ini
-[MNIST]
+[MNIST] # hybridz_defaults.ini
 mean = [0.1307]
 std = [0.3081]
 spec_type = "local_lp"
 ```
 
 ### Verifier Selection
-- **Command loading**: `util/options.py` defines all CLI parameters
-- **Auto-loading**: `load_verifier_default_configs()` in `main.py`
-- **Backend routing**: Factory pattern in `main.py` based on `--verifier` flag
+- **Command loading**: CLI parameters defined across multiple `options.py` files
+- **Backend routing**: Factory pattern in `main.py` based on verifier selection
+- **External integrations**: αβ-CROWN and ERAN wrappers in `wrapper_exts/`
 
 ## Critical Conventions
 
 ### Path Handling
-- **Project root**: Always use `verifier/` as working directory for execution
-- **Import paths**: `sys.path` setup in `conftest.py` enables `from verifier.input_parser import ...`
-- **Model paths**: Relative to project root (`../models/Sample_models/...`)
+- **Project root**: Always use project root as working directory
+- **Model paths**: Relative to project root (`models/Sample_models/...`)
+- **Import structure**: Hierarchical imports following `act/front_end`, `act/back_end`, `act/pipeline`
 
 ### Memory Patterns
 - **Auto-cleanup**: Torch cache clearing in memory-intensive operations
@@ -134,6 +128,7 @@ When writing code for this project, follow these Python best practices:
 - Use f-strings for formatting
 - Follow PEP8 style and PEP257 docstrings
 - Add comments for non-obvious logic
+- If you have modifications, make sure to remove legacy code and also remove backward compatibility to make cleaner code
 
 ### Testing Requirements
 - Write unit tests using `pytest` (preferred) or `unittest`

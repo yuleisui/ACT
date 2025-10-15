@@ -6,8 +6,14 @@ from act.back_end.utils import affine_bounds, pwl_meta, bound_var_interval, scal
 
 # -------- MLP Basics --------
 def tf_dense(L: Layer, Bin: Bounds) -> Fact:
-    B = affine_bounds(L.params["W_pos"], L.params["W_neg"], L.params["b"], Bin)
-    C = ConSet(); C.replace(Con("EQ", tuple(L.out_vars + L.in_vars), {"tag": f"dense:{L.id}", "W": L.params["W"], "b": L.params["b"]}))
+    # Handle parameter compatibility: schema defines W, but optimization uses W_pos/W_neg
+    W = L.params["W"]
+    W_pos = L.params.get("W_pos", torch.clamp(W, min=0))
+    W_neg = L.params.get("W_neg", torch.clamp(W, max=0))
+    b = L.params.get("b", torch.zeros(W.shape[0], device=W.device, dtype=W.dtype))
+    
+    B = affine_bounds(W_pos, W_neg, b, Bin)
+    C = ConSet(); C.replace(Con("EQ", tuple(L.out_vars + L.in_vars), {"tag": f"dense:{L.id}", "W": W, "b": b}))
     C.add_box(L.id, L.out_vars, B); return Fact(B,C)
 
 def tf_bias(L: Layer, Bin: Bounds) -> Fact:
@@ -134,3 +140,116 @@ def tf_power(L: Layer, Bin: Bounds) -> Fact:
     B=Bounds(f(Bin.lb), f(Bin.ub)); C=ConSet()
     C.replace(Con("INEQ", tuple(L.out_vars+L.in_vars), {"tag":f"power:{L.id}","p":p,"segs":pwl_meta(Bin.lb,Bin.ub,2)}))
     C.add_box(L.id,L.out_vars,B); return Fact(B,C)
+
+# -------- Additional Activations --------
+def tf_relu6(L: Layer, Bin: Bounds) -> Fact:
+    """ReLU6: clamp(x, 0, 6)"""
+    l, u = Bin.lb, Bin.ub
+    lb = torch.clamp(l, min=0.0, max=6.0)
+    ub = torch.clamp(u, min=0.0, max=6.0)
+    B = Bounds(lb, ub); C = ConSet()
+    C.replace(Con("INEQ", tuple(L.out_vars + L.in_vars), {"tag": f"relu6:{L.id}"}))
+    C.add_box(L.id, L.out_vars, B); return Fact(B, C)
+
+def tf_hardtanh(L: Layer, Bin: Bounds) -> Fact:
+    """HardTanh: clamp(x, min_val, max_val)"""
+    min_val = float(L.meta.get("min_val", -1.0))
+    max_val = float(L.meta.get("max_val", 1.0))
+    l, u = Bin.lb, Bin.ub
+    lb = torch.clamp(l, min=min_val, max=max_val)
+    ub = torch.clamp(u, min=min_val, max=max_val)
+    B = Bounds(lb, ub); C = ConSet()
+    C.replace(Con("INEQ", tuple(L.out_vars + L.in_vars), {"tag": f"hardtanh:{L.id}", "min_val": min_val, "max_val": max_val}))
+    C.add_box(L.id, L.out_vars, B); return Fact(B, C)
+
+def tf_hardsigmoid(L: Layer, Bin: Bounds) -> Fact:
+    """HardSigmoid: clamp(alpha * x + beta, 0, 1)"""
+    alpha = float(L.meta.get("alpha", 1/6))
+    beta = float(L.meta.get("beta", 0.5))
+    l, u = Bin.lb, Bin.ub
+    # Apply linear transformation then clamp
+    l_linear = alpha * l + beta
+    u_linear = alpha * u + beta
+    lb = torch.clamp(l_linear, min=0.0, max=1.0)
+    ub = torch.clamp(u_linear, min=0.0, max=1.0)
+    B = Bounds(lb, ub); C = ConSet()
+    C.replace(Con("INEQ", tuple(L.out_vars + L.in_vars), {"tag": f"hardsigmoid:{L.id}", "alpha": alpha, "beta": beta}))
+    C.add_box(L.id, L.out_vars, B); return Fact(B, C)
+
+def tf_hardswish(L: Layer, Bin: Bounds) -> Fact:
+    """HardSwish: x * hardsigmoid(x)"""
+    l, u = Bin.lb, Bin.ub
+    # HardSwish bounds are complex, use conservative approximation
+    lb = torch.where(l >= 3, l, torch.where(l <= -3, torch.zeros_like(l), torch.minimum(l, torch.zeros_like(l))))
+    ub = torch.where(u >= 3, u, torch.where(u <= -3, torch.zeros_like(u), torch.maximum(u, torch.zeros_like(u))))
+    B = Bounds(lb, ub); C = ConSet()
+    C.replace(Con("INEQ", tuple(L.out_vars + L.in_vars), {"tag": f"hardswish:{L.id}"}))
+    C.add_box(L.id, L.out_vars, B); return Fact(B, C)
+
+def tf_mish(L: Layer, Bin: Bounds) -> Fact:
+    """Mish: x * tanh(softplus(x))"""
+    l, u = Bin.lb, Bin.ub
+    # Conservative bounds for Mish activation
+    lb = torch.where(l >= 0, 0.0 * l, l)  # Negative values bounded by input
+    ub = torch.where(u <= 0, 0.0 * u, u)  # Positive values bounded by input
+    B = Bounds(lb, ub); C = ConSet()
+    C.replace(Con("INEQ", tuple(L.out_vars + L.in_vars), {"tag": f"mish:{L.id}"}))
+    C.add_box(L.id, L.out_vars, B); return Fact(B, C)
+
+def tf_softsign(L: Layer, Bin: Bounds) -> Fact:
+    """SoftSign: x / (1 + |x|)"""
+    l, u = Bin.lb, Bin.ub
+    # SoftSign is bounded between -1 and 1
+    lb = l / (1 + torch.abs(l))
+    ub = u / (1 + torch.abs(u))
+    B = Bounds(lb, ub); C = ConSet()
+    C.replace(Con("INEQ", tuple(L.out_vars + L.in_vars), {"tag": f"softsign:{L.id}"}))
+    C.add_box(L.id, L.out_vars, B); return Fact(B, C)
+
+# -------- Tensor Operations --------
+def tf_reshape(L: Layer, Bin: Bounds) -> Fact:
+    """Reshape: identity operation for bounds propagation"""
+    # Reshape doesn't change the values, only the tensor shape
+    B = Bounds(Bin.lb.clone(), Bin.ub.clone())
+    C = ConSet()
+    C.replace(Con("EQ", tuple(L.out_vars + L.in_vars), {"tag": f"reshape:{L.id}", "target_shape": L.meta.get("target_shape")}))
+    C.add_box(L.id, L.out_vars, B); return Fact(B, C)
+
+def tf_transpose(L: Layer, Bin: Bounds) -> Fact:
+    """Transpose: permute dimensions (identity for bounds)"""
+    # Transpose doesn't change the values, only the dimension order
+    B = Bounds(Bin.lb.clone(), Bin.ub.clone())
+    C = ConSet()
+    C.replace(Con("EQ", tuple(L.out_vars + L.in_vars), {"tag": f"transpose:{L.id}", "perm": L.meta.get("perm")}))
+    C.add_box(L.id, L.out_vars, B); return Fact(B, C)
+
+def tf_squeeze(L: Layer, Bin: Bounds) -> Fact:
+    """Squeeze: remove singleton dimensions (identity for bounds)"""
+    B = Bounds(Bin.lb.clone(), Bin.ub.clone())
+    C = ConSet()
+    C.replace(Con("EQ", tuple(L.out_vars + L.in_vars), {"tag": f"squeeze:{L.id}", "dims": L.meta.get("dims")}))
+    C.add_box(L.id, L.out_vars, B); return Fact(B, C)
+
+def tf_unsqueeze(L: Layer, Bin: Bounds) -> Fact:
+    """Unsqueeze: add singleton dimensions (identity for bounds)"""
+    B = Bounds(Bin.lb.clone(), Bin.ub.clone())
+    C = ConSet()
+    C.replace(Con("EQ", tuple(L.out_vars + L.in_vars), {"tag": f"unsqueeze:{L.id}", "dims": L.meta.get("dims")}))
+    C.add_box(L.id, L.out_vars, B); return Fact(B, C)
+
+def tf_tile(L: Layer, Bin: Bounds) -> Fact:
+    """Tile: repeat tensor along dimensions"""
+    # Conservative bounds: same as input for each repetition
+    repeats = L.meta.get("repeats", [1])
+    B = Bounds(Bin.lb.clone(), Bin.ub.clone())
+    C = ConSet()
+    C.replace(Con("EQ", tuple(L.out_vars + L.in_vars), {"tag": f"tile:{L.id}", "repeats": repeats}))
+    C.add_box(L.id, L.out_vars, B); return Fact(B, C)
+
+def tf_expand(L: Layer, Bin: Bounds) -> Fact:
+    """Expand: broadcast tensor to larger shape"""
+    # Broadcasting doesn't change values, only shape
+    B = Bounds(Bin.lb.clone(), Bin.ub.clone())
+    C = ConSet()
+    C.replace(Con("EQ", tuple(L.out_vars + L.in_vars), {"tag": f"expand:{L.id}", "shape": L.meta.get("shape")}))
+    C.add_box(L.id, L.out_vars, B); return Fact(B, C)

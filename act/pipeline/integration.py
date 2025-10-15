@@ -310,10 +310,10 @@ class ACTFrontendBridge:
                 
                 return model(x_reshaped)
             
-            # Configure solvers to test (like driver.py)
+            # Configure solvers to test - prefer GPU-enabled solvers
             solvers_to_test = [
-                ("Gurobi MILP", lambda: GurobiSolver()),
-                ("PyTorch LP", lambda: TorchLPSolver())
+                ("PyTorch LP (GPU)", lambda: TorchLPSolver()),  # GPU-enabled solver first
+                ("Gurobi MILP", lambda: GurobiSolver())         # CPU fallback
             ]
             
             verification_results = []

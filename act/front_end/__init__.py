@@ -24,9 +24,9 @@ Usage:
 from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
 
 # Preprocessors
-from act.front_end.preprocessor_base import Preprocessor, ModelSignature  
-from act.front_end.preprocessor_image import ImgPre
-from act.front_end.preprocessor_text import TextPre
+from act.front_end.raw_processors.preprocessor_base import Preprocessor, ModelSignature  
+from act.front_end.raw_processors.preprocessor_image import ImgPre
+from act.front_end.raw_processors.preprocessor_text import TextPre
 
 # Model and data loading
 from act.front_end.loaders import ModelLoader, ModelMetadata, DatasetLoader, SpecLoader

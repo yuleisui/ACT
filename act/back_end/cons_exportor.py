@@ -4,17 +4,18 @@ import torch
 from typing import Optional, Tuple
 from act.back_end.core import ConSet
 from act.back_end.solver.solver_base import Solver
+from act.front_end.device_manager import get_default_device, get_default_dtype
 
 def to_numpy(x) -> np.ndarray:
     try:
         if isinstance(x, torch.Tensor):
-            # Use current default dtype
-            current_dtype = torch.get_default_dtype()
+            # Use current default dtype and ensure proper device handling
+            current_dtype = get_default_dtype()
             return x.detach().to("cpu", dtype=current_dtype).numpy()
     except Exception:
         pass
     # Use the global dtype for numpy conversion too
-    current_dtype = torch.get_default_dtype()
+    current_dtype = get_default_dtype()
     if current_dtype == torch.float16:
         np_dtype = np.float16
     elif current_dtype == torch.float32:
@@ -25,8 +26,9 @@ def to_numpy(x) -> np.ndarray:
 
 def export_to_solver(globalC: ConSet, solver: Solver,
                      objective: Optional[Tuple[np.ndarray, float]]=None, sense="min") -> int:
-    # 0) pass a device hint (CPU) to CPU solvers; GPU solvers could use this
-    dev_hint = "cpu"  # mainstream MILP/LP are CPU; keep for future backends
+    # Use device manager to get optimal device hint
+    default_device = get_default_device()
+    dev_hint = str(default_device)  # Use global device manager default
     
     # Only initialize solver if it hasn't been pre-configured
     if hasattr(solver, 'n') and solver.n == 0:

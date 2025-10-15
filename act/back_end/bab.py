@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Optional, List, Callable, Dict, Any
 from act.back_end.core import Bounds, Con, ConSet
 from act.back_end.solver.solver_base import Solver, SolveStatus
+from act.front_end.device_manager import get_default_device, get_default_dtype
 
 # Import specification classes from front_end
 from act.front_end.specs import InKind, InputSpec, OutKind, OutputSpec
@@ -23,15 +24,20 @@ class VerifResult:
 
 def seed_from_input_spec(I: InputSpec) -> Bounds:
     if I.kind==InKind.BOX:       return Bounds(I.lb.clone(), I.ub.clone())
-    if I.kind==InKind.LINF_BALL: return Bounds(I.center - torch.tensor(I.eps, dtype=I.center.dtype, device=I.center.device),
-                                               I.center + torch.tensor(I.eps, dtype=I.center.dtype, device=I.center.device))
+    if I.kind==InKind.LINF_BALL: 
+        device = get_default_device()
+        dtype = get_default_dtype()
+        eps_tensor = torch.tensor(I.eps, dtype=dtype, device=device)
+        return Bounds(I.center - eps_tensor, I.center + eps_tensor)
     if I.kind==InKind.LIN_POLY:  raise ValueError("LIN_POLY needs a seed box")
     raise NotImplementedError
 
 def add_input_spec(globalC: ConSet, input_ids: List[int], I: InputSpec):
     if I.kind==InKind.BOX:       globalC.add_box(-1, input_ids, Bounds(I.lb, I.ub))
     elif I.kind==InKind.LINF_BALL:
-        e=torch.tensor(I.eps, dtype=I.center.dtype, device=I.center.device)
+        device = get_default_device()
+        dtype = get_default_dtype()
+        e = torch.tensor(I.eps, dtype=dtype, device=device)
         globalC.add_box(-1, input_ids, Bounds(I.center-e, I.center+e))
     elif I.kind==InKind.LIN_POLY:
         globalC.replace(Con("INEQ", tuple(input_ids), {"tag": "in:linpoly", "A": I.A, "b": I.b}))
@@ -109,8 +115,11 @@ def branch(B: Bounds, d: int) -> tuple[Bounds, Bounds]:
 
 @torch.no_grad()
 def forward_model_eval(model_fn: Callable[[torch.Tensor], torch.Tensor], x_np: np.ndarray) -> np.ndarray:
-    x = torch.from_numpy(x_np)  # torch.from_numpy already creates tensor, no need for as_tensor
-    y = model_fn(x).detach().cpu().numpy(); return y
+    device = get_default_device()
+    dtype = get_default_dtype()
+    x = torch.from_numpy(x_np).to(device=device, dtype=dtype)
+    y = model_fn(x).detach().cpu().numpy()
+    return y
 
 def violates_property(y: np.ndarray, O: OutputSpec) -> bool:
     if O.kind==OutKind.LINEAR_LE:   return float(np.dot(np.asarray(O.c,float), y)) >= float(O.d) + 1e-8
