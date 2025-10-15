@@ -12,6 +12,10 @@ from act.back_end.transfer_funs.tf_rnn import *
 @torch.no_grad()
 def dispatch_tf(L, before, after, net):
     k = L.kind.upper()
+    # Special constraint-only layers (identity transformations)
+    if k=="INPUT":      return Fact(bounds=before[L.id].bounds, cons=ConSet())
+    if k=="INPUT_SPEC": return Fact(bounds=before[L.id].bounds, cons=ConSet())
+    if k=="ASSERT":     return Fact(bounds=before[L.id].bounds, cons=ConSet())
     # MLP basics
     if k=="DENSE": return tf_dense(L, before[L.id].bounds)
     if k=="BIAS":  return tf_bias(L, before[L.id].bounds)
@@ -48,9 +52,9 @@ def dispatch_tf(L, before, after, net):
     if k=="POSENC":     return tf_posenc(L, before[L.id].bounds)
     if k=="LAYERNORM":  return tf_layernorm(L, before[L.id].bounds)
     if k=="GELU":       return tf_gelu(L, before[L.id].bounds)
-    if k=="ATT_SCORES": return tf_att_scores(L, before[L.params["q_src"]].bounds, before[L.params["k_src"]].bounds)
+    if k=="ATT_SCORES": return tf_att_scores(L, before[L.meta["q_src"]].bounds, before[L.meta["k_src"]].bounds)
     if k=="SOFTMAX":    return tf_softmax(L, before[L.id].bounds)
-    if k=="ATT_MIX":    return tf_att_mix(L, before[L.params["w_src"]].bounds, before[L.params["v_src"]].bounds)
+    if k=="ATT_MIX":    return tf_att_mix(L, before[L.meta["w_src"]].bounds, before[L.meta["v_src"]].bounds)
     if k=="MHA_SPLIT":  return tf_mha_split(L, before[L.id].bounds)
     if k=="MHA_JOIN":   return tf_mha_join(L, [after[p].bounds for p in net.preds[L.id]])
     if k=="MASK_ADD":   return tf_mask_add(L, before[L.id].bounds)

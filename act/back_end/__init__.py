@@ -48,24 +48,14 @@ from .transfer_funs.tf_transformer import (
 # Analysis algorithms
 from .analyze import dispatch_tf, analyze
 
-# Constraint export
-from .cons_exportor import export_to_solver, to_numpy
-
 # Solver interfaces
 from .solver.solver_base import Solver, SolverCaps, SolveStatus
 from .solver.solver_gurobi import GurobiSolver
-from .solver.solver_torch import TorchLPSolver
 
-# Verification specifications
-from .verify_status import (
-    VerifStatus, VerifResult,
-    seed_from_input_spec, add_input_spec, materialise_input_poly,
-    add_negated_output_spec_to_solver, verify_once
-)
-from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
-
-# Branch-and-bound verification
-from .bab import BabNode, verify_bab
+# Note: TorchLPSolver and some verification functions are available 
+# via direct import to avoid circular dependencies:
+# from act.back_end.bab import VerifStatus, VerifResult, verify_once, etc.
+# from act.back_end.solver.solver_torch import TorchLPSolver
 
 __all__ = [
     # Core

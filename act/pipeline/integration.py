@@ -23,10 +23,9 @@ sys.path.insert(0, str(act_root))
 
 from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
 from act.front_end.loaders import ModelLoader, DatasetLoader, SpecLoader
-from act.front_end.batch import SampleRecord
 from act.front_end.device_manager import get_current_settings
 from act.back_end.core import Net, Layer, Bounds
-from act.back_end.verify_status import VerifStatus, VerifResult, verify_once, seed_from_input_spec
+from act.back_end.bab import VerifStatus, VerifResult, verify_once, seed_from_input_spec
 from act.back_end.solver.solver_gurobi import GurobiSolver
 from act.back_end.solver.solver_torch import TorchLPSolver
 from act.back_end.bab import verify_bab
@@ -301,7 +300,7 @@ class ACTFrontendBridge:
                 if x.device != model_device:
                     x = x.to(model_device)
                 
-                # Handle input reshaping like demo_driver does
+                # Handle input reshaping for different dataset formats
                 if x.numel() == 3072:  # CIFAR-10: 32x32x3 = 3072
                     x_reshaped = x.view(1, 3, 32, 32)
                 elif x.numel() == 784:  # MNIST: 28x28 = 784  
@@ -472,7 +471,9 @@ class ACTFrontendBridge:
                     kind="CONV2D",
                     params={
                         "weight": weight,
-                        "bias": bias,
+                        "bias": bias
+                    },
+                    meta={
                         "stride": module.stride,
                         "padding": module.padding,
                         "dilation": module.dilation,
@@ -507,7 +508,8 @@ class ACTFrontendBridge:
                 maxpool_layer = Layer(
                     id=layer_id,
                     kind="MAXPOOL2D",
-                    params={
+                    params={},
+                    meta={
                         "kernel_size": module.kernel_size,
                         "stride": module.stride,
                         "padding": module.padding,
@@ -541,7 +543,8 @@ class ACTFrontendBridge:
                 avgpool_layer = Layer(
                     id=layer_id,
                     kind="AVGPOOL2D",
-                    params={
+                    params={},
+                    meta={
                         "kernel_size": module.kernel_size,
                         "stride": module.stride,
                         "padding": module.padding,
@@ -569,7 +572,8 @@ class ACTFrontendBridge:
                 flatten_layer = Layer(
                     id=layer_id,
                     kind="FLATTEN",
-                    params={
+                    params={},
+                    meta={
                         "input_shape": input_shape,
                         "output_shape": output_shape
                     },
@@ -598,6 +602,7 @@ class ACTFrontendBridge:
                     id=layer_id,
                     kind="DENSE",
                     params={"W": W, "W_pos": W_pos, "W_neg": W_neg, "b": b},  # Match driver.py format
+                    meta={},
                     in_vars=current_vars.copy(),
                     out_vars=out_vars,
                     cache={}
@@ -641,7 +646,9 @@ class ACTFrontendBridge:
                         "weight_ih": weight_ih,
                         "weight_hh": weight_hh,
                         "bias_ih": bias_ih,
-                        "bias_hh": bias_hh,
+                        "bias_hh": bias_hh
+                    },
+                    meta={
                         "input_size": input_size,
                         "hidden_size": hidden_size,
                         "num_layers": num_layers,
@@ -694,7 +701,9 @@ class ACTFrontendBridge:
                         "weight_ih": weight_ih,
                         "weight_hh": weight_hh,
                         "bias_ih": bias_ih,
-                        "bias_hh": bias_hh,
+                        "bias_hh": bias_hh
+                    },
+                    meta={
                         "input_size": input_size,
                         "hidden_size": hidden_size,
                         "num_layers": num_layers,
@@ -748,7 +757,9 @@ class ACTFrontendBridge:
                         "weight_ih": weight_ih,
                         "weight_hh": weight_hh,
                         "bias_ih": bias_ih,
-                        "bias_hh": bias_hh,
+                        "bias_hh": bias_hh
+                    },
+                    meta={
                         "input_size": input_size,
                         "hidden_size": hidden_size,
                         "num_layers": num_layers,
@@ -794,7 +805,9 @@ class ACTFrontendBridge:
                     id=layer_id,
                     kind="EMBEDDING",
                     params={
-                        "weight": weight,
+                        "weight": weight
+                    },
+                    meta={
                         "num_embeddings": num_embeddings,
                         "embedding_dim": embedding_dim,
                         "padding_idx": padding_idx,
@@ -818,6 +831,7 @@ class ACTFrontendBridge:
                     id=layer_id,
                     kind="RELU",
                     params={},
+                    meta={},
                     in_vars=current_vars.copy(),
                     out_vars=current_vars.copy(),
                     cache={}
@@ -856,7 +870,7 @@ class ACTFrontendBridge:
         for layer in layers:
             logger.info(f"  Layer {layer.id}: {layer.kind}")
         
-        # Return tuple like demo_driver: (net, entry_id, input_ids, output_ids)
+        # Return tuple format: (net, entry_id, input_ids, output_ids)
         entry_id = 0  # First layer is entry point
         input_ids = list(range(input_size))  # Input variable IDs
         output_ids = layers[-1].out_vars if layers else []  # Output variable IDs from last layer
