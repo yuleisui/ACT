@@ -148,11 +148,26 @@ class Layer:
     out_vars: List[int]                        # Output variable indices
     cache: Dict[str, torch.Tensor] = field(default_factory=dict)  # Runtime cache tensors
 
+    def is_validation(self) -> bool:
+        return self.kind == "ASSERT"
+    
+
 @dataclass
 class Net:
     layers: List[Layer]
     preds: Dict[int, List[int]]
     succs: Dict[int, List[int]]
     by_id: Dict[int, Layer] = field(init=False)
+    
     def __post_init__(self):
         self.by_id = {L.id: L for L in self.layers}
+
+    # helpers
+    def last_validation(self) -> Optional[Layer]:
+        for L in reversed(self.layers):
+            if L.is_validation(): return L
+        return None
+
+    def assert_last_is_validation(self) -> None:
+        if not self.layers or not self.layers[-1].is_validation():
+            raise ValueError(f"Expected last layer to be ASSERT, got {self.layers[-1].kind if self.layers else 'EMPTY'}")

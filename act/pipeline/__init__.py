@@ -62,6 +62,13 @@ from .utils import (
     ProgressTracker
 )
 
+# Import torch2act module (moved from front_end)
+try:
+    from .torch2act import TorchToACT
+except ImportError:
+    # torch2act module not available
+    TorchToACT = None
+
 import logging
 from typing import Dict, Any, Optional
 
@@ -263,6 +270,7 @@ __all__ = [
     "PipelineValidator",
     "PerformanceProfiler",
     "ParallelExecutor",
+    "TorchToACT",  # Torch to ACT converter (moved from front_end)
     
     # Data classes
     "TestCase",

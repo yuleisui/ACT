@@ -13,20 +13,23 @@ from typing import Dict, Any, Optional, List, Tuple, Union
 # ------------------- Model Inference Function --------------------------------
 # Main model inference function
 # -----------------------------------------------------------------------------
-def model_inference(models: Dict[str, nn.Sequential], input_data: Dict[str, Dict[str, torch.Tensor]]) -> None:
+def model_inference(models: Dict[str, nn.Sequential], input_data: Dict[str, Dict[str, torch.Tensor]]) -> Dict[str, nn.Sequential]:
     """
     Test all wrapped models with their respective inputs and provide execution statistics.
     
     Args:
         models: Dict[combo_id, nn.Sequential] - Synthesized wrapped models to test
         input_data: Dict[dataset_name, data_pack] - Input data for testing models
+        
+    Returns:
+        Dict[combo_id, nn.Sequential] - Successfully inferred models only
     """
     print(f"\n🔧 Testing {len(models)} models...")
     
     # Handle case where no models were generated
     if not models:
         print("⚠️  No models to test - check spec generation and synthesis configuration")
-        return
+        return {}
     
     # Group by dataset for organized testing
     by_dataset = {}
@@ -39,6 +42,7 @@ def model_inference(models: Dict[str, nn.Sequential], input_data: Dict[str, Dict
     success_count = 0
     failure_count = 0
     failure_summary = {}  # Track unique failure types
+    successful_models = {}  # Track successfully inferred models
     
     for dataset_name, models_list in by_dataset.items():
         test_input = input_data[dataset_name]["x"]
@@ -51,6 +55,7 @@ def model_inference(models: Dict[str, nn.Sequential], input_data: Dict[str, Dict
                     output = model(test_input)
                     success_count += 1
                     dataset_successes += 1
+                    successful_models[combo_id] = model  # Store successful model
             except Exception as e:
                 failure_count += 1
                 # Track unique failure patterns
@@ -77,6 +82,8 @@ def model_inference(models: Dict[str, nn.Sequential], input_data: Dict[str, Dict
         #     model_name, dataset_name = first_pattern.split(" + ")
         #     print(f"\n🔍 DETAILED ANALYSIS (example):")
         #     print(explain_architecture_mismatch(model_name, dataset_name, list(failure_summary.values())[0]['error']))
+    
+    return successful_models
         
 # -----------------------------------------------------------------------------
 # Helper functions for user-friendly error explanations

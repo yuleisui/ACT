@@ -23,10 +23,9 @@ sys.path.insert(0, str(act_root))
 
 from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
 from act.front_end.loaders import ModelLoader, DatasetLoader, SpecLoader
-from act.front_end.batch import SampleRecord
 from act.front_end.device_manager import get_current_settings
 from act.back_end.core import Net, Layer, Bounds
-from act.back_end.verify_status import VerifStatus, VerifResult, verify_once, seed_from_input_spec
+from act.back_end.bab import VerifStatus, VerifResult, verify_once, seed_from_input_spec
 from act.back_end.solver.solver_gurobi import GurobiSolver
 from act.back_end.solver.solver_torch import TorchLPSolver
 from act.back_end.bab import verify_bab
@@ -301,7 +300,7 @@ class ACTFrontendBridge:
                 if x.device != model_device:
                     x = x.to(model_device)
                 
-                # Handle input reshaping like demo_driver does
+                # Handle input reshaping for different dataset formats
                 if x.numel() == 3072:  # CIFAR-10: 32x32x3 = 3072
                     x_reshaped = x.view(1, 3, 32, 32)
                 elif x.numel() == 784:  # MNIST: 28x28 = 784  
@@ -871,7 +870,7 @@ class ACTFrontendBridge:
         for layer in layers:
             logger.info(f"  Layer {layer.id}: {layer.kind}")
         
-        # Return tuple like demo_driver: (net, entry_id, input_ids, output_ids)
+        # Return tuple format: (net, entry_id, input_ids, output_ids)
         entry_id = 0  # First layer is entry point
         input_ids = list(range(input_size))  # Input variable IDs
         output_ids = layers[-1].out_vars if layers else []  # Output variable IDs from last layer

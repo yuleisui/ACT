@@ -28,7 +28,7 @@ from act.pipeline.config import load_config
 
 # Import real back_end verifier components
 from act.back_end.core import Net, Layer, Bounds
-from act.back_end.verify_status import VerifStatus, VerifResult, seed_from_input_spec
+from act.back_end.bab import VerifStatus, VerifResult, seed_from_input_spec
 from act.back_end.bab import verify_bab
 from act.back_end.solver.solver_gurobi import GurobiSolver
 from act.back_end.solver.solver_torch import TorchLPSolver

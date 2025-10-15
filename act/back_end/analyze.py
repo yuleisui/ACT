@@ -12,6 +12,10 @@ from act.back_end.transfer_funs.tf_rnn import *
 @torch.no_grad()
 def dispatch_tf(L, before, after, net):
     k = L.kind.upper()
+    # Special constraint-only layers (identity transformations)
+    if k=="INPUT":      return Fact(bounds=before[L.id].bounds, cons=ConSet())
+    if k=="INPUT_SPEC": return Fact(bounds=before[L.id].bounds, cons=ConSet())
+    if k=="ASSERT":     return Fact(bounds=before[L.id].bounds, cons=ConSet())
     # MLP basics
     if k=="DENSE": return tf_dense(L, before[L.id].bounds)
     if k=="BIAS":  return tf_bias(L, before[L.id].bounds)

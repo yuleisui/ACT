@@ -763,7 +763,8 @@ if __name__ == "__main__":
     # Step 1: Synthesize all wrapped models
     wrapped_models, input_data = model_synthesis()
     
-    # Step 2: Test all models with inference
-    model_inference(wrapped_models, input_data)
+    # Step 2: Test all models with inference and get successful ones
+    successful_models = model_inference(wrapped_models, input_data)
     
+    print(f"\n✅ Successfully inferred {len(successful_models)} out of {len(wrapped_models)} models")
     print(f"\n🎯 REAL SPECLOADER INTEGRATION: COMPLETE ✅")
