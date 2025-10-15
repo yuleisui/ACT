@@ -49,6 +49,11 @@ class TorchLPSolver(Solver):
         return self._n
 
     def begin(self, name: str = "verify", device: Optional[str] = None):
+        # Use global device manager for default, allow override
+        if device is not None:
+            self._device = torch.device(device)
+        # else keep the device_manager default from __init__
+        
         self._n = 0
         self._x = None
         self._lb = None
@@ -64,13 +69,15 @@ class TorchLPSolver(Solver):
             return
         if self._n == 0:
             self._n = n
-            self._lb = torch.full((n,), -np.inf)
-            self._ub = torch.full((n,), +np.inf)
+            # Create tensors on the correct device and dtype
+            self._lb = torch.full((n,), -np.inf, device=self._device, dtype=self._dtype)
+            self._ub = torch.full((n,), +np.inf, device=self._device, dtype=self._dtype)
         else:
             old_n = self._n
             self._n += n
-            self._lb = torch.cat([self._lb, torch.full((n,), -np.inf)])
-            self._ub = torch.cat([self._ub, torch.full((n,), +np.inf)])
+            # Extend tensors on the correct device and dtype
+            self._lb = torch.cat([self._lb, torch.full((n,), -np.inf, device=self._device, dtype=self._dtype)])
+            self._ub = torch.cat([self._ub, torch.full((n,), +np.inf, device=self._device, dtype=self._dtype)])
 
     def add_binary_vars(self, n: int) -> List[int]:
         start = self._n
@@ -82,8 +89,9 @@ class TorchLPSolver(Solver):
         return idxs
 
     def set_bounds(self, idxs: List[int], lb: np.ndarray, ub: np.ndarray) -> None:
-        lb_t = torch.as_tensor(lb)
-        ub_t = torch.as_tensor(ub)
+        # Convert to tensors with correct device and dtype
+        lb_t = torch.as_tensor(lb, device=self._device, dtype=self._dtype)
+        ub_t = torch.as_tensor(ub, device=self._device, dtype=self._dtype)
         self._lb[idxs] = lb_t
         self._ub[idxs] = ub_t
 
@@ -132,11 +140,12 @@ class TorchLPSolver(Solver):
 
         def rows_to_dense(rows):
             if not rows:
-                return torch.zeros((0, self._n)), torch.zeros((0,))
-            A = torch.zeros((len(rows), self._n))
-            b = torch.zeros((len(rows),))
+                return torch.zeros((0, self._n), device=self._device, dtype=self._dtype), \
+                       torch.zeros((0,), device=self._device, dtype=self._dtype)
+            A = torch.zeros((len(rows), self._n), device=self._device, dtype=self._dtype)
+            b = torch.zeros((len(rows),), device=self._device, dtype=self._dtype)
             for r, (vids, coeffs, rhs) in enumerate(rows):
-                A[r, torch.as_tensor(vids, device=self._device)] = torch.as_tensor(coeffs)
+                A[r, torch.as_tensor(vids, device=self._device)] = torch.as_tensor(coeffs, device=self._device, dtype=self._dtype)
                 b[r] = float(rhs)
             return A, b
 
@@ -144,9 +153,9 @@ class TorchLPSolver(Solver):
         Ale, ble = rows_to_dense(self._le)
 
         vids, coeffs, c0, sense = self._objective
-        c = torch.zeros((self._n,), requires_grad=False)
+        c = torch.zeros((self._n,), device=self._device, dtype=self._dtype, requires_grad=False)
         if vids:
-            c[torch.as_tensor(vids, device=self._device)] = torch.as_tensor(coeffs)
+            c[torch.as_tensor(vids, device=self._device)] = torch.as_tensor(coeffs, device=self._device, dtype=self._dtype)
 
         t_end = None if timelimit is None else (time.time() + float(timelimit))
         self._status = SolveStatus.UNKNOWN
@@ -173,13 +182,19 @@ class TorchLPSolver(Solver):
 
                 # Add constraint penalties
                 if Aeq.shape[0] > 0:
+                    # Ensure constraint matrices are on same device
+                    Aeq_device = Aeq.to(device=self._x.device, dtype=self._x.dtype)
+                    beq_device = beq.to(device=self._x.device, dtype=self._x.dtype)
                     for i in range(Aeq.shape[0]):
-                        violation = torch.sum(Aeq[i] * self._x) - beq[i]
+                        violation = torch.sum(Aeq_device[i] * self._x) - beq_device[i]
                         obj = obj + self.rho_eq * violation * violation
 
                 if Ale.shape[0] > 0:
+                    # Ensure constraint matrices are on same device
+                    Ale_device = Ale.to(device=self._x.device, dtype=self._x.dtype)
+                    ble_device = ble.to(device=self._x.device, dtype=self._x.dtype)
                     for i in range(Ale.shape[0]):
-                        violation = torch.sum(Ale[i] * self._x) - ble[i]
+                        violation = torch.sum(Ale_device[i] * self._x) - ble_device[i]
                         obj = obj + self.rho_ineq * torch.relu(violation)**2
 
                 # Perform backward pass within gradient context
@@ -189,7 +204,10 @@ class TorchLPSolver(Solver):
 
             # Project to box constraints while preserving Parameter status
             with torch.no_grad():
-                x_clamped = torch.minimum(torch.maximum(self._x, self._lb), self._ub)
+                # Ensure bounds are on the same device as _x
+                lb_device = self._lb.to(device=self._x.device, dtype=self._x.dtype)
+                ub_device = self._ub.to(device=self._x.device, dtype=self._x.dtype)
+                x_clamped = torch.minimum(torch.maximum(self._x, lb_device), ub_device)
                 self._x.data.copy_(x_clamped)  # Use .data.copy_ to preserve Parameter wrapper
                 # Ensure gradients are still enabled after projection
                 if not self._x.requires_grad:
@@ -198,9 +216,15 @@ class TorchLPSolver(Solver):
             max_viol = 0.0
             with torch.no_grad():
                 if Aeq.shape[0] > 0:
-                    max_viol = max(max_viol, float(torch.max(torch.abs(Aeq @ self._x - beq)).item()))
+                    # Ensure matrix operations are on same device
+                    Aeq_device = Aeq.to(device=self._x.device, dtype=self._x.dtype)
+                    beq_device = beq.to(device=self._x.device, dtype=self._x.dtype)
+                    max_viol = max(max_viol, float(torch.max(torch.abs(Aeq_device @ self._x - beq_device)).item()))
                 if Ale.shape[0] > 0:
-                    max_viol = max(max_viol, float(torch.max(torch.relu(Ale @ self._x - ble)).item()))
+                    # Ensure matrix operations are on same device
+                    Ale_device = Ale.to(device=self._x.device, dtype=self._x.dtype)
+                    ble_device = ble.to(device=self._x.device, dtype=self._x.dtype)
+                    max_viol = max(max_viol, float(torch.max(torch.relu(Ale_device @ self._x - ble_device)).item()))
 
             if max_viol <= self.tol_feas:
                 self._status = SolveStatus.OPTIMAL
