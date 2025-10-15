@@ -4,7 +4,7 @@ from typing import Optional, Tuple, Any
 import torch
 from pathlib import Path
 from act.front_end.device_manager import get_default_device, get_default_dtype
-from act.front_end.preprocessor_base import Preprocessor, ModelSignature
+from act.front_end.raw_processors.preprocessor_base import Preprocessor, ModelSignature
 from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
 from act.front_end.utils_image import to_torch_image, resize_center_crop_chw, chw_to_hwc_uint8
 

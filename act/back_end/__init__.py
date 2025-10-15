@@ -29,21 +29,19 @@ from .core import Bounds, Con, ConSet, Fact, Layer, Net
 from .utils import box_join, changed_or_maskdiff, update_cache, affine_bounds
 from .utils import pwl_meta, bound_var_interval, scale_interval
 
-# Transfer functions
-from .transfer_funs.tf_mlp import (
-    tf_dense, tf_bias, tf_scale, tf_relu, tf_lrelu, tf_abs, tf_clip,
-    tf_add, tf_mul, tf_concat, tf_bn
+# Transfer function interface
+from .transfer_function import (
+    TransferFunction, AnalysisContext, 
+    set_transfer_function, get_transfer_function, set_transfer_function_mode,
+    dispatch_tf
 )
-from .transfer_funs.tf_cnn import (
-    tf_conv2d, tf_maxpool2d, tf_avgpool2d, tf_flatten
-)
-from .transfer_funs.tf_rnn import (
-    tf_lstm, tf_gru, tf_rnn, tf_embedding
-)
-from .transfer_funs.tf_transformer import (
-    tf_embedding, tf_posenc, tf_layernorm, tf_gelu, tf_att_scores,
-    tf_softmax, tf_att_mix, tf_mha_split, tf_mha_join, tf_mask_add
-)
+
+# Transfer function implementations
+from .interval_tf import IntervalTF
+from .hybridz_tf import HybridzTF
+
+# Analysis algorithms
+from .analyze import analyze, initialize_tf_mode
 
 # Analysis algorithms
 from .analyze import dispatch_tf, analyze
@@ -65,15 +63,12 @@ __all__ = [
     # Utilities  
     'box_join', 'changed_or_maskdiff', 'update_cache', 'affine_bounds',
     'pwl_meta', 'bound_var_interval', 'scale_interval',
-    # Transfer functions
-    'tf_dense', 'tf_bias', 'tf_scale', 'tf_relu', 'tf_lrelu', 'tf_abs', 'tf_clip',
-    'tf_add', 'tf_mul', 'tf_concat', 'tf_bn',
-    'tf_conv2d', 'tf_maxpool2d', 'tf_avgpool2d', 'tf_flatten',  # CNN transfer functions
-    'tf_lstm', 'tf_gru', 'tf_rnn', 'tf_embedding',  # RNN transfer functions
-    'tf_posenc', 'tf_layernorm', 'tf_gelu', 'tf_att_scores',
-    'tf_softmax', 'tf_att_mix', 'tf_mha_split', 'tf_mha_join', 'tf_mask_add',
+    # Transfer function interface
+    'TransferFunction', 'AnalysisContext', 'IntervalTF', 'HybridzTF',
+    'set_transfer_function', 'get_transfer_function', 'set_transfer_function_mode',
+    'dispatch_tf',
     # Analysis
-    'dispatch_tf', 'analyze',
+    'analyze', 'initialize_tf_mode',
     # Export
     'export_to_solver', 'to_numpy',
     # Solvers

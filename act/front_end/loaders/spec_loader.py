@@ -12,7 +12,7 @@ from typing import List, Tuple, Dict, Any, Optional
 from pathlib import Path
 
 from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
-from act.front_end.preprocessor_base import Preprocessor
+from act.front_end.raw_processors.preprocessor_base import Preprocessor
 from act.front_end.device_manager import get_current_settings
 
 
