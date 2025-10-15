@@ -1,6 +1,6 @@
 # ACT Directory
 
-This directory contains the core verification framework and interfaces for the Abstract Constraint Transformer (ACT) system. It provides unified access to multiple verification backends including ACT native methods, ERAN, and αβ-CROWN through a hierarchical modular architecture.
+This directory contains the core verification framework for the Abstract Constraint Transformer (ACT) system. It implements a modern three-tier architecture: Front-End (data/model/spec processing), Back-End (verification core), and Pipeline (testing/integration) with PyTorch-native verification capabilities.
 
 ## Directory Structure
 
@@ -9,32 +9,63 @@ act/
 ├── main.py                         # Main unified verification interface
 ├── __init__.py                     # Package initialization
 │
-├── hybridz/                        # ACT Hybrid Zonotope module
-│   ├── hybridz_verifier.py         # Hybrid Zonotope verification engine
-│   ├── hybridz_transformers.py     # Hybrid Zonotope transformer classes
-│   └── hybridz_operations.py       # MILP/LP operations and optimization
+├── front_end/                      # Front-End: User-facing data processing
+│   ├── loaders/                    # Data, model, and specification loaders
+│   │   ├── data_loader.py          # Dataset loading (MNIST/CIFAR/CSV/VNNLIB)
+│   │   ├── model_loader.py         # Neural network model loading (ONNX/PyTorch)
+│   │   └── spec_loader.py          # Specification loading and processing
+│   ├── specs.py                    # InputSpec/OutputSpec with InKind/OutKind enums
+│   ├── wrapper_layers.py           # PyTorch verification wrapper modules
+│   ├── model_synthesis.py          # Advanced model generation and optimization
+│   ├── device_manager.py           # GPU-first CUDA device handling
+│   ├── preprocessor_image.py       # Image preprocessing and normalization
+│   ├── preprocessor_text.py        # Text preprocessing utilities
+│   ├── preprocessor_base.py        # Base preprocessor interface
+│   ├── utils_image.py              # Image utility functions
+│   ├── model_inference.py          # Model inference utilities
+│   ├── mocks.py                    # Mock data generation for testing
+│   └── README.md                   # Front-end documentation
 │
-├── interval/                       # ACT Interval verification module
-│   ├── base_verifier.py            # Base verifier class and common functionality
-│   ├── bounds_propagation.py       # Interval bound propagation
-│   └── outputs_evaluation.py       # Output bounds evaluation
+├── back_end/                       # Back-End: Core verification engine
+│   ├── core.py                     # Net, Layer, Bounds, Con, ConSet data structures
+│   ├── verifier.py                 # Spec-free verification: verify_once(), verify_bab()
+│   ├── layer_schema.py             # Layer type definitions and validation rules
+│   ├── layer_validation.py         # Layer validation and creation utilities
+│   ├── bab.py                      # Branch-and-bound refinement with CE validation
+│   ├── utils.py                    # Backend utility functions
+│   ├── analyze.py                  # Network analysis and bounds propagation
+│   ├── cons_exportor.py            # Constraint export to solvers
+│   ├── device_manager.py           # Backend device management
+│   ├── solver/                     # MILP/LP optimization solvers
+│   │   ├── solver_base.py          # Base solver interface
+│   │   ├── solver_gurobi.py        # Gurobi MILP solver integration
+│   │   └── solver_torch.py         # PyTorch-based LP solver
+│   ├── transfer_funs/              # Transfer functions for different layer types
+│   │   ├── tf_mlp.py               # MLP layer transfer functions
+│   │   ├── tf_cnn.py               # CNN layer transfer functions
+│   │   ├── tf_rnn.py               # RNN layer transfer functions
+│   │   └── tf_transformer.py       # Transformer layer transfer functions
+│   └── README.md                   # Back-end documentation
 │
-├── input_parser/                   # Specification parsing and data handling
-│   ├── dataset.py                  # Dataset loading and preprocessing
-│   ├── model.py                    # Neural network model parsing
-│   ├── spec.py                     # Specification handling and processing
-│   ├── type.py                     # Type definitions and data structures
-│   ├── vnnlib_parser.py            # VNNLIB format parser
-│   └── adaptor.py                  # Input/output adaptors
-│
-├── refinement/                     # Advanced refinement algorithms
-│   └── bab_spec_refinement.py      # Branch-and-bound specification refinement
-│
-├── util/                           # Utility modules
-│   ├── options.py                  # Command-line argument parsing
-│   ├── path_config.py              # Centralized path configuration
-│   ├── stats.py                    # Statistics and performance tracking
-│   └── inference.py                # Model inference utilities
+├── pipeline/                       # Pipeline: Testing framework and integration
+│   ├── torch2act.py                # Automatic PyTorch→ACT Net conversion
+│   ├── correctness.py              # Verifier correctness validation
+│   ├── regression.py               # Baseline capture and regression testing
+│   ├── integration.py              # Front-end integration bridge
+│   ├── mock_factory.py             # Configurable mock input generation
+│   ├── config.py                   # YAML-based test scenario management
+│   ├── reporting.py                # Results analysis and report generation
+│   ├── utils.py                    # Shared utilities and performance profiling
+│   ├── run_tests.py                # Command-line testing interface
+│   ├── configs/                    # Configuration files
+│   │   ├── mock_inputs.yaml        # Mock data generation templates
+│   │   ├── test_scenarios.yaml     # Complete test scenario definitions
+│   │   ├── solver_settings.yaml    # Solver configuration options
+│   │   └── baselines.json          # Performance baseline storage
+│   ├── examples/                   # Example usage and quick tests
+│   ├── log/                        # Test execution logs
+│   ├── reports/                    # Generated test reports
+│   └── README.md                   # Pipeline documentation
 │
 └── wrapper_exts/                   # External verifier integrations
     ├── abcrown/                    # αβ-CROWN integration module
@@ -53,101 +84,91 @@ act/
   - Comprehensive argument compatibility across different verification tools
   - Integration with configuration defaults from `../configs/`
 
-### **`hybridz/` - ACT Hybrid Zonotope Verification**
-- **`hybridz_verifier.py`**: Hybrid Zonotope verification engine
-  - Novel tensorised hybrid verification method
-  - Integration with Gurobi MILP solver for exact optimization
-  - Support for different precision modes (full MILP, relaxed LP, mixed)
+### **`front_end/` - User-Facing Data Processing**
+- **`loaders/`**: Comprehensive data loading and preprocessing
+  - **`data_loader.py`**: MNIST/CIFAR-10 dataset handlers with automatic download, CSV batch processing
+  - **`model_loader.py`**: ONNX/PyTorch model loading with validation and conversion
+  - **`spec_loader.py`**: VNNLIB specification loading and local robustness property handling
 
-- **`hybridz_transformers.py`**: Hybrid Zonotope transformer classes
-  - Complexity-simplified Hybrid Zonotope activation transformer representations
-  - Element and grid-based zonotope implementations
-  - Abstract transformation methods for neural network layers
+- **`specs.py`**: Specification data structures and enums
+  - `InputSpec`/`OutputSpec` classes with `InKind`/`OutKind` type safety
+  - Support for BOX, L_INF, LIN_POLY input constraints and SAFETY, ASSERT output properties
 
-- **`hybridz_operations.py`**: MILP/LP operations and optimization
-  - MILP/LP relaxation strategies with configurable precision ratios
-  - Parallel generator merging optimization (configurable)
-  - Three core configurations: Full-precision MILP, Fully-relaxed LP, Partially-relaxed MILP+LP
-  - Gurobi license management and solver integration
+- **`wrapper_layers.py`**: PyTorch verification wrapper modules
+  - `InputLayer`: Declares symbolic input blocks for verification
+  - `InputAdapterLayer`: Config-driven input preprocessing (permute/reorder/slice/pad/affine/linear-proj)
+  - `InputSpecLayer`: Wraps ACT InputSpec as nn.Module for seamless integration
+  - `OutputSpecLayer`: Wraps ACT OutputSpec as nn.Module for property specification
 
-### **`interval/` - ACT Interval Verification**
-- **`base_verifier.py`**: Base verifier class and common functionality
-  - Abstract interface for all verification backends
-  - Common parameter validation and preprocessing
-  - Unified result formatting and error handling
-  - Shared utility methods for model and specification processing
-  - Standard interval arithmetic for neural network verification
+- **`model_synthesis.py`**: Advanced model generation and optimization
+  - Neural architecture synthesis and domain-specific model generation
+  - Model optimization utilities and synthesis pipeline
 
-- **`bounds_propagation.py`**: Interval bound propagation implementation
-  - Fast but potentially loose bound computation
-  - Layer-by-layer propagation of interval bounds through neural networks
+- **`device_manager.py`**: GPU-first CUDA device handling
+  - Automatic device detection and management
+  - GPU memory optimization and fallback strategies
 
-- **`outputs_evaluation.py`**: Output bounds evaluation utilities
-  - Final output bound analysis and verification result determination
+- **Preprocessors**: Modular preprocessing pipeline
+  - **`preprocessor_image.py`**: Image normalization, augmentation, and format conversion
+  - **`preprocessor_text.py`**: Text preprocessing utilities
+  - **`preprocessor_base.py`**: Base preprocessor interface and common functionality
 
-### **`input_parser/` - Specification and Data Handling**
-- **`dataset.py`**: Dataset loading and preprocessing utilities
-  - MNIST and CIFAR-10 dataset handlers with automatic download
-  - CSV file processing for batch verification scenarios
-  - Data normalization and preprocessing pipelines
-  - Anchor dataset management for VNNLIB specification anchoring
+### **`back_end/` - Core Verification Engine**
+- **`core.py`**: Fundamental ACT data structures
+  - `Net`: Network representation with layers and graph connectivity
+  - `Layer`: Individual layer with params, metadata, and variable mappings
+  - `Bounds`: Box constraints with lb/ub tensors for variable ranges
+  - `Con`/`ConSet`: Constraint representation and management
 
-- **`model.py`**: Neural network model loading and parsing
-  - ONNX model loading with comprehensive validation
-  - TensorFlow/PyTorch model support and conversion
-  - Model architecture analysis and layer extraction
-  - Compatibility checking across verification backends
+- **`verifier.py`**: Spec-free verification engine
+  - `verify_once()`: Single-shot verification using embedded ACT constraints
+  - `verify_bab()`: Branch-and-bound refinement with counterexample validation
+  - No external input specs required - all constraints extracted from ACT Net
 
-- **`spec.py`**: Specification handling and processing
-  - Local robustness (Lp-norm) specification processing
-  - VNNLIB specification integration and validation
-  - Set-based constraint handling for complex properties
-  - Box constraint specifications for input space restrictions
+- **`layer_schema.py`**: Layer type definitions and validation rules
+  - Comprehensive schema definitions for all supported layer types
+  - Parameter validation and metadata requirements
 
-- **`type.py`**: Type definitions and data structures
-  - Verification result enumerations (SAT/UNSAT/UNKNOWN/TIMEOUT)
-  - Backend and method type definitions
-  - Parameter validation and constraint types
-  - Common data structures for cross-module communication
+- **`bab.py`**: Branch-and-bound refinement implementation
+  - BaB tree management with priority queues
+  - Counterexample validation and refinement strategies
+  - Configurable depth limits and timeout handling
 
-- **`vnnlib_parser.py`**: VNNLIB format parser
-  - Complete VNNLIB specification parsing and validation
-  - Property extraction with support for complex constraints
-  - Integration bridge for external verification tool compatibility
-  - Comprehensive error handling for malformed specifications
+- **`solver/`**: MILP/LP optimization backend
+  - **`solver_gurobi.py`**: Gurobi MILP solver integration with license management
+  - **`solver_torch.py`**: PyTorch-based LP solver for lightweight optimization
+  - **`solver_base.py`**: Unified solver interface and status handling
 
-- **`adaptor.py`**: Input/output adaptors
-  - Data format conversion utilities
-  - Interface adaptors between different verification backends
+- **`transfer_funs/`**: Layer-specific analysis functions
+  - **`tf_mlp.py`**: Multi-layer perceptron transfer functions
+  - **`tf_cnn.py`**: Convolutional neural network layer analysis
+  - **`tf_rnn.py`**: Recurrent neural network transfer functions
+  - **`tf_transformer.py`**: Transformer block analysis and attention handling
 
-### **`refinement/` - Advanced Refinement**
-- **`bab_spec_refinement.py`**: Branch-and-bound specification refinement
-  - Prototype BaB-based specification refinement system
-  - Automatic refinement when initial verification returns UNKNOWN/UNSAT
-  - Configurable depth limits, subproblem constraints, and time bounds
-  - Seamless integration with hybrid zonotope verification methods
+### **`pipeline/` - Testing Framework and Integration**
+- **`torch2act.py`**: Automatic PyTorch→ACT Net conversion
+  - Seamless conversion from PyTorch nn.Module to ACT Net representation
+  - Preserves all verification constraints and model semantics
+  - Support for complex wrapper layer patterns
 
-### **`util/` - Utility Modules**
-- **`options.py`**: Command-line argument parsing
-  - Comprehensive argument parser for all verification backends
-  - Parameter validation and type checking
-  - Integration with configuration file defaults
-  - Support for verifier-specific parameter sets
+- **Testing Framework**: Comprehensive validation and regression testing
+  - **`correctness.py`**: Verifier correctness validation with property-based testing
+  - **`regression.py`**: Baseline capture and performance regression detection
+  - **`mock_factory.py`**: Configurable mock input generation from YAML templates
 
-- **`path_config.py`**: Centralized path configuration
-  - Eliminates redundant sys.path manipulations across files
-  - Provides consistent import resolution for hierarchical structure
-  - Enables clean absolute imports throughout the codebase
+- **`integration.py`**: Front-end integration bridge
+  - Real ACT component integration for testing
+  - Bridge between pipeline framework and ACT front-end loaders
+  - Complete test case generation and validation
 
-- **`stats.py`**: Statistics and performance tracking
-  - Memory usage monitoring and optimization
-  - Performance profiling and benchmarking utilities
-  - Verification statistics collection and reporting
+- **`config.py`**: YAML-based test scenario management
+  - Configuration loading and validation
+  - Test scenario composition and parameter management
 
-- **`inference.py`**: Model inference utilities
-  - Common model inference operations
-  - Batch processing support
-  - Output format standardization
+- **Performance and Reporting**:
+  - **`utils.py`**: Performance profiling, memory tracking, and optimization utilities
+  - **`reporting.py`**: Results analysis and comprehensive report generation
+  - **`run_tests.py`**: Command-line testing interface with parallel execution
 
 ### **`wrapper_exts/` - External Verifier Integrations**
 
@@ -173,25 +194,37 @@ act/
 
 ## Architecture Benefits
 
-The flattened modular architecture provides several key advantages:
+The three-tier modular architecture provides several key advantages:
+
+### **Three-Tier Design**
+- **Front-End Separation**: User-facing data processing isolated from core verification logic
+- **Back-End Focus**: Pure verification engine with PyTorch-native analysis and optimization
+- **Pipeline Integration**: Comprehensive testing framework and Torch→ACT conversion bridge
+- **Clean Boundaries**: Clear interfaces between data processing, verification, and testing
+
+### **Modern Verification Features**
+- **Spec-Free Verification**: All constraints embedded in PyTorch models via wrapper layers
+- **PyTorch-Native**: Verification engine operates directly on PyTorch tensors for performance
+- **Automatic Conversion**: Seamless PyTorch→ACT Net conversion preserving all semantics
+- **GPU-First**: Optimized CUDA device management with automatic fallback strategies
 
 ### **Modular Design**
-- **Clear Separation**: Core ACT modules (hybridz, interval) are separated from external verifier wrappers
+- **Clear Separation**: Front-end, back-end, and pipeline modules have distinct responsibilities
 - **Independent Development**: Modules can be developed, tested, and maintained separately
 - **Easy Extension**: Add new verifiers by creating new modules in `wrapper_exts/`
-- **Clean Dependencies**: Centralized utilities in `util/` eliminate code duplication
+- **Reusable Components**: Shared utilities and interfaces enable code reuse
 
-### **Flat Structure Benefits**
-- **Simplified Imports**: Direct module access without deep nesting (e.g., `from hybridz.hybridz_verifier import ...`)
-- **Faster Development**: Quick navigation to core modules without traversing multiple subdirectories
-- **Clear Responsibilities**: Each top-level directory has a specific, well-defined purpose
-- **Better IDE Support**: Enhanced autocomplete and navigation in development environments
+### **Testing and Validation**
+- **Comprehensive Testing**: Pipeline framework provides correctness, regression, and performance testing
+- **Mock Generation**: Configurable mock input generation from YAML templates
+- **Integration Testing**: Real ACT component testing with front-end bridge
+- **Continuous Validation**: Baseline capture and regression detection for quality assurance
 
 ### **Configuration Management**
 - **Centralized Defaults**: Configuration files in `../configs/` provide optimal parameters
-- **Path Resolution**: `util/path_config.py` ensures consistent module import resolution
+- **Device Management**: Intelligent GPU/CPU device selection and memory optimization
 - **Environment Isolation**: Different verifiers can use separate conda environments
-- **Parameter Management**: `util/options.py` provides unified command-line interface
+- **Parameter Management**: Unified command-line interface with type validation
 
 ### **Integration Flexibility**
 - **Unified Interface**: Single entry point (`main.py`) for all verification tasks
@@ -200,6 +233,7 @@ The flattened modular architecture provides several key advantages:
 - **Result Standardization**: Uniform output format across all verification backends
 
 ### **Performance Optimization**
-- **Memory Management**: `util/stats.py` provides comprehensive memory tracking and optimization
-- **Utility Reuse**: Common operations centralized in `util/` modules
-- **Import Efficiency**: Flat structure reduces import overhead and circular dependency risks
+- **Memory Management**: Comprehensive memory tracking and optimization throughout pipeline
+- **Utility Reuse**: Common operations centralized to eliminate code duplication
+- **Efficient Imports**: Modular structure reduces import overhead and circular dependencies
+- **GPU Acceleration**: PyTorch-native verification leverages GPU computation where beneficial

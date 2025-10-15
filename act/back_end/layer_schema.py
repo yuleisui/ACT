@@ -63,7 +63,7 @@ except Exception:  # typing only
 # -------------------------------
 class LayerKind(str, enum.Enum):
     # Wrapper & specs
-    INPUT = "INPUT"           # meta: shape (required), center (optional)
+    INPUT = "INPUT"           # meta: shape (required), params: center (optional)
     INPUT_SPEC = "INPUT_SPEC" # meta: kind ('BOX'|'LINF_BALL'|'LIN_POLY'), constraints in meta
     ASSERT = "ASSERT"         # meta: kind ('LINEAR_LE'|'TOP1_ROBUST'|'MARGIN_ROBUST'|'RANGE'), fields in meta
 
@@ -142,9 +142,9 @@ class LayerKind(str, enum.Enum):
 # -------------------------------------------
 REGISTRY: Dict[str, Dict[str, List[str]]] = {
     # Wrapper & specs
-    LayerKind.INPUT.value:       {"params_required": [], "params_optional": [], "meta_required": ["shape"], "meta_optional": ["center"]},
-    LayerKind.INPUT_SPEC.value:  {"params_required": [], "params_optional": [], "meta_required": ["kind"], "meta_optional": ["lb","ub","center","eps","A","b"]},
-    LayerKind.ASSERT.value:      {"params_required": [], "params_optional": [], "meta_required": ["kind"], "meta_optional": ["c","d","y_true","range"]},
+    LayerKind.INPUT.value:       {"params_required": [], "params_optional": ["center"], "meta_required": ["shape"], "meta_optional": []},
+    LayerKind.INPUT_SPEC.value:  {"params_required": [], "params_optional": ["lb","ub","center","A","b"], "meta_required": ["kind"], "meta_optional": ["eps"]},
+    LayerKind.ASSERT.value:      {"params_required": [], "params_optional": ["c","lb","ub"], "meta_required": ["kind"], "meta_optional": ["d","y_true","margin"]},
 
     # Adapters
     LayerKind.PERMUTE.value:     {"params_required": [], "params_optional": [], "meta_required": [], "meta_optional": ["perm"]},
@@ -155,9 +155,9 @@ REGISTRY: Dict[str, Dict[str, List[str]]] = {
     LayerKind.LINEAR_PROJ.value: {"params_required": ["A"], "params_optional": ["b"], "meta_required": [], "meta_optional": ["input_shape","output_shape"]},
 
     # Dense/CNN
-    LayerKind.DENSE.value:       {"params_required": ["W"], "params_optional": ["b","W_pos","W_neg"], "meta_required": [], "meta_optional": ["activation","input_shape","output_shape","bias_enabled"]},
+    LayerKind.DENSE.value:       {"params_required": ["W"], "params_optional": ["b","W_pos","W_neg"], "meta_required": [], "meta_optional": ["activation","input_shape","output_shape","bias_enabled","in_features","out_features"]},
     LayerKind.CONV1D.value:      {"params_required": ["weight"], "params_optional": ["bias","weight_pos","weight_neg"], "meta_required": ["stride","padding","dilation","groups"], "meta_optional": ["transposed","output_padding","padding_mode","input_shape","output_shape","data_format"]},
-    LayerKind.CONV2D.value:      {"params_required": ["weight"], "params_optional": ["bias","weight_pos","weight_neg"], "meta_required": ["stride","padding","dilation","groups"], "meta_optional": ["transposed","output_padding","padding_mode","input_shape","output_shape","data_format"]},
+    LayerKind.CONV2D.value:      {"params_required": ["weight"], "params_optional": ["bias"], "meta_required": ["input_shape","output_shape"], "meta_optional": ["stride","padding","dilation","groups","kernel_size","in_channels","out_channels","transposed","output_padding","padding_mode","data_format"]},
     LayerKind.CONV3D.value:      {"params_required": ["weight"], "params_optional": ["bias","weight_pos","weight_neg"], "meta_required": ["stride","padding","dilation","groups"], "meta_optional": ["transposed","output_padding","padding_mode","input_shape","output_shape","data_format"]},
     LayerKind.CONVTRANSPOSE2D.value: {"params_required": ["weight"], "params_optional": ["bias"], "meta_required": ["stride","padding","dilation","groups"], "meta_optional": ["transposed","output_padding","padding_mode","input_shape","output_shape","data_format"]},
 
@@ -171,7 +171,7 @@ REGISTRY: Dict[str, Dict[str, List[str]]] = {
     LayerKind.ADAPTIVEAVGPOOL2D.value: {"params_required": [], "params_optional": [], "meta_required": [], "meta_optional": ["output_size"]},
 
     # Activations / elementwise
-    LayerKind.RELU.value:        {"params_required": [], "params_optional": [], "meta_required": [], "meta_optional": []},
+    LayerKind.RELU.value:        {"params_required": [], "params_optional": [], "meta_required": [], "meta_optional": ["input_shape","output_shape"]},
     LayerKind.LRELU.value:       {"params_required": [], "params_optional": [], "meta_required": [], "meta_optional": ["negative_slope"]},
     LayerKind.PRELU.value:       {"params_required": ["weight"], "params_optional": [], "meta_required": [], "meta_optional": []},
     LayerKind.SIGMOID.value:     {"params_required": [], "params_optional": [], "meta_required": [], "meta_optional": []},
@@ -198,7 +198,7 @@ REGISTRY: Dict[str, Dict[str, List[str]]] = {
     LayerKind.CONCAT.value:      {"params_required": [], "params_optional": [], "meta_required": ["concat_dim"], "meta_optional": []},
     LayerKind.STACK.value:       {"params_required": [], "params_optional": [], "meta_required": ["axis"], "meta_optional": []},
     LayerKind.RESHAPE.value:     {"params_required": [], "params_optional": [], "meta_required": [], "meta_optional": ["target_shape"]},
-    LayerKind.FLATTEN.value:     {"params_required": [], "params_optional": [], "meta_required": [], "meta_optional": ["start_dim","end_dim"]},
+    LayerKind.FLATTEN.value:     {"params_required": [], "params_optional": [], "meta_required": [], "meta_optional": ["start_dim","end_dim","input_shape","output_shape"]},
     LayerKind.TRANSPOSE.value:   {"params_required": [], "params_optional": [], "meta_required": [], "meta_optional": ["perm"]},
     LayerKind.SQUEEZE.value:     {"params_required": [], "params_optional": [], "meta_required": [], "meta_optional": ["dims"]},
     LayerKind.UNSQUEEZE.value:   {"params_required": [], "params_optional": [], "meta_required": [], "meta_optional": ["dims"]},
