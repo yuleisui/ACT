@@ -82,6 +82,7 @@ jobs:
           cd ${{ github.workspace }}
           python -m act.wrapper_exts.ext_runner \
             --verifier abcrown \
+            --device cpu \
             --method alpha_beta \
             --model_path models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
             --dataset mnist --spec_type local_lp \
@@ -132,6 +133,7 @@ jobs:
           cd ${{ github.workspace }}
           python -m act.wrapper_exts.ext_runner \
             --verifier abcrown \
+            --device cpu \
             --method alpha_beta \
             --model_path models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
             --dataset mnist --spec_type local_lp \
