@@ -11,10 +11,7 @@ pandas>=2.0
 packaging>=20.0
 tqdm>=4.64
 graphviz>=0.20.3
-pytest==8.1.1
 pylint>=2.15
-pytest-order>=1.0.0
-pytest-mock>=3.14
 appdirs>=1.4
 ninja>=1.10,<1.11.1.2
 onnx

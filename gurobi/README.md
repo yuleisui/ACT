@@ -8,4 +8,4 @@
 2. **License Installation**  
    Once obtained, place your `gurobi.lic` file in this `./gurobi/` directory.
 
-**Note:** Without a valid Gurobi license, verification methods that rely on MILP/LP solving (HybridZ methods) will not function.
+**Note:** Without a valid Gurobi license, verification methods that rely on MILP/LP solving will not function.

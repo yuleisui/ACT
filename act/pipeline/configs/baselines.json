@@ -15,8 +15,7 @@
       "cpu_usage_percent": 85.3,
       "gpu_memory_mb": null,
       "solver_settings": {
-        "method": "hybridz_relaxed",
-        "relaxation_ratio": 0.5,
+        "method": "deeppoly",
         "timeout": 60
       },
       "captured_date": "2025-10-12T00:00:00Z"
@@ -33,8 +32,7 @@
       "cpu_usage_percent": 92.1,
       "gpu_memory_mb": 512.3,
       "solver_settings": {
-        "method": "hybridz_relaxed",
-        "relaxation_ratio": 0.5,
+        "method": "deeppoly",
         "timeout": 120
       },
       "captured_date": "2025-10-12T00:00:00Z"
@@ -51,8 +49,7 @@
       "cpu_usage_percent": 78.9,
       "gpu_memory_mb": 1024.7,
       "solver_settings": {
-        "method": "hybridz_relaxed",
-        "relaxation_ratio": 0.5,
+        "method": "deeppoly",
         "timeout": 180
       },
       "captured_date": "2025-10-12T00:00:00Z"
@@ -69,8 +66,7 @@
       "cpu_usage_percent": 82.4,
       "gpu_memory_mb": null,
       "solver_settings": {
-        "method": "hybridz_fast",
-        "relaxation_ratio": 1.0,
+        "method": "deeppoly",
         "timeout": 30
       },
       "captured_date": "2025-10-12T00:00:00Z"

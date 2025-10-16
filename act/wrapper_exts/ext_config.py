@@ -1,28 +1,252 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+"""Merged input-parser config utilities (types, vnnlib parser, model, dataset, specs)
 
-#########################################################################
-##   Abstract Constraint Transformer (ACT) - Dataset Parser            ##
-##                                                                     ##
-##   doctormeeee (https://github.com/doctormeeee) and contributors     ##
-##   Copyright (C) 2024-2025                                           ##
-##                                                                     ##
-#########################################################################
-
+This file consolidates configuration utilities for external verifier usage.
+"""
 from typing import Union, Optional, List, Tuple
 import os
 import numpy as np
 import torch
 import re
 import json
-
+import onnx
+import tensorflow as tf
 import torchvision
 import torchvision.transforms as transforms
-import os
+from onnx2pytorch import ConvertModel
+import subprocess
 
-from act.base.input_parser.type import SpecType
-from act.base.input_parser.vnnlib_parser import VNNLIBParser
-from act.base.util.path_config import get_data_root
+from enum import Enum
+
+
+class SplitType(Enum):
+    INPUT = "input"
+    INPUT_GRAD = "input_grad"
+    INPUT_SB = "input_sb"
+    RELU_GRAD = "relu_grad"
+    RELU_SR = "relu_babsr"
+    RELU_CE = "relu_ce"
+
+
+class VerifyResult(Enum):
+    SAT = "satisfiable"
+    UNSAT = "unsatisfiable"
+    CLEAN_FAILURE = "clean_failure"
+    UNKNOWN = "unknown"
+    TIMEOUT = "timeout"
+    ERROR = "error"
+
+
+class SpecType(Enum):
+    LOCAL_LP = "local_lp"
+    LOCAL_VNNLIB = "local_vnnlib"
+    SET_VNNLIB = "set_vnnlib"
+    SET_BOX = "set_box"
+
+
+class LPNormType(Enum):
+    LINF = "inf"
+    L2 = "2"
+    L1 = "1"
+
+
+class VNNLIBParser:
+
+    def _var_extraction(var_string):
+
+        match_indexed = re.match(r"^([A-Za-z_]+)_([0-9]+)$", var_string)
+        if match_indexed:
+            var_group = match_indexed.group(1)
+            var_index = int(match_indexed.group(2))
+            return var_group, var_index
+
+        match_plain = re.match(r"^([A-Za-z_]+)$", var_string)
+        if match_plain:
+            var_group = match_plain.group(1)
+            return var_group, -1
+
+    def _num_extraction(var_string):
+        match = re.match(r"^([+-]?)(\d+(\.\d*)?|\.\d+)$", var_string.strip())
+        if match is None:
+            return None
+        sign = 1 if match.group(1) == "+" else -1
+        return sign * float(match.group(2))
+
+    @staticmethod
+    def parse_term(input_clause):
+        terms = input_clause.split()
+        parsed_results = []
+        sign_flag = None
+        for term in terms:
+            if term in ('+', '-'):
+                sign_flag = 1 if term == '+' else -1
+            else:
+                num = VNNLIBParser._num_extraction(term)
+                if num is None:
+                    var_group, var_index = VNNLIBParser._var_extraction(term)
+
+                    value = float(sign_flag) if sign_flag is not None else 1.0
+                else:
+                    var_group = "const"
+                    var_index = -1
+
+                    value = sign_flag * float(num) if sign_flag is not None else float(num)
+                parsed_results.append((var_group, var_index, value))
+                sign_flag = None
+
+        return parsed_results
+
+    @staticmethod
+    def identify_declare_const(lines):
+        input_vars, output_vars, anchors, utility = [], [], [], []
+        for line in lines:
+            if line.startswith("(declare-const"):
+                match_indexed = re.match(r"\(declare-const ([A-Za-z_]+)_([0-9]+) [A-Za-z]+\)", line)
+                if match_indexed:
+                    var_group = match_indexed.group(1)
+                    var_index = int(match_indexed.group(2))
+                    if var_group == "X":
+                        input_vars.append(("X", var_index))
+                    elif var_group == "Y":
+                        output_vars.append(("Y", var_index))
+                    elif var_group == "X_hat":
+                        anchors.append(("X_hat", var_index))
+                    else:
+                        utility.append((var_group, var_index))
+
+                else:
+
+                    match_plain = re.match(r"\(declare-const ([A-Za-z_]+) [A-Za-z]+\)", line)
+                    if match_plain:
+                        var_group = match_plain.group(1)
+                        utility.append((var_group, -1))
+        return input_vars, output_vars, anchors, utility
+
+    @staticmethod
+    def is_local(lines):
+        return any("X_hat" in l or "eps" in l for l in lines)
+
+
+class Model:
+    def __init__(self, model_path: str = None, device: str = 'cpu'):
+        self.model_path = model_path
+        self.device = device
+        self.pytorch_model = None
+        self._onnx_input_shape = None
+        self._tf_input_shape = None
+
+        if model_path is not None:
+            self._auto_load_and_convert()
+
+    def _auto_load_and_convert(self):
+        if os.path.isfile(self.model_path):
+            if self.model_path.endswith('.pt') or self.model_path.endswith('.pth'):
+                self.load_pt_model()
+            elif self.model_path.endswith('.onnx'):
+                self._onnx_input_shape = self._get_onnx_input_shape(self.model_path)
+                self.convert_onnx_to_pytorch()
+            elif self.model_path.endswith('.h5') or self.model_path.endswith('.keras'):
+                self._tf_input_shape = self._get_tf_input_shape(self.model_path)
+                self.convert_tf_to_pytorch()
+            else:
+                raise ValueError(f"Unknown model file type: {self.model_path}")
+        elif os.path.isdir(self.model_path):
+            if os.path.exists(os.path.join(self.model_path, 'saved_model.pb')):
+                self.convert_tf_to_pytorch()
+            else:
+                raise ValueError(f"Unknown model directory: {self.model_path}")
+        else:
+            raise FileNotFoundError(f"Model path not found: {self.model_path}")
+
+    def _get_onnx_input_shape(self, onnx_path):
+        onnx_model = onnx.load(onnx_path)
+        input_tensor = onnx_model.graph.input[0]
+        shape = []
+        for dim in input_tensor.type.tensor_type.shape.dim:
+
+            shape.append(dim.dim_value if dim.dim_value > 0 else 1)
+        return tuple(shape)
+
+    def _get_tf_input_shape(self, tf_path):
+        try:
+            if tf_path.endswith('.h5') or tf_path.endswith('.keras'):
+                model = tf.keras.models.load_model(tf_path)
+                return tuple(model.input_shape)
+            elif os.path.isdir(tf_path) and os.path.exists(os.path.join(tf_path, 'saved_model.pb')):
+                model = tf.keras.models.load_model(tf_path)
+                return tuple(model.input_shape)
+        except Exception as e:
+            print(f"[WARN] Failed to get TF input shape: {e}")
+        return None
+
+    def get_expected_input_shape(self):
+
+        if self._onnx_input_shape is not None:
+            return self._onnx_input_shape
+        if self._tf_input_shape is not None:
+            return self._tf_input_shape
+        if hasattr(self.pytorch_model, 'input_shape'):
+            return self.pytorch_model.input_shape
+        for shape in [(1, 1, 28, 28), (1, 3, 32, 32), (1, 5)]:
+            try:
+                dummy = torch.zeros(*shape)
+                self.pytorch_model(dummy)
+                return shape
+            except Exception:
+                continue
+        raise RuntimeError("Cannot infer model input shape automatically.")
+
+    def load_pt_model(self):
+        try:
+            self.pytorch_model = torch.load(self.model_path, map_location=self.device)
+            self.pytorch_model.eval()
+        except Exception as e:
+            raise RuntimeError(f"Failed to load PyTorch model: {e}")
+
+    def convert_onnx_to_pytorch(self):
+        try:
+            onnx_model = onnx.load(self.model_path)
+            self.pytorch_model = ConvertModel(onnx_model, experimental=True)
+            self.pytorch_model.eval()
+        except Exception as e:
+            raise RuntimeError(f"Failed to convert ONNX model to PyTorch: {e}")
+
+    def convert_tf_to_pytorch(self, onnx_path="tmp_model.onnx"):
+        model_type = None
+        if os.path.isfile(self.model_path):
+            if self.model_path.endswith('.h5') or self.model_path.endswith('.keras'):
+                model_type = 'keras'
+        elif os.path.isdir(self.model_path):
+            if os.path.exists(os.path.join(self.model_path, 'saved_model.pb')):
+                model_type = 'saved_model'
+        else:
+            raise ValueError("Unknown model path type.")
+
+        if model_type == 'keras':
+            cmd = [
+                "python", "-m", "tf2onnx.convert",
+                "--keras", self.model_path,
+                "--output", onnx_path
+            ]
+        elif model_type == 'saved_model':
+            cmd = [
+                "python", "-m", "tf2onnx.convert",
+                "--saved-model", self.model_path,
+                "--output", onnx_path
+            ]
+        else:
+            raise ValueError("Model type not supported for conversion.")
+
+        print(f"[INFO] Running: {' '.join(cmd)}")
+        subprocess.run(cmd, check=True)
+
+        try:
+            onnx_model = onnx.load(onnx_path)
+            self.pytorch_model = ConvertModel(onnx_model, experimental=True)
+            self.pytorch_model.eval()
+        except Exception as e:
+            raise RuntimeError(f"Failed to convert TF/Keras model to PyTorch: {e}")
+
 
 class Dataset:
     def __init__(self,
@@ -86,7 +310,14 @@ class Dataset:
 
     def _download_and_load_builtin(self, name):
         self._data_source = name
-        data_root = get_data_root()
+        data_root = os.environ.get('ACT_DATA_ROOT', None)
+        if data_root is None:
+            # try util path
+            try:
+                from act.util.path_config import get_data_root
+                data_root = get_data_root()
+            except Exception:
+                data_root = '.'
         
         print(f"[ACT] Data directory: {data_root}")
 
@@ -125,6 +356,8 @@ class Dataset:
         print("Loaded dataset:", name)
         print(f"Dataset size: {len(images)} samples, input: {self.input_center}, labels: {self.labels}")
 
+    # remaining methods (load_from_csv, load_from_vnnlib, helpers) are identical to the
+    # previous implementation and kept here for brevity — full implementation follows.
     def load_from_csv(self) -> None:
         self._data_source = 'csv'
 
@@ -562,3 +795,194 @@ class Dataset:
 
     def __len__(self):
         return self.end - self.start
+
+
+class BaseSpec:
+    def __init__(self, dataset : Dataset = None, model : Model = None, status: VerifyResult = VerifyResult.UNKNOWN):
+        self.dataset = dataset
+        self.model = model
+
+
+class InputSpec(BaseSpec):
+    def __init__(self,
+                 dataset : Dataset,
+                 norm: Optional[LPNormType] = None,
+                 epsilon: Optional[float] = None,
+                 vnnlib_path: str = None,
+                 ):
+
+        super().__init__(dataset)
+        if isinstance(self.dataset.spec_type, str):
+            self.spec_type = SpecType(self.dataset.spec_type.lower())
+        else:
+            self.spec_type = self.dataset.spec_type
+
+        if isinstance(norm, str):
+            norm = LPNormType(norm.lower())
+
+        self.norm = norm
+        self.input_center = None
+        self.epsilon = epsilon
+        self.vnnlib_path = vnnlib_path
+        self.input_lb = None
+        self.input_ub = None
+
+        if self.input_lb is not None and self.input_ub is not None:
+            self._input_validation()
+
+        if self.spec_type not in [SpecType.LOCAL_LP, SpecType.LOCAL_VNNLIB, SpecType.SET_VNNLIB, SpecType.SET_BOX]:
+            raise ValueError(f"Unsupported specification type: {self.spec_type}")
+        if self.spec_type == SpecType.LOCAL_LP and (norm is None or epsilon is None):
+            raise ValueError("Norm type and epsilon value must be specified for local LP specifications")
+
+        if self.spec_type == SpecType.LOCAL_LP:
+
+            print(f"📊 [InputSpec] Epsilon = {epsilon}")
+
+            if self.norm == LPNormType.LINF:
+                if dataset.preprocess and hasattr(self.dataset, 'mean') and hasattr(self.dataset, 'std') and self.dataset.mean is not None and self.dataset.std is not None:
+
+                    self.input_center = self.dataset.input_center
+
+                    if isinstance(self.dataset.mean, list) and isinstance(self.dataset.std, list):
+
+                        mean_tensor = torch.tensor(self.dataset.mean, dtype=torch.float32, device=self.dataset.input_center.device)
+                        std_tensor = torch.tensor(self.dataset.std, dtype=torch.float32, device=self.dataset.input_center.device)
+
+                        if len(self.dataset.input_center.shape) == 4:
+                            mean_tensor = mean_tensor.view(1, -1, 1, 1)
+                            std_tensor = std_tensor.view(1, -1, 1, 1)
+                        elif len(self.dataset.input_center.shape) == 3:
+                            mean_tensor = mean_tensor.view(-1, 1, 1)
+                            std_tensor = std_tensor.view(-1, 1, 1)
+                        elif len(self.dataset.input_center.shape) == 1:
+
+                            C = len(self.dataset.mean)
+                            pixels_per_channel = self.dataset.input_center.shape[0] // C
+                            mean_tensor = mean_tensor.repeat_interleave(pixels_per_channel)
+                            std_tensor = std_tensor.repeat_interleave(pixels_per_channel)
+                        elif len(self.dataset.input_center.shape) == 2:
+                            C = len(self.dataset.mean)
+                            pixels_per_channel = self.dataset.input_center.shape[1] // C
+                            mean_tensor = mean_tensor.repeat_interleave(pixels_per_channel).unsqueeze(0)
+                            std_tensor = std_tensor.repeat_interleave(pixels_per_channel).unsqueeze(0)
+
+                        original_pixels = self.dataset.input_center * std_tensor + mean_tensor
+                    else:
+
+                        mean = self.dataset.mean[0] if isinstance(self.dataset.mean, list) else self.dataset.mean
+                        std = self.dataset.std[0] if isinstance(self.dataset.std, list) else self.dataset.std
+                        original_pixels = self.dataset.input_center * std + mean
+
+                    print(f"📊 Inverse normalized pixel value range: [{original_pixels.min():.6f}, {original_pixels.max():.6f}]")
+
+                    lb_raw = torch.clamp(original_pixels - epsilon, 0.0, 1.0)
+                    ub_raw = torch.clamp(original_pixels + epsilon, 0.0, 1.0)
+
+                    print(f"📊 [0,1] space perturbation+clip range: LB=[{lb_raw.min():.6f}, {lb_raw.max():.6f}], UB=[{ub_raw.min():.6f}, {ub_raw.max():.6f}]")
+
+                    if isinstance(self.dataset.mean, list) and isinstance(self.dataset.std, list):
+
+                        self.input_lb = (lb_raw - mean_tensor) / std_tensor
+                        self.input_ub = (ub_raw - mean_tensor) / std_tensor
+                    else:
+
+                        self.input_lb = (lb_raw - mean) / std
+                        self.input_ub = (ub_raw - mean) / std
+
+                    print(f"📊 Final normalized bounds: LB=[{self.input_lb.min():.6f}, {self.input_lb.max():.6f}], UB=[{self.input_ub.min():.6f}, {self.input_ub.max():.6f}]")
+
+                    print(f"📊 Original center range: [{self.input_center.min():.6f}, {self.input_center.max():.6f}]")
+                    print(f"📊 Perturbation interval width range: [{(self.input_ub - self.input_lb).min():.6f}, {(self.input_ub - self.input_lb).max():.6f}]")
+
+                    original_lb = original_pixels - epsilon
+                    original_ub = original_pixels + epsilon
+                    clipped_lb = (original_lb < 0.0).sum().item()
+                    clipped_ub = (original_ub > 1.0).sum().item()
+                    total_pixels = original_pixels.numel()
+
+                    print(f"📊 Physical clip statistics: LB clipped={clipped_lb}/{total_pixels} ({clipped_lb/total_pixels*100:.2f}%), UB clipped={clipped_ub}/{total_pixels} ({clipped_ub/total_pixels*100:.2f}%)")
+
+                else:
+
+                    self.input_center = self.dataset.input_center
+                    original_pixels = self.dataset.input_center
+                    self.input_lb = torch.clamp(original_pixels - epsilon, 0.0, 1.0)
+                    self.input_ub = torch.clamp(original_pixels + epsilon, 0.0, 1.0)
+                    self.input_center = (self.input_lb + self.input_ub) / 2.0
+
+        elif self.spec_type == SpecType.LOCAL_VNNLIB:
+            self.input_center = self.dataset.input_center
+            self.input_lb = self.dataset.input_lb
+            self.input_ub = self.dataset.input_ub
+
+        elif self.spec_type in [SpecType.SET_VNNLIB, SpecType.SET_BOX]:
+            self.input_lb = self.dataset.input_lb
+            self.input_ub = self.dataset.input_ub
+            # Calculate input_center as the midpoint of bounds
+            self.input_center = (self.input_lb + self.input_ub) / 2.0
+
+        else:
+            raise ValueError(f"Unsupported spec type: {self.spec_type}")
+
+    def _input_validation(self):
+        if not torch.is_tensor(self.input_lb) or not torch.is_tensor(self.input_ub):
+            raise ValueError("Input bounds must be torch tensors")
+        if self.input_lb.shape != self.input_ub.shape:
+            raise ValueError("Input bounds must have the same shape")
+        if not torch.all(self.input_lb <= self.input_ub):
+            raise ValueError("Lower bounds must be less than or equal to upper bounds")
+
+    def _apply_preprocessing(self, tensor: torch.Tensor) -> torch.Tensor:
+        mean, std = self.preprocessing.get("mean"), self.preprocessing.get("std")
+        if mean is not None and std is not None:
+            return (tensor - mean) / std
+        return tensor
+
+    def get_input_size(self) -> int:
+        return self.input_lb.shape[0]
+
+
+class OutputSpec(BaseSpec if 'BaseSpec' in globals() else object):
+    def __init__(self, dataset: Dataset):
+        super().__init__(dataset)
+        if isinstance(self.dataset.spec_type, str):
+            self.spec_type = SpecType(self.dataset.spec_type.lower())
+        else:
+            self.spec_type = self.dataset.spec_type
+        self.labels = None
+        self.output_constraints = None
+
+        print(self.spec_type)
+        if self.spec_type == SpecType.LOCAL_LP:
+            self.labels = dataset.labels
+
+        elif self.spec_type == SpecType.LOCAL_VNNLIB:
+            self.labels = dataset.labels
+            self.output_constraints = dataset.output_constraints
+
+        elif self.spec_type == SpecType.SET_VNNLIB:
+            self.output_constraints = dataset.output_constraints
+
+        elif self.spec_type == SpecType.SET_BOX:
+            self.output_constraints = dataset.output_constraints
+
+        else:
+            raise ValueError(f"Unsupported spec type: {self.spec_type}")
+
+
+class Spec(BaseSpec if 'BaseSpec' in globals() else object):
+    def __init__(self,
+                 model : Model,
+                 input_spec: InputSpec,
+                 output_spec: OutputSpec):
+
+        if input_spec.dataset != output_spec.dataset:
+            raise ValueError("Input and output specifications must belong to the same dataset")
+
+        if input_spec.spec_type != output_spec.spec_type:
+            raise ValueError("Input and output specifications must have the same specification type")
+        super().__init__(dataset=input_spec.dataset, model=model)
+        self.input_spec = input_spec
+        self.output_spec = output_spec
+        self.spec_type = self.input_spec.spec_type

@@ -32,12 +32,12 @@ from typing import Any, Optional, Tuple
 def setup_act_paths() -> str:
     """Set up ACT project paths for proper module imports."""
     current_file = os.path.abspath(__file__)
-    # From: /path/to/act/interval/util/path_config.py
-    # Need to go up 3 levels: util -> interval -> act
-    act_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
+    # From: /path/to/act/util/path_config.py
+    # Need to go up 2 levels: util -> act
+    act_root = os.path.dirname(os.path.dirname(current_file))
     
     # Add both act_root and its parent (project_root) to sys.path
-    # This ensures both 'from base.xxx' and 'from act.base.xxx' work
+    # This ensures proper module imports from wrapper_exts and other modules
     if act_root not in sys.path:
         sys.path.insert(0, act_root)
     
@@ -51,8 +51,8 @@ def setup_act_paths() -> str:
 def get_project_root() -> str:
     """Get the project root directory (parent of act/)."""
     current_file = os.path.abspath(__file__)
-    # Go up 4 levels: util -> interval -> act -> project_root
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_file))))
+    # Go up 3 levels: util -> act -> project_root
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
     return project_root
 
 
@@ -103,7 +103,7 @@ def import_gurobi(ensure_license: bool = False) -> Tuple[bool, Optional[Any], Op
         from gurobipy import GRB  # type: ignore[import-not-found]
         return True, gp, GRB
     except ImportError:
-        print("Warning: Gurobi not available. HybridZonotope modules will use alternative solvers.")
+        print("Warning: Gurobi not available. Some verification methods may use alternative solvers.")
         return False, None, None
 
 
@@ -136,7 +136,7 @@ def get_path_relative_to_project(relative_path: str) -> str:
     """Get absolute path for a path relative to project root.
     
     Args:
-        relative_path: Path relative to project root (e.g., 'data', 'configs/hybridz_defaults.ini')
+        relative_path: Path relative to project root (e.g., 'data', 'configs/eran_defaults.ini')
     
     Returns:
         Absolute path

@@ -1,14 +1,16 @@
 ---
-description: "Create pytest unit tests for the selected code."
+description: "Create integration tests for the selected code using ACT pipeline framework."
 ---
 
-Generate **pytest** unit tests for the following Python code.
+Generate **integration tests** for the following Python code using the ACT pipeline testing framework.
 
 Requirements:
-- ≥ 90 % coverage  
+- Focus on integration and end-to-end testing
 - Include valid, edge, and error cases  
-- Use parametrization where appropriate  
+- Use ACT pipeline test utilities
+- Mock external verifier calls when needed
 - Keep tests readable and self-contained  
 
 ```python
 ${selection}
+```

@@ -10,7 +10,7 @@ try:
     from gurobipy import GRB
     GUROBI_AVAILABLE = True
 except ImportError:
-    print("Warning: Gurobi not available. HybridZonotopeOps will use alternative solvers.")
+    print("Warning: Gurobi not available. Some operations will use alternative solvers.")
     GUROBI_AVAILABLE = False
 
 def setup_gurobi_license():

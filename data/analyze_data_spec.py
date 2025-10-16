@@ -603,7 +603,7 @@ class ComprehensiveAnalyzer:
             "beginner_workflow": [
                 "Start with MNIST dataset for simple image classification",
                 "Use local_lp specification with small epsilon (0.1)",
-                "Try different verifiers: hybridz, eran, abcrown",
+                "Try different verifiers: eran, abcrown",
                 "Gradually increase problem complexity"
             ],
             "command_examples": {
@@ -755,11 +755,11 @@ class ComprehensiveAnalyzer:
             recommendations["complete_commands"] = [
                 {
                     "name": "Basic Robustness Test",
-                    "command": f"python -m act.main --dataset mnist --model_path {model_path} --spec_type local_lp --norm inf --epsilon 0.1 --start 0 --end 10 --verifier hybridz"
+                    "command": f"python -m act.wrapper_exts.ext_runner --dataset mnist --model_path {model_path} --spec_type local_lp --norm inf --epsilon 0.1 --start 0 --end 10 --verifier base"
                 },
                 {
                     "name": "Progressive Testing",
-                    "command": "for eps in 0.05 0.1 0.15 0.2; do python -m act.main --dataset mnist --epsilon $eps --start 0 --end 10; done"
+                    "command": "for eps in 0.05 0.1 0.15 0.2; do python -m act.wrapper_exts.ext_runner --dataset mnist --epsilon $eps --start 0 --end 10; done"
                 }
             ]
             
@@ -767,7 +767,7 @@ class ComprehensiveAnalyzer:
                 vnnlib_file = recommendations["compatible_vnnlib"][0]["filename"]
                 recommendations["complete_commands"].append({
                     "name": "VNNLIB Test",
-                    "command": f"python -m act.main --spec_type local_vnnlib --vnnlib_path data/vnnlib/{vnnlib_file} --model_path {model_path}"
+                    "command": f"python -m act.wrapper_exts.ext_runner --spec_type local_vnnlib --vnnlib_path data/vnnlib/{vnnlib_file} --model_path {model_path}"
                 })
         
         # Difficulty progression

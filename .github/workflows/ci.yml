@@ -34,147 +34,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install torch torchvision onnx onnx2pytorch tensorflow
 
-      - name: Test ACT imports
+      - name: Test import ACTLog
         run: |
-          cd ${{ github.workspace }}
-          python -c "
-          import sys
-          sys.path.insert(0, '.')
-          try:
-              from act.base.util.options import get_parser
-              from act.base.bounds_propagation import BoundsPropagate
-              from act.base.util.stats import ACTLog
-              print('✅ All critical imports working')
-          except ImportError as e:
-              print(f'❌ Import failed: {e}')
-              sys.exit(1)
-          "
-
-  hybridz-linux:
-    name: HybridZ Relaxed (Linux)
-    runs-on: ubuntu-22.04
-    needs: quick-test
-    steps:
-      - name: Checkout repository with submodules
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Set up Miniconda
-        uses: conda-incubator/setup-miniconda@v3
-        with:
-          auto-update-conda: true
-          python-version: 3.9
-          miniforge-variant: Miniforge3
-          use-mamba: true
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential libgmp-dev libmpfr-dev
-
-      - name: Set up ACT environments
-        shell: bash -l {0}
-        run: |
-          cd setup/
-          ACT_CI_MODE=true source setup.sh main
-
-      - name: Run HybridZ verification (from project root)
-        shell: bash -l {0}
-        run: |
-          source "$(conda info --base)/etc/profile.d/conda.sh"
-          conda activate act-main
-          cd ${{ github.workspace }}
-          python -m act.main \
-            --verifier hybridz \
-            --method hybridz_relaxed \
-            --model_path models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
-            --dataset mnist --spec_type local_lp \
-            --start 0 --end 1 --epsilon 0.01 --norm inf \
-            --relaxation_ratio 1.0 \
-            --mean 0.1307 --std 0.3081 \
-            --ci
-
-      - name: Run HybridZ verification (from act directory)
-        shell: bash -l {0}
-        run: |
-          source "$(conda info --base)/etc/profile.d/conda.sh"
-          conda activate act-main
-          cd ${{ github.workspace }}/act
-          python main.py \
-            --verifier hybridz \
-            --method hybridz_relaxed \
-            --model_path ../models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
-            --dataset mnist --spec_type local_lp \
-            --start 0 --end 1 --epsilon 0.01 --norm inf \
-            --relaxation_ratio 1.0 \
-            --mean 0.1307 --std 0.3081 \
-            --ci
-
-  hybridz-macos:
-    name: HybridZ Relaxed (macOS)
-    runs-on: macos-latest
-    needs: quick-test
-    steps:
-      - name: Checkout repository with submodules
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Set up Miniconda
-        uses: conda-incubator/setup-miniconda@v3
-        with:
-          auto-update-conda: true
-          python-version: 3.9
-          miniforge-variant: Miniforge3
-          use-mamba: true
-
-      - name: Install system dependencies
-        run: |
-          brew install gmp mpfr
-
-      - name: Set up ACT environments
-        shell: bash -l {0}
-        run: |
-          cd setup/
-          ACT_CI_MODE=true source setup.sh main
-
-      - name: Run HybridZ verification (from project root)
-        shell: bash -l {0}
-        run: |
-          source "$(conda info --base)/etc/profile.d/conda.sh"
-          conda activate act-main
-          cd ${{ github.workspace }}
-          python -m act.main \
-            --verifier hybridz \
-            --method hybridz_relaxed \
-            --model_path models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
-            --dataset mnist --spec_type local_lp \
-            --start 0 --end 1 --epsilon 0.01 --norm inf \
-            --relaxation_ratio 1.0 \
-            --mean 0.1307 --std 0.3081 \
-            --ci
-
-      - name: Run HybridZ verification (from act directory)
-        shell: bash -l {0}
-        run: |
-          source "$(conda info --base)/etc/profile.d/conda.sh"
-          conda activate act-main
-          cd ${{ github.workspace }}/act
-          python main.py \
-            --verifier hybridz \
-            --method hybridz_relaxed \
-            --model_path ../models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
-            --dataset mnist --spec_type local_lp \
-            --start 0 --end 1 --epsilon 0.01 --norm inf \
-            --relaxation_ratio 1.0 \
-            --mean 0.1307 --std 0.3081 \
-            --ci
+          python -c "from act.util.stats import ACTLog; print('✅ ACTLog import successful')"
 
   abcrown-linux:
     name: abCrown (Linux)
     runs-on: ubuntu-22.04
-    needs: hybridz-linux
+    needs: quick-test
     steps:
       - name: Checkout repository with submodules
         uses: actions/checkout@v4
@@ -213,7 +80,7 @@ jobs:
           source "$(conda info --base)/etc/profile.d/conda.sh"
           conda activate act-abcrown
           cd ${{ github.workspace }}
-          python -m act.main \
+          python -m act.wrapper_exts.ext_runner \
             --verifier abcrown \
             --method alpha_beta \
             --model_path models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
@@ -221,24 +88,11 @@ jobs:
             --start 0 --end 1 --epsilon 0.1 --norm inf \
             --mean 0.1307 --std 0.3081
 
-      - name: Run abCrown verification (from act directory)
-        shell: bash -l {0}
-        run: |
-          source "$(conda info --base)/etc/profile.d/conda.sh"
-          conda activate act-abcrown
-          cd ${{ github.workspace }}/act
-          python main.py \
-            --verifier abcrown \
-            --method alpha_beta \
-            --model_path ../models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
-            --dataset mnist --spec_type local_lp \
-            --start 0 --end 1 --epsilon 0.1 --norm inf \
-            --mean 0.1307 --std 0.3081
 
   abcrown-macos:
     name: abCrown (macOS)
     runs-on: macos-latest
-    needs: hybridz-macos
+    needs: quick-test
     steps:
       - name: Checkout repository with submodules
         uses: actions/checkout@v4
@@ -276,24 +130,10 @@ jobs:
           source "$(conda info --base)/etc/profile.d/conda.sh"
           conda activate act-abcrown
           cd ${{ github.workspace }}
-          python -m act.main \
+          python -m act.wrapper_exts.ext_runner \
             --verifier abcrown \
             --method alpha_beta \
             --model_path models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
-            --dataset mnist --spec_type local_lp \
-            --start 0 --end 1 --epsilon 0.1 --norm inf \
-            --mean 0.1307 --std 0.3081
-
-      - name: Run abCrown verification (from act directory)
-        shell: bash -l {0}
-        run: |
-          source "$(conda info --base)/etc/profile.d/conda.sh"
-          conda activate act-abcrown
-          cd ${{ github.workspace }}/act
-          python main.py \
-            --verifier abcrown \
-            --method alpha_beta \
-            --model_path ../models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
             --dataset mnist --spec_type local_lp \
             --start 0 --end 1 --epsilon 0.1 --norm inf \
             --mean 0.1307 --std 0.3081
@@ -333,24 +173,10 @@ jobs:
           source "$(conda info --base)/etc/profile.d/conda.sh"
           conda activate act-eran
           cd ${{ github.workspace }}
-          python -m act.main \
+          python -m act.wrapper_exts.ext_runner \
             --verifier eran \
             --method deepzono \
             --model_path models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
-            --dataset mnist --spec_type local_lp \
-            --start 0 --end 5 --epsilon 0.01 --norm inf \
-            --mean 0.1307 --std 0.3081
-
-      - name: Run ERAN verification (from act directory)
-        shell: bash -l {0}
-        run: |
-          source "$(conda info --base)/etc/profile.d/conda.sh"
-          conda activate act-eran
-          cd ${{ github.workspace }}/act
-          python main.py \
-            --verifier eran \
-            --method deepzono \
-            --model_path ../models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
             --dataset mnist --spec_type local_lp \
             --start 0 --end 5 --epsilon 0.01 --norm inf \
             --mean 0.1307 --std 0.3081
@@ -372,14 +198,14 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install torch torchvision onnx onnx2pytorch pytest tensorflow
+          pip install torch torchvision onnx onnx2pytorch tensorflow pandas numpy pyyaml tqdm
 
-      - name: Run unit tests
+      - name: Run Model Synthesis Tests
         run: |
           cd ${{ github.workspace }}
-          pytest unit-tests/ -v
+          timeout 60 python act/front_end/model_synthesis.py
 
-      - name: Run regression tests
+      - name: Run Torch2ACT Pipeline Tests
         run: |
           cd ${{ github.workspace }}
-          bash unit-tests/regression_test.sh
+          python act/pipeline/torch2act.py

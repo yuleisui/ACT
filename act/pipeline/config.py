@@ -223,9 +223,8 @@ class ConfigManager:
         """Default solver settings configuration."""
         return {
             "solvers": {
-                "hybridz": {
-                    "method": "hybridz_relaxed",
-                    "relaxation_ratio": 0.5,
+                "eran_deeppoly": {
+                    "method": "deeppoly",
                     "timeout": 300
                 }
             },
