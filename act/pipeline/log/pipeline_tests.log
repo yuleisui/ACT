@@ -98,3 +98,17 @@
 2025-10-13 18:05:19,763 - act.pipeline.integration - INFO - ✅ Property VERIFIED for Gurobi MILP
 2025-10-13 18:05:19,763 - act.pipeline.integration - INFO - Real verification completed: True
 2025-10-13 18:05:19,763 - act.pipeline.integration - INFO - Real verification validation: 1/1 tests passed
+2025-10-16 14:00:14,203 - gurobipy - INFO - Restricted license - for non-production use only - expires 2026-11-23
+2025-10-16 14:02:31,507 - gurobipy - INFO - Restricted license - for non-production use only - expires 2026-11-23
+2025-10-16 14:04:50,180 - gurobipy - INFO - Restricted license - for non-production use only - expires 2026-11-23
+2025-10-16 14:07:10,079 - gurobipy - INFO - Restricted license - for non-production use only - expires 2026-11-23
+2025-10-16 14:07:40,934 - gurobipy - INFO - Restricted license - for non-production use only - expires 2026-11-23
+2025-10-16 14:10:09,966 - gurobipy - INFO - Set parameter WLSAccessID
+2025-10-16 14:10:09,966 - gurobipy - INFO - Set parameter WLSSecret
+2025-10-16 14:10:09,966 - gurobipy - INFO - Set parameter LicenseID to value 2711348
+2025-10-16 14:10:10,291 - gurobipy - INFO - Academic license 2711348 - for non-commercial use only - registered to y.___@unsw.edu.au
+2025-10-16 14:26:51,701 - gurobipy - INFO - Set parameter WLSAccessID
+2025-10-16 14:26:51,701 - gurobipy - INFO - Set parameter WLSSecret
+2025-10-16 14:26:51,702 - gurobipy - INFO - Set parameter LicenseID to value 2711348
+2025-10-16 14:26:51,706 - gurobipy - INFO - Academic license 2711348 - for non-commercial use only - registered to y.___@unsw.edu.au
+2025-10-16 14:26:51,706 - gurobipy - INFO - Warning: Gurobi version mismatch between Python 12.0.2 and C library 12.0.3
