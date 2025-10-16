@@ -34,9 +34,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install torch torchvision onnx onnx2pytorch tensorflow
 
-            - name: Test import ACTLog
-              run: |
-                python -c "from act.util.stats import ACTLog; print('✅ ACTLog import successful')"
+      - name: Test import ACTLog
+        run: |
+          python -c "from act.util.stats import ACTLog; print('✅ ACTLog import successful')"
 
   abcrown-linux:
     name: abCrown (Linux)
