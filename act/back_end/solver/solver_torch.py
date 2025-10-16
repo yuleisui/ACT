@@ -6,7 +6,7 @@ import numpy as np
 import torch
 
 from act.back_end.solver.solver_base import Solver, SolveStatus, SolverCaps
-from act.front_end.device_manager import get_default_device, get_default_dtype
+from act.util.device_manager import get_default_device, get_default_dtype
 
 class TorchLPSolver(Solver):
     """Continuous LP solver using Torch + Adam with penalty and box projection.

@@ -4,6 +4,7 @@ from typing import List, Optional
 import numpy as np
 import os
 from act.back_end.solver.solver_base import Solver, SolverCaps, SolveStatus
+from act.util.path_config import get_project_root
 
 try:
     import gurobipy as gp
@@ -20,11 +21,7 @@ def setup_gurobi_license():
             license_path = os.path.join(os.environ['ACTHOME'], 'gurobi', 'gurobi.lic')
             print(f"[ACT] Using ACTHOME environment variable: {os.environ['ACTHOME']}")
         else:
-            # Current file is at: act/back_end/solver/solver_gurobi.py
-            # Project root is: ../../../ from this file
-            # Gurobi license is at: gurobi/gurobi.lic from project root
-            current_file = os.path.abspath(__file__)
-            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_file))))
+            project_root = get_project_root()
             license_path = os.path.join(project_root, 'gurobi', 'gurobi.lic')
             print(f"[ACT] Auto-detecting project root: {project_root}")
         

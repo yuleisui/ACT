@@ -12,7 +12,7 @@ import csv
 from typing import List, Tuple, Dict, Any
 from pathlib import Path
 import pandas as pd
-from act.front_end.device_manager import get_current_settings
+from act.util.device_manager import get_current_settings
 
 
 class DatasetLoader:

@@ -4,7 +4,7 @@ from typing import Optional, List, Dict, Tuple, Any
 import torch, numpy as np
 from pathlib import Path
 
-from act.front_end.device_manager import get_default_device, get_default_dtype
+from act.util.device_manager import get_default_device, get_default_dtype
 from act.front_end.raw_processors.preprocessor_base import Preprocessor, ModelSignature
 from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
 

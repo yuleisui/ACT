@@ -8,7 +8,8 @@ using the pipeline testing framework.
 
 import sys
 import os
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+from act.util.path_config import get_project_root
+sys.path.append(get_project_root())
 
 from act.pipeline import quick_validate, validate_abstraction_verifier, run_mock_test_example
 

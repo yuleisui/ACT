@@ -38,9 +38,10 @@ import gc
 import torch
 import numpy as np
 from collections import defaultdict
+from act.util.path_config import get_abcrown_path
 
 # Import ABCrown modules from external library
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'modules', 'abcrown', 'complete_verifier')))
+sys.path.insert(0, os.path.join(get_abcrown_path(), 'complete_verifier'))
 import arguments
 from auto_LiRPA import BoundedTensor
 from auto_LiRPA.perturbations import PerturbationLpNorm

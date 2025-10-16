@@ -16,7 +16,10 @@ except ImportError:
     # Fallback to absolute import (when run standalone)
     import sys
     import os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+    # Use path_config for consistent project root detection
+    from act.util.path_config import get_project_root
+    project_root = get_project_root()
+    sys.path.insert(0, project_root)
     from act.back_end.layer_schema import REGISTRY, LayerKind
 
 # Import Layer from core to avoid circular import issues
@@ -162,7 +165,10 @@ def create_layer(id: int, kind: str, params: Dict[str, "Tensor"], meta: Dict[str
     except ImportError:
         import sys
         import os
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+        # Use path_config for consistent project root detection
+        from act.util.path_config import get_project_root
+        project_root = get_project_root()
+        sys.path.insert(0, project_root)
         from act.back_end.core import Layer
     
     ly = Layer(id=id, kind=kind, params=params, meta=meta, in_vars=in_vars, out_vars=out_vars)
@@ -177,7 +183,9 @@ if __name__ == "__main__":
         import sys
         import os
         # Add parent directory to path for absolute imports
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+        from act.util.path_config import get_project_root
+        project_root = get_project_root()
+        sys.path.insert(0, project_root)
         
         from act.back_end.core import Layer
         from act.back_end.layer_schema import LayerKind

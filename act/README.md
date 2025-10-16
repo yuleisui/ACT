@@ -17,7 +17,6 @@ act/
 │   ├── specs.py                    # InputSpec/OutputSpec with InKind/OutKind enums
 │   ├── wrapper_layers.py           # PyTorch verification wrapper modules
 │   ├── model_synthesis.py          # Advanced model generation and optimization
-│   ├── device_manager.py           # GPU-first CUDA device handling
 │   ├── preprocessor_image.py       # Image preprocessing and normalization
 │   ├── preprocessor_text.py        # Text preprocessing utilities
 │   ├── preprocessor_base.py        # Base preprocessor interface
@@ -35,7 +34,6 @@ act/
 │   ├── utils.py                    # Backend utility functions
 │   ├── analyze.py                  # Network analysis and bounds propagation
 │   ├── cons_exportor.py            # Constraint export to solvers
-│   ├── device_manager.py           # Backend device management
 │   ├── solver/                     # MILP/LP optimization solvers
 │   │   ├── solver_base.py          # Base solver interface
 │   │   ├── solver_gurobi.py        # Gurobi MILP solver integration
@@ -104,10 +102,6 @@ act/
   - Neural architecture synthesis and domain-specific model generation
   - Model optimization utilities and synthesis pipeline
 
-- **`device_manager.py`**: GPU-first CUDA device handling
-  - Automatic device detection and management
-  - GPU memory optimization and fallback strategies
-
 - **Preprocessors**: Modular preprocessing pipeline
   - **`preprocessor_image.py`**: Image normalization, augmentation, and format conversion
   - **`preprocessor_text.py`**: Text preprocessing utilities
@@ -169,6 +163,21 @@ act/
   - **`utils.py`**: Performance profiling, memory tracking, and optimization utilities
   - **`reporting.py`**: Results analysis and comprehensive report generation
   - **`run_tests.py`**: Command-line testing interface with parallel execution
+
+### **`util/` - Shared Utilities**
+
+- **`device_manager.py`**: GPU-first CUDA device handling
+  - Automatic device detection and management
+  - GPU memory optimization and fallback strategies
+  - Global PyTorch device and dtype configuration
+
+- **`options.py`**: Command-line argument processing
+  - Centralized CLI option definitions for all verifiers
+  - Parameter validation and default value management
+
+- **`stats.py`**: ACTLog statistics and performance tracking
+  - Verification result logging and analysis
+  - Performance metrics collection and reporting
 
 ### **`wrapper_exts/` - External Verifier Integrations**
 

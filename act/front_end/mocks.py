@@ -6,7 +6,7 @@ from typing import Optional, Tuple, List, Dict, Any
 from act.front_end.model_inference import model_inference
 from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
 from act.front_end.model_synthesis import InputLayer, InputAdapterLayer, InputSpecLayer, OutputSpecLayer
-from act.front_end.device_manager import get_default_device, get_default_dtype
+from act.util.device_manager import get_default_device, get_default_dtype
 # -----------------------------------------------------------------------------
 # Mock Wrapper Models for torch2act - Embedded with specs and input
 # -----------------------------------------------------------------------------

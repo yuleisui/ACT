@@ -44,7 +44,7 @@ def get_parser():
     
     # ACT Core Verifier Selection
     parser.add_argument('--verifier', type=str, default=None, 
-                        choices=['eran', 'abcrown', 'act'],
+                        choices=['act', 'eran', 'abcrown'],
                         help='Backend verification engine. "eran": ERAN external verifier, "abcrown": αβ-CROWN external verifier, "act": ACT torch-native abstraction framework')
     parser.add_argument('--method', type=str, default=None, 
                         help='Verification method. ERAN: [deepzono, refinezono, deeppoly, refinepoly], αβ-CROWN: [alpha, beta, alpha_beta], ACT-Native: [torch-native]')

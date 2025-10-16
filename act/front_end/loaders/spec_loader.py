@@ -13,7 +13,8 @@ from pathlib import Path
 
 from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
 from act.front_end.raw_processors.preprocessor_base import Preprocessor
-from act.front_end.device_manager import get_current_settings
+from act.util.device_manager import get_current_settings
+from act.util.path_config import get_project_root
 
 
 class SpecLoader:
@@ -196,7 +197,7 @@ class SpecLoader:
         }
         
         # Search entire project for specification files
-        project_root = Path(".")
+        project_root = Path(get_project_root())
         
         # Common specification directories
         spec_dirs = ["data", "configs", "specs", "properties"]

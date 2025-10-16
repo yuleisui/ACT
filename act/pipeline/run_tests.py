@@ -14,15 +14,16 @@ import json
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
+from act.util.path_config import get_project_root
 
-# Add parent directory to path for imports
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+# Add project root to path for imports
+sys.path.append(get_project_root())
 
-from config import ConfigManager, load_config
-from correctness import PipelineValidator
-from mock_factory import MockInputFactory
-from utils import setup_logging, print_memory_usage
-from __init__ import validate_abstraction_verifier, quick_validate, __version__
+from act.pipeline.config import ConfigManager, load_config
+from act.pipeline.correctness import PipelineValidator
+from act.pipeline.mock_factory import MockInputFactory
+from act.pipeline.utils import setup_logging, print_memory_usage
+from act.pipeline import validate_abstraction_verifier, quick_validate, __version__
 
 logger = logging.getLogger(__name__)
 

@@ -4,7 +4,7 @@ import torch
 from typing import Optional, Tuple
 from act.back_end.core import ConSet
 from act.back_end.solver.solver_base import Solver
-from act.front_end.device_manager import get_default_device, get_default_dtype
+from act.util.device_manager import get_default_device, get_default_dtype
 
 def to_numpy(x) -> np.ndarray:
     try:
