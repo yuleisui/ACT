@@ -1,28 +1,16 @@
 # Solver-specific settings for ACT pipeline testing
 
 solvers:
-  hybridz:
-    method: "hybridz_relaxed"
-    relaxation_ratio: 0.5
-    enable_generator_merging: true
-    cosine_threshold: 0.95
+  eran_deeppoly:
+    method: "deeppoly"
     timeout: 300
     memory_limit_gb: 4
     
-  hybridz_exact:
-    method: "hybridz_exact"
-    relaxation_ratio: 0.0
-    enable_generator_merging: false
-    timeout: 600
-    memory_limit_gb: 8
   
-  hybridz_fast:
-    method: "hybridz_relaxed"
-    relaxation_ratio: 1.0
-    enable_generator_merging: true
-    cosine_threshold: 0.9
-    timeout: 60
-    memory_limit_gb: 2
+  eran_deeppoly:
+    method: "deeppoly"
+    timeout: 300
+    memory_limit_gb: 4
   
   pytorch_interval:
     method: "interval_bound_propagation"
@@ -87,8 +75,8 @@ environments:
       default_timeout: 60
       retry_on_timeout: false
     solvers:
-      default: "hybridz_fast"
-      available: ["hybridz_fast", "pytorch_interval"]
+      default: "eran_deeppoly"
+      available: ["eran_deeppoly", "pytorch_interval"]
   
   development:
     # Settings for local development
@@ -98,8 +86,8 @@ environments:
       default_timeout: 300
       verbose_logging: true
     solvers:
-      default: "hybridz"
-      available: ["hybridz", "hybridz_fast", "pytorch_interval"]
+      default: "eran_deeppoly"
+      available: ["eran_deeppoly", "pytorch_interval"]
   
   production:
     # Settings for comprehensive testing
@@ -109,30 +97,27 @@ environments:
       default_timeout: 600
       retry_on_timeout: true
     solvers:
-      default: "hybridz"
-      available: ["hybridz", "hybridz_exact", "eran_deeppoly", "abcrown"]
+      default: "eran_deeppoly"
+      available: ["eran_deeppoly", "abcrown"]
 
 # Solver-specific test configurations
 solver_tests:
-  hybridz_specific:
-    generator_merging_tests:
-      - scenario: "test_merging_enabled"
-        enable_generator_merging: true
-        cosine_threshold: 0.95
-      - scenario: "test_merging_disabled" 
-        enable_generator_merging: false
+  eran_specific:
+    deeppoly_tests:
+      - scenario: "test_basic_deeppoly"
+        timeout: 60
+      - scenario: "test_enhanced_deeppoly" 
+        timeout: 120
     
-    relaxation_tests:
-      - scenario: "exact_milp"
-        relaxation_ratio: 0.0
-      - scenario: "hybrid_relaxation"
-        relaxation_ratio: 0.5
-      - scenario: "full_relaxation"
-        relaxation_ratio: 1.0
+    bounds_tests:
+      - scenario: "tight_bounds"
+        method: "deeppoly"
+      - scenario: "relaxed_bounds"
+        method: "deeppoly"
   
   cross_solver_comparison:
     test_scenarios: ["quick_smoke_test", "basic_sat_test"]
-    solvers: ["hybridz", "pytorch_interval"]
+    solvers: ["eran_deeppoly", "pytorch_interval"]
     tolerance: 0.05
     compare_results: true
     compare_performance: true

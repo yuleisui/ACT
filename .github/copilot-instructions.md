@@ -51,7 +51,7 @@ conda activate act-main
 
 ### Running Verification
 ```bash
-python act/main.py \
+python act/wrapper_exts/ext_runner.py \
   --model_path models/Sample_models/MNIST/small_relu_mnist_cnn_model_1.onnx \
   --dataset mnist --spec_type local_lp \
   --start 0 --end 1 --epsilon 0.03 --norm inf \
@@ -59,16 +59,15 @@ python act/main.py \
 ```
 
 ### Testing
-- **Unit tests**: `pytest unit-tests/` (uses `conftest.py` for path setup)
 - **Pipeline tests**: `python act/pipeline/run_tests.py` for comprehensive validation
-- **Regression tests**: Baseline capture/comparison in `unit-tests/regression_baselines/`
+- **Integration tests**: Built into the pipeline framework for end-to-end validation
 
 ## Configuration System
 
 ### Dataset Defaults
 Config files in `configs/` provide verifier-specific defaults:
 ```ini
-[MNIST] # hybridz_defaults.ini
+[MNIST] # eran_defaults.ini
 mean = [0.1307]
 std = [0.3081]
 spec_type = "local_lp"
@@ -88,7 +87,7 @@ spec_type = "local_lp"
 
 ### Memory Patterns
 - **Auto-cleanup**: Torch cache clearing in memory-intensive operations
-- **Progress tracking**: `print_memory_usage()` throughout HybridZ pipeline
+- **Progress tracking**: Memory monitoring throughout verification pipeline
 - **Batch processing**: Single-sample verification with result aggregation
 
 ### Error Handling
@@ -131,21 +130,17 @@ When writing code for this project, follow these Python best practices:
 - If you have modifications, make sure to remove legacy code and also remove backward compatibility to make cleaner code
 
 ### Testing Requirements
-- Write unit tests using `pytest` (preferred) or `unittest`
-- Use fixtures for setup/teardown and mock external dependencies
+- Focus on integration tests for critical verification workflows
+- Mock external verifier calls (ERAN, αβ-CROWN) when needed
 - Test both typical and edge cases, including error handling
-- Use parameterized tests for multiple scenarios
-- Keep tests isolated and independent
-- Add integration tests for critical verification workflows
-- Mock external verifier calls (ERAN, αβ-CROWN) in unit tests
-- Use the existing `conftest.py` pattern for test configuration
+- Keep test logic isolated and independent
+- Use the pipeline testing framework for comprehensive validation
 
 ### Debugging Practices
 - Use structured logging with appropriate levels
 - Add assertions to check invariants
 - Write clear, actionable error messages
-- Use `pytest` fixtures for reproducible test scenarios
-- Profile memory usage in HybridZ operations
+- Profile memory usage in verification operations
 - Add memory cleanup in long-running verification tasks
 
-When implementing new features, follow the BaseVerifier plugin pattern and ensure compatibility with the unified CLI interface. The HybridZ verifier demonstrates the most advanced patterns for memory optimization and novel constraint handling.
+When implementing new features, follow the BaseVerifier plugin pattern and ensure compatibility with the unified CLI interface.

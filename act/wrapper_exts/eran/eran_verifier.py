@@ -13,14 +13,14 @@ import os
 import torch
 import subprocess
 
-from act.base.base_verifier import BaseVerifier
-from act.base.input_parser.spec import Spec
-from act.base.util.path_config import get_eran_tf_verify_path
+from act.wrapper_exts.ext_config import Spec
+from act.util.path_config import get_eran_tf_verify_path
 
-class ERANVerifier(BaseVerifier):
+class ERANVerifier:
     def __init__(self, method, spec : Spec, device: str = 'cpu'):
-        super().__init__(spec, device)
-
+        self.spec = spec
+        self.dataset = spec.dataset
+        self.device = device
         self.method = method
 
         print(f"🔍 [ERAN DEBUG] Input bounds info:")

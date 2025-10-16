@@ -669,11 +669,11 @@ class ONNXAnalyzer:
             
             if main_activation == "Relu":
                 insights["verification_complexity"] = "low"
-                insights["recommended_verifiers"] = ["ERAN", "αβ-CROWN", "HybridZ"]
+                insights["recommended_verifiers"] = ["ERAN", "αβ-CROWN", "Base"]
                 insights["advantages"].append("ReLU is piecewise linear (verification-friendly)")
             elif main_activation in ["Sigmoid", "Tanh"]:
                 insights["verification_complexity"] = "medium"
-                insights["recommended_verifiers"] = ["HybridZ", "αβ-CROWN"]
+                insights["recommended_verifiers"] = ["Base", "αβ-CROWN"]
                 insights["challenges"].append(f"{main_activation} is non-linear (harder to verify)")
         
         # Analyze network depth
@@ -731,7 +731,7 @@ class ONNXAnalyzer:
   --epsilon {epsilon} \\
   --norm inf \\
   --start 0 --end 10 \\
-  --verifier hybridz"""
+  --verifier base"""
         
         # Netron visualization
         examples["visualization"] = f"netron {self.model_path}"

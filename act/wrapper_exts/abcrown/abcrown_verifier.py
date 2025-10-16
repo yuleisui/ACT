@@ -18,13 +18,13 @@ import tempfile
 import yaml
 import json
 
-from act.base.base_verifier import BaseVerifier
-from act.base.input_parser.spec import Spec
-from act.base.input_parser.type import SpecType
+from act.wrapper_exts.ext_config import Spec, SpecType
 
-class abCrownVerifier(BaseVerifier):
+class abCrownVerifier:
     def __init__(self, method, spec : Spec, device: str = 'cpu'):
-        super().__init__(spec, device)
+        self.spec = spec
+        self.dataset = spec.dataset
+        self.device = device
         self.method = method
 
     def verify(self, proof, public_inputs):
