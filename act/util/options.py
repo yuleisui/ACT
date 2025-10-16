@@ -44,12 +44,14 @@ def get_parser():
     
     # ACT Core Verifier Selection
     parser.add_argument('--verifier', type=str, default=None, 
-                        choices=['eran', 'abcrown', 'act'],
+                        choices=['act', 'eran', 'abcrown'],
                         help='Backend verification engine. "eran": ERAN external verifier, "abcrown": αβ-CROWN external verifier, "act": ACT torch-native abstraction framework')
     parser.add_argument('--method', type=str, default=None, 
                         help='Verification method. ERAN: [deepzono, refinezono, deeppoly, refinepoly], αβ-CROWN: [alpha, beta, alpha_beta], ACT-Native: [torch-native]')
-    parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda'],
-                        help='Computation device (cpu or cuda)')
+    parser.add_argument('--device', type=str, default='cuda', choices=['cpu', 'cuda', 'gpu'],
+                        help='Computation device (cpu, cuda, or gpu). Note: "cuda" and "gpu" are equivalent')
+    parser.add_argument('--dtype', type=str, default='float64', choices=['float32', 'float64'],
+                        help='Default PyTorch data type (float32 or float64)')
     parser.add_argument('--solver', type=str, default='auto', 
                         choices=['auto', 'gurobi', 'torch', 'both'],
                         help='Solver backend for constraint solving. "auto": try Gurobi first, fallback to PyTorch, "gurobi": Gurobi MILP solver only, "torch": PyTorch LP solver only, "both": test both solvers')

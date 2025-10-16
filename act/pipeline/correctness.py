@@ -32,7 +32,7 @@ from act.back_end.bab import VerifStatus, VerifResult, seed_from_input_spec
 from act.back_end.bab import verify_bab
 from act.back_end.solver.solver_gurobi import GurobiSolver
 from act.back_end.solver.solver_torch import TorchLPSolver
-from act.front_end.device_manager import get_current_settings
+from act.util.device_manager import get_current_settings
 from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
 
 logger = logging.getLogger(__name__)

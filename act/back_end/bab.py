@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Optional, List, Callable, Dict, Any
 from act.back_end.core import Bounds, Con, ConSet
 from act.back_end.solver.solver_base import Solver, SolveStatus
-from act.front_end.device_manager import get_default_device, get_default_dtype
+from act.util.device_manager import get_default_device, get_default_dtype
 
 # Import specification classes from front_end
 from act.front_end.specs import InKind, InputSpec, OutKind, OutputSpec

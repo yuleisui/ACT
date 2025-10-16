@@ -43,34 +43,48 @@ def _auto_initialize():
         return
     
     try:
-        # Determine best available device
-        if torch.cuda.is_available():
-            try:
-                # Test CUDA device
-                test_device = torch.device("cuda:0")
-                test_tensor = torch.zeros(1, device=test_device)
-                del test_tensor  # Clean up
-                target_device = test_device
-                print(f"Successfully initialized CUDA device: cuda:0")
-            except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
-                print(f"CUDA device cuda:0 error ({e}), falling back to CPU")
-                target_device = torch.device("cpu")
-        else:
+        # Get device and dtype preferences from command line arguments
+        preferred_device = 'cuda'  # Default value from options.py
+        preferred_dtype = 'float64'  # Default value from options.py
+        try:
+            import sys
+            from act.util.options import get_parser
+            
+            parser = get_parser()
+            args, _ = parser.parse_known_args(sys.argv[1:])
+            preferred_device = args.device
+            preferred_dtype = args.dtype
+            
+            # Handle gpu/cuda aliasing
+            if preferred_device == 'gpu':
+                preferred_device = 'cuda'
+                print(f"🔄 Device alias: 'gpu' → 'cuda'")
+                
+        except Exception:
+            # If parsing fails, use default
+            pass
+        
+        # Initialize device
+        if preferred_device == 'cpu':
             target_device = torch.device("cpu")
+            print(f"Using command line device: cpu")
+        else:  # cuda or any other value
+            if torch.cuda.is_available():
+                target_device = torch.device("cuda:0")
+                print(f"Using command line device: cuda:0")
+            else:
+                target_device = torch.device("cpu")
+                print(f"CUDA not available, using CPU")
         
         # Set PyTorch global defaults
-        torch.set_default_dtype(torch.float64)
+        target_dtype = torch.float64 if preferred_dtype == 'float64' else torch.float32
+        torch.set_default_dtype(target_dtype)
         if hasattr(torch, 'set_default_device'):
-            try:
-                torch.set_default_device(target_device)
-                print(f"✅ Initialized: device={target_device}, dtype=torch.float64")
-            except Exception as e:
-                print(f"✅ Initialized: dtype=torch.float64 (device setting not supported: {e})")
-        else:
-            print(f"✅ Initialized: dtype=torch.float64 (device setting not available in this PyTorch version)")
+            torch.set_default_device(target_device)
+        print(f"✅ Initialized: device={target_device}, dtype={target_dtype}")
             
     except Exception as e:
-        # Last resort fallback - just set dtype
+        # Last resort fallback
         print(f"Device initialization failed ({e}), using CPU + float64")
         torch.set_default_dtype(torch.float64)
     

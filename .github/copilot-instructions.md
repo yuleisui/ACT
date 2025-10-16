@@ -17,7 +17,7 @@ ACT is a unified neural network verification framework with a modern three-tier 
 - **Specifications** (`specs.py`) - `InputSpec`/`OutputSpec` with `InKind`/`OutKind` enums
 - **Wrapper Layers** (`wrapper_layers.py`) - PyTorch modules for verification: `InputLayer`, `InputAdapterLayer`, `InputSpecLayer`, `OutputSpecLayer`
 - **Model Synthesis** (`model_synthesis.py`) - Advanced model generation and optimization
-- **Device Management** (`device_manager.py`) - GPU-first CUDA device handling
+- **Device Management** (`util/device_manager.py`) - GPU-first CUDA device handling
 - **Preprocessors** - Image (`preprocessor_image.py`) and text (`preprocessor_text.py`) processing
 
 #### Back-End (`act/back_end/`)

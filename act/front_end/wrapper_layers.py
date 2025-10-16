@@ -14,7 +14,7 @@ from typing import Dict, Any, Optional, List, Tuple, Union
 from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
 from act.back_end.layer_schema import LayerKind, REGISTRY
 from act.back_end.layer_validation import create_layer
-from act.front_end.device_manager import get_default_device, get_default_dtype
+from act.util.device_manager import get_default_device, get_default_dtype
 
 
 def prod(seq: Tuple[int, ...]) -> int:

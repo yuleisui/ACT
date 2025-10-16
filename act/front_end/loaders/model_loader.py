@@ -17,7 +17,7 @@ from pathlib import Path
 from act.front_end.raw_processors.preprocessor_base import ModelSignature, Preprocessor
 from act.front_end.raw_processors.preprocessor_image import ImgPre
 from act.front_end.raw_processors.preprocessor_text import TextPre
-from act.front_end.device_manager import get_current_settings
+from act.util.device_manager import get_current_settings
 
 
 @dataclass

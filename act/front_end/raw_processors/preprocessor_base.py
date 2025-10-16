@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional, List, Tuple
 import torch
 import numpy as np
 from pathlib import Path
-from act.front_end.device_manager import get_default_device, get_default_dtype
+from act.util.device_manager import get_default_device, get_default_dtype
 from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
 
 @dataclass

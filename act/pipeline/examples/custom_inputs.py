@@ -8,7 +8,8 @@ without changing any code.
 
 import sys
 import os
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+from act.util.path_config import get_project_root
+sys.path.append(get_project_root())
 
 import yaml
 from act.pipeline import MockInputFactory, ConfigManager, create_test_scenario

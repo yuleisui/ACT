@@ -32,7 +32,7 @@ from act.front_end.raw_processors.preprocessor_text import TextPre
 from act.front_end.loaders import ModelLoader, ModelMetadata, DatasetLoader, SpecLoader
 
 # Device management
-from act.front_end.device_manager import get_default_device, get_default_dtype, get_current_settings
+from act.util.device_manager import get_default_device, get_default_dtype, get_current_settings
 
 # Utilities and mocks
 from act.front_end.mocks import (

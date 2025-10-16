@@ -23,7 +23,7 @@ sys.path.insert(0, str(act_root))
 
 from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
 from act.front_end.loaders import ModelLoader, DatasetLoader, SpecLoader
-from act.front_end.device_manager import get_current_settings
+from act.util.device_manager import get_current_settings
 from act.back_end.core import Net, Layer, Bounds
 from act.back_end.bab import VerifStatus, VerifResult, verify_once, seed_from_input_spec
 from act.back_end.solver.solver_gurobi import GurobiSolver
