@@ -1,3 +1,18 @@
+#===- act/pipeline/torch2act.py - Torch to ACT Converter ---------------====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Spec-free, input-free Torch → ACT converter. Converts a wrapped 
+#   nn.Sequential model (with embedded InputSpecLayer and OutputSpecLayer)
+#   into an ACT Net/Layer graph consumable by downstream analyzers/solvers.
+#
+#===---------------------------------------------------------------------===#
+
 # torch2act.py — Spec-free, input-free Torch → ACT converter
 # Converts a *wrapped* nn.Sequential model (with embedded InputSpecLayer and OutputSpecLayer)
 # into an ACT Net/Layer graph consumable by downstream analyzers/solvers.
@@ -35,7 +50,7 @@ from act.front_end.model_inference import model_inference
 from act.front_end.model_synthesis import model_synthesis
 from act.back_end.core import Net, Layer
 from act.back_end.layer_schema import LayerKind
-from act.back_end.layer_validation import create_layer
+from act.back_end.layer_util import create_layer
 from act.back_end.solver.solver_torch import TorchLPSolver
 from act.back_end.solver.solver_gurobi import GurobiSolver
 
@@ -353,7 +368,7 @@ class TorchToACT:
         net = Net(layers=self.layers, preds=preds, succs=succs)
 
         # Validate the created network structure
-        from act.back_end.layer_validation import validate_graph
+        from act.back_end.layer_util import validate_graph
         validate_graph(self.layers)  # Pass layers list, not net
 
         # Final sanity check

@@ -29,7 +29,7 @@ act/
 │   ├── core.py                     # Net, Layer, Bounds, Con, ConSet data structures
 │   ├── verifier.py                 # Spec-free verification: verify_once(), verify_bab()
 │   ├── layer_schema.py             # Layer type definitions and validation rules
-│   ├── layer_validation.py         # Layer validation and creation utilities
+│   ├── layer_util.py               # Layer validation and creation utilities
 │   ├── bab.py                      # Branch-and-bound refinement with CE validation
 │   ├── utils.py                    # Backend utility functions
 │   ├── analyze.py                  # Network analysis and bounds propagation

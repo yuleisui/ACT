@@ -1,3 +1,17 @@
+#===- act/front_end/specs.py - Specification Data Types ----------------====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Defines InputSpec and OutputSpec data structures for verification
+#   specifications including safety, robustness, and constraint types.
+#
+#===---------------------------------------------------------------------===#
+
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any

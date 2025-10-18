@@ -1,9 +1,18 @@
-"""
-Simplified verifier correctness validation for ACT pipeline.
+#===- act/pipeline/correctness.py - Verifier Correctness Validation ----====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Simplified verifier correctness validation for ACT pipeline. Provides
+#   focused validation of the back_end verify_bab function using mock_factory
+#   for test case generation and config for test scenarios.
+#
+#===---------------------------------------------------------------------===#
 
-This module provides focused validation of the back_end verify_bab function
-using mock_factory for test case generation and config for test scenarios.
-"""
 
 import torch
 import torch.nn as nn

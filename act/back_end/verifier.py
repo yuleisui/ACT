@@ -1,7 +1,18 @@
-# verifier.py - Spec-free, input-free verification (single-shot + branch-and-bound)
-# This module assumes the ACT Net already encodes input and output specifications
-# via INPUT_SPEC and ASSERT layers produced by act.pipeline.torch2act.TorchToACT.
+#===- act/back_end/verifier.py - Spec-free Verification Engine ----------====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
 #
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Spec-free, input-free verification (single-shot + branch-and-bound).
+#   Assumes ACT Net already encodes input and output specifications via
+#   INPUT_SPEC and ASSERT layers produced by torch2act.TorchToACT.
+#
+#===---------------------------------------------------------------------===#
+
 # Public API:
 #   - verify_once(net, solver, timelimit=None, maximize_violation=False) -> VerifResult
 #   - verify_bab(net, solver, model_fn, max_depth=20, max_nodes=2000, time_budget_s=300.0) -> VerifResult

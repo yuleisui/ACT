@@ -1,9 +1,18 @@
-"""
-Mock input factory for generating test inputs from YAML configuration.
+#===- act/pipeline/mock_factory.py - Mock Input Factory ----------------====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Mock input factory for generating test inputs from YAML configuration.
+#   Provides configurable generation of mock data, input specifications,
+#   output specifications, and neural network models for testing.
+#
+#===---------------------------------------------------------------------===#
 
-This module provides configurable generation of mock data, input specifications,
-output specifications, and neural network models for testing the abstraction verifier.
-"""
 
 import torch
 import torch.nn as nn

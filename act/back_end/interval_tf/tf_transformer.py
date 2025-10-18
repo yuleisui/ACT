@@ -1,4 +1,17 @@
-# -------- Transformer Components --------
+#===- act/back_end/interval_tf/tf_transformer.py - Transformer Interval TF ====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Transformer Interval Transfer Functions. Provides interval-based transfer
+#   functions for transformer components including attention mechanisms.
+#
+#===---------------------------------------------------------------------===#
+
 import torch
 from typing import List
 from act.back_end.core import Bounds, Con, ConSet, Fact, Layer

@@ -1,9 +1,17 @@
-"""
-Interval Transfer Function Implementation
-
-This module implements the IntervalTF class that provides interval-based 
-transfer functions for standard bounds propagation analysis.
-"""
+#===- act/back_end/interval_tf/interval_tf.py - Interval Transfer Func --====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Interval Transfer Function Implementation. Implements the IntervalTF class
+#   that provides interval-based transfer functions for standard bounds
+#   propagation analysis.
+#
+#===---------------------------------------------------------------------===#
 
 import torch
 from typing import Dict, List

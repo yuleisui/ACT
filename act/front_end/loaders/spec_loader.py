@@ -1,9 +1,18 @@
-"""
-📋 Specification Loading for Front-End Integration
+#===- act/front_end/loaders/spec_loader.py - Specification Loading -----====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Specification Loading for Front-End Integration. Clean torch tensor
+#   specification generation and loading. Handles input/output specification
+#   creation and VNNLIB constraint parsing using global device settings.
+#
+#===---------------------------------------------------------------------===#
 
-Clean torch tensor specification generation and loading.
-Handles input/output specification creation and VNNLIB constraint parsing using global device settings.
-"""
 
 from __future__ import annotations
 import os

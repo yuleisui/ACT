@@ -1,9 +1,17 @@
-"""
-🎭 Wrapper Layers for ACT-PyTorch Integration
-
-PyTorch nn.Module wrappers that bridge PyTorch models with ACT verification framework.
-These layers provide the essential PyTorch compatibility while enabling conversion to ACT format.
-"""
+#===- act/front_end/wrapper_layers.py - PyTorch Wrapper Layers ---------====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   PyTorch nn.Module wrappers that bridge PyTorch models with ACT
+#   verification framework, providing PyTorch compatibility while
+#   enabling conversion to ACT format.
+#
+#===---------------------------------------------------------------------===#
 
 from __future__ import annotations
 import torch
@@ -13,7 +21,7 @@ from typing import Dict, Any, Optional, List, Tuple, Union
 # Import ACT components
 from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
 from act.back_end.layer_schema import LayerKind, REGISTRY
-from act.back_end.layer_validation import create_layer
+from act.back_end.layer_util import create_layer
 from act.util.device_manager import get_default_device, get_default_dtype
 
 
@@ -205,7 +213,7 @@ class InputAdapterLayer(nn.Module):
         """Convert InputAdapterLayer to multiple ACT layers"""
         from act.back_end.core import Layer
         from act.back_end.layer_schema import LayerKind
-        from act.back_end.layer_validation import create_layer
+        from act.back_end.layer_util import create_layer
         
         layers = []
         current_vars = in_vars

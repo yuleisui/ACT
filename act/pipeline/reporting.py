@@ -1,10 +1,18 @@
-"""
-Result analysis and report generation for ACT pipeline testing.
+#===- act/pipeline/reporting.py - Result Analysis and Reporting ---------====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Result analysis and report generation for ACT pipeline testing.
+#   Provides comprehensive analysis and reporting capabilities for test results,
+#   including performance analysis, correctness summaries, regression reports.
+#
+#===---------------------------------------------------------------------===#
 
-This module provides comprehensive analysis and reporting capabilities for test results,
-including performance analysis, correctness summaries, regression reports, and visual
-dashboards.
-"""
 
 import os
 import json

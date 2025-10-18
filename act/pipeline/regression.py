@@ -1,9 +1,18 @@
-"""
-Baseline management and regression testing for ACT pipeline.
+#===- act/pipeline/regression.py - Baseline Management and Testing ------====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Baseline management and regression testing for ACT pipeline. Provides
+#   comprehensive regression testing capabilities including baseline capture,
+#   performance tracking, correctness regression detection, and trend analysis.
+#
+#===---------------------------------------------------------------------===#
 
-This module provides comprehensive regression testing capabilities including baseline
-capture, performance tracking, correctness regression detection, and trend analysis.
-"""
 
 import os
 import json

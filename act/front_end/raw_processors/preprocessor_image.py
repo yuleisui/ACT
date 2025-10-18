@@ -1,4 +1,19 @@
 
+#===- act/front_end/raw_processors/preprocessor_image.py - Image Processor ====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Image Preprocessor. Provides image preprocessing capabilities including
+#   normalization, resizing, and format conversion for image-based verification
+#   tasks in the ACT framework.
+#
+#===---------------------------------------------------------------------===#
+
 from __future__ import annotations
 from typing import Optional, Tuple, Any
 import torch

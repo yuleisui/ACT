@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
-"""
-CI/CD setup example for ACT pipeline testing framework.
+#===- act/pipeline/examples/ci_setup.py - CI/CD Setup Example -----------====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   CI/CD setup example for ACT pipeline testing framework. Demonstrates
+#   how to integrate the pipeline testing framework.
+#
+#===---------------------------------------------------------------------===#
 
-This demonstrates how to integrate the pipeline testing framework
-into CI/CD workflows for automated validation.
-"""
 
 import sys
 import os

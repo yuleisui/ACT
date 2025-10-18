@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
-"""
-Custom inputs example for ACT pipeline testing framework.
-
-This demonstrates how to add new test inputs by editing YAML configuration
-without changing any code.
-"""
+#===- act/pipeline/examples/custom_inputs.py - Custom Inputs Example ---====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Custom inputs example for ACT pipeline testing framework. Demonstrates
+#   how to add new test inputs by editing YAML configuration.
+#
+#===---------------------------------------------------------------------===#
 
 import sys
 import os

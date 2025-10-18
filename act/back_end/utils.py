@@ -1,4 +1,17 @@
-# utils.py
+#===- act/back_end/utils.py - Backend Utility Functions ----------------====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Backend utility functions for ACT verification framework.
+#   Provides common utilities for bounds manipulation and tensor operations.
+#
+#===---------------------------------------------------------------------===#
+
 import torch
 from typing import Dict, Any, Tuple, Optional
 from act.back_end.core import Bounds

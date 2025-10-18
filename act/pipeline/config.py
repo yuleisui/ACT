@@ -1,9 +1,18 @@
-"""
-Configuration loading and management for ACT pipeline testing framework.
+#===- act/pipeline/config.py - Configuration Management ----------------====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Configuration loading and management for ACT pipeline testing framework.
+#   Provides centralized configuration management including YAML loading,
+#   validation, and default configurations.
+#
+#===---------------------------------------------------------------------===#
 
-This module provides centralized configuration management for the pipeline testing system,
-including YAML loading, validation, and default configurations.
-"""
 
 import os
 import yaml

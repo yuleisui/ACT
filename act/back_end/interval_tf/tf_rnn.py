@@ -1,10 +1,15 @@
-# tf_rnn.py
-"""
-RNN Transfer Functions for ACT Abstraction Framework
+#===- act/back_end/interval_tf/tf_rnn.py - RNN Interval Transfer Func ---====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   RNN Interval Transfer Functions. Provides transfer functions for RNN layers
+#   to enable the abstraction framework to handle recurrent neural networks.
 
-This module provides transfer functions for RNN layers to enable
-the abstraction framework to handle recurrent neural networks.
-"""
 
 import torch
 import torch.nn.functional as F

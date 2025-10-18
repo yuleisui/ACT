@@ -1,9 +1,18 @@
-"""
-📦 Streamlined Data Loading for Front-End Integration
+#===- act/front_end/loaders/data_loader.py - Data Loading Utilities ----====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Streamlined Data Loading for Front-End Integration. Clean torch tensor
+#   data loading with dynamic discovery. Focuses on essential methods for
+#   CSV loading and project resource discovery.
+#
+#===---------------------------------------------------------------------===#
 
-Clean torch tensor data loading with dynamic discovery.
-Focuses on essential methods for CSV loading and project resource discovery.
-"""
 
 from __future__ import annotations
 import os

@@ -1,10 +1,14 @@
-# transfer_cnn.py
-"""
-CNN Transfer Functions for ACT Abstraction Framework
-
-This module provides transfer functions for CNN layers to enable
-the abstraction framework to handle convolutional neural networks.
-"""
+#===- act/back_end/interval_tf/tf_cnn.py - CNN Interval Transfer Func ---====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   CNN Interval Transfer Functions. Provides transfer functions for CNN layers
+#   to enable the abstraction framework to handle convolutional neural networks.
 
 import torch
 import torch.nn.functional as F
