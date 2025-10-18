@@ -67,7 +67,29 @@ class abCrown:
     def __init__(self, method=None, args=None):
 
         self.method = method
-        arguments.Config.parse_config(args)
+        
+        # Convert ACT long format spec types to abCrown short format for external compatibility
+        converted_args = []
+        i = 0
+        while i < len(args):
+            if args[i] == '--spec_type' and i + 1 < len(args):
+                converted_args.append('--spec_type')
+                # Map long format to short format for external abCrown compatibility
+                spec_type = args[i + 1]
+                if spec_type == 'local_lp':
+                    converted_args.append('lp')
+                elif spec_type == 'set_box':
+                    converted_args.append('box')
+                elif spec_type in ['set_vnnlib', 'local_vnnlib']:
+                    converted_args.append('bound')
+                else:
+                    converted_args.append(spec_type)  # Keep as is if unknown
+                i += 2
+            else:
+                converted_args.append(args[i])
+                i += 1
+        
+        arguments.Config.parse_config(converted_args)
 
     def settings(self):
 
