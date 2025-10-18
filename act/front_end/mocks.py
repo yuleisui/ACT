@@ -1,4 +1,18 @@
 
+#===- act/front_end/mocks.py - Mock Data and Model Generation -----------====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Mock Data and Model Generation. Provides mock data generators and model
+#   creation utilities for testing and validation purposes.
+#
+#===---------------------------------------------------------------------===#
+
 from __future__ import annotations
 import numpy as np, torch
 import torch.nn as nn

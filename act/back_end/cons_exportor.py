@@ -1,4 +1,17 @@
-# exporter.py
+#===- act/back_end/cons_exportor.py - Constraint Set Export Utilities ---====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Constraint set export utilities for external solver integration.
+#   Provides export functionality for constraint sets to various formats.
+#
+#===---------------------------------------------------------------------===#
+
 import numpy as np
 import torch
 from typing import Optional, Tuple

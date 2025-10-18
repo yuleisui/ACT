@@ -1,8 +1,19 @@
-"""
-ACT Pipeline Testing Framework
+#===- act/pipeline/__init__.py - ACT Pipeline Testing Framework --------====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   ACT Pipeline Testing Framework. A comprehensive testing framework for
+#   validating the Abstract Constraint Transformer (ACT) abstraction verifier
+#   with configurable mock testing, property-based validation.
+#
+#===---------------------------------------------------------------------===#
 
-A comprehensive testing framework for validating the Abstract Constraint Transformer (ACT)
-abstraction verifier with configurable mock testing, property-based validation, and 
+""" 
 regression testing capabilities.
 
 Main Components:

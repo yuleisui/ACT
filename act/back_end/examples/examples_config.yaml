@@ -1,0 +1,150 @@
+# ACT Network Configuration
+# Direct layer specification aligned with layer_schema.py - no shorthand formats
+
+generator:
+  device: cpu
+  output_dir: act/back_end/examples/nets
+  include_metadata: true
+
+networks:
+  # MNIST Networks
+  mnist_mlp_small:
+    description: "Small MLP for MNIST (32-16 hidden layers)"
+    architecture_type: mlp
+    input_shape: [1, 784]
+    layers:
+      - kind: INPUT
+        params: {}
+        meta: {shape: [1, 784]}
+      - kind: INPUT_SPEC
+        params: {lb: 0.0, ub: 1.0}
+        meta: {kind: "BOX"}
+      - kind: DENSE
+        params: {}  # W tensor will be generated during network creation
+        meta: {in_features: 784, out_features: 32}
+      - kind: RELU
+        params: {}
+        meta: {}
+      - kind: DENSE
+        params: {}  # W tensor will be generated during network creation
+        meta: {in_features: 32, out_features: 16}
+      - kind: RELU
+        params: {}
+        meta: {}
+      - kind: DENSE
+        params: {}  # W tensor will be generated during network creation
+        meta: {in_features: 16, out_features: 10}
+      - kind: ASSERT
+        params: {}
+        meta: {kind: "TOP1_ROBUST"}
+    metadata: {dataset: mnist, task: classification, size: small}
+
+  mnist_cnn_small:
+    description: "Small CNN for MNIST"
+    architecture_type: cnn
+    input_shape: [1, 1, 28, 28]
+    layers:
+      - kind: INPUT
+        params: {}
+        meta: {shape: [1, 1, 28, 28]}
+      - kind: INPUT_SPEC
+        params: {lb: 0.0, ub: 1.0}
+        meta: {kind: "BOX"}
+      - kind: CONV2D
+        params: {}  # weight tensor will be generated during network creation
+        meta: {input_shape: [1, 1, 28, 28], output_shape: [1, 16, 28, 28], in_channels: 1, out_channels: 16, kernel_size: 5, padding: 2}
+      - kind: RELU
+        params: {}
+        meta: {}
+      - kind: MAXPOOL2D
+        params: {}
+        meta: {kernel_size: 2}
+      - kind: CONV2D
+        params: {}  # weight tensor will be generated during network creation
+        meta: {input_shape: [1, 16, 14, 14], output_shape: [1, 32, 14, 14], in_channels: 16, out_channels: 32, kernel_size: 3, padding: 1}
+      - kind: RELU
+        params: {}
+        meta: {}
+      - kind: MAXPOOL2D
+        params: {}
+        meta: {kernel_size: 2}
+      - kind: FLATTEN
+        params: {}
+        meta: {input_shape: [1, 32, 7, 7], output_shape: [1, 1568]}
+      - kind: DENSE
+        params: {}  # W tensor will be generated during network creation
+        meta: {in_features: 1568, out_features: 64}
+      - kind: RELU
+        params: {}
+        meta: {}
+      - kind: DENSE
+        params: {}  # W tensor will be generated during network creation
+        meta: {in_features: 64, out_features: 10}
+      - kind: ASSERT
+        params: {}
+        meta: {kind: "TOP1_ROBUST"}
+    metadata: {dataset: mnist, task: classification}
+
+  # Adversarial Networks
+  adversarial_simple:
+    description: "Simple adversarial network (ε=0.1, L∞)"
+    architecture_type: adversarial
+    input_shape: [1, 10]
+    layers:
+      - kind: INPUT
+        params: {}
+        meta: {shape: [1, 10]}
+      - kind: INPUT_SPEC
+        params: {}
+        meta: {kind: "LINF_BALL", eps: 0.1}
+      - kind: DENSE
+        params: {}  # W tensor will be generated during network creation
+        meta: {in_features: 10, out_features: 8}
+      - kind: RELU
+        params: {}
+        meta: {}
+      - kind: DENSE
+        params: {}  # W tensor will be generated during network creation
+        meta: {in_features: 8, out_features: 4}
+      - kind: RELU
+        params: {}
+        meta: {}
+      - kind: DENSE
+        params: {}  # W tensor will be generated during network creation
+        meta: {in_features: 4, out_features: 3}
+      - kind: ASSERT
+        params: {}
+        meta: {kind: "TOP1_ROBUST"}
+    metadata: {verification_type: adversarial, property: robustness, epsilon: 0.1}
+
+  # Custom Networks
+  custom_mlp_small:
+    description: "Small custom MLP with box constraints"
+    architecture_type: mlp
+    input_shape: [1, 10]
+    layers:
+      - kind: INPUT
+        params: {}
+        meta: {shape: [1, 10]}
+      - kind: INPUT_SPEC
+        params: {lb: -1.0, ub: 1.0}
+        meta: {kind: "BOX"}
+      - kind: DENSE
+        params: {}  # W tensor will be generated during network creation
+        meta: {in_features: 10, out_features: 16}
+      - kind: RELU
+        params: {}
+        meta: {}
+      - kind: DENSE
+        params: {}  # W tensor will be generated during network creation
+        meta: {in_features: 16, out_features: 8}
+      - kind: RELU
+        params: {}
+        meta: {}
+      - kind: DENSE
+        params: {}  # W tensor will be generated during network creation
+        meta: {in_features: 8, out_features: 3}
+      - kind: ASSERT
+        params: {}
+        meta: {kind: "TOP1_ROBUST"}
+    metadata: {custom: true, input_bounds: [-1.0, 1.0]}

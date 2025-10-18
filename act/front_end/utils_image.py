@@ -1,4 +1,18 @@
 
+#===- act/front_end/utils_image.py - Image Processing Utilities ---------====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Image Processing Utilities. Provides common image processing functions
+#   for normalization, transformation, and preparation for verification.
+#
+#===---------------------------------------------------------------------===#
+
 from __future__ import annotations
 from typing import Tuple
 import numpy as np

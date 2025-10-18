@@ -1,4 +1,17 @@
-# analyze.py
+#===- act/back_end/analyze.py - Network Analysis Functions --------------====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Network analysis functions for ACT verification framework.
+#   Provides analysis capabilities for neural network structures and properties.
+#
+#===---------------------------------------------------------------------===#
+
 import torch
 from collections import deque
 from typing import Dict, Tuple

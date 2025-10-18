@@ -1,4 +1,18 @@
 
+#===- act/front_end/raw_processors/preprocessor_base.py - Base Processor -====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Base Preprocessor Classes. Defines abstract base classes and common
+#   interfaces for data preprocessing in the ACT framework.
+#
+#===---------------------------------------------------------------------===#
+
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, List, Tuple

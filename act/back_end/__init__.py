@@ -1,8 +1,18 @@
-"""
-Torch-native DNN verification abstraction framework.
+#===- act/back_end/__init__.py - ACT Backend Verification Framework ----====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Torch-native DNN verification abstraction framework. Provides core
+#   data structures (Bounds, Con, ConSet, Fact, Layer, Net).
+#
+#===---------------------------------------------------------------------===#
 
-This module provides:
-- Core data structures (Bounds, Con, ConSet, Fact, Layer, Net)
+"""
 - Transfer functions for MLP and Transformer layers  
 - Worklist-based bounds propagation analysis
 - Constraint export to LP/MILP solvers

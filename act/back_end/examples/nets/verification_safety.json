@@ -1,0 +1,112 @@
+{
+  "meta": {
+    "name": "verification_safety",
+    "description": "Simple safety verification scenario",
+    "architecture_type": "verification",
+    "input_shape": [
+      1,
+      4
+    ]
+  },
+  "layers": [
+    {
+      "id": 0,
+      "kind": "INPUT_SPEC",
+      "params": {
+        "bounds": {
+          "lower": -2.0,
+          "upper": 2.0
+        }
+      },
+      "meta": {},
+      "in_vars": [],
+      "out_vars": [
+        1
+      ]
+    },
+    {
+      "id": 1,
+      "kind": "DENSE",
+      "params": {
+        "output_features": 8,
+        "xavier_init": true
+      },
+      "meta": {},
+      "in_vars": [
+        1
+      ],
+      "out_vars": [
+        2
+      ]
+    },
+    {
+      "id": 2,
+      "kind": "RELU",
+      "params": {},
+      "meta": {},
+      "in_vars": [
+        2
+      ],
+      "out_vars": [
+        3
+      ]
+    },
+    {
+      "id": 3,
+      "kind": "DENSE",
+      "params": {
+        "output_features": 2,
+        "xavier_init": true
+      },
+      "meta": {},
+      "in_vars": [
+        3
+      ],
+      "out_vars": [
+        4
+      ]
+    },
+    {
+      "id": 4,
+      "kind": "ASSERT",
+      "params": {},
+      "meta": {},
+      "in_vars": [
+        4
+      ],
+      "out_vars": [
+        5
+      ]
+    }
+  ],
+  "preds": {
+    "0": [],
+    "1": [
+      0
+    ],
+    "2": [
+      1
+    ],
+    "3": [
+      2
+    ],
+    "4": [
+      3
+    ]
+  },
+  "succs": {
+    "0": [
+      1
+    ],
+    "1": [
+      2
+    ],
+    "2": [
+      3
+    ],
+    "3": [
+      4
+    ],
+    "4": []
+  }
+}

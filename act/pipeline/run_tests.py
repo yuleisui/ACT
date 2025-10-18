@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
-"""
-Command-line interface for ACT pipeline testing framework.
+#===- act/pipeline/run_tests.py - ACT Pipeline Testing CLI --------------====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Command-line interface for ACT pipeline testing framework. Provides
+#   a comprehensive CLI for running various types of validation.
+#
+#===---------------------------------------------------------------------===#
 
-This module provides a comprehensive CLI for running various types of validation
-tests on the abstraction verifier, including correctness testing, property validation,
-performance measurement, and regression testing.
-"""
 
 import argparse
 import sys

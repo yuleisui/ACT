@@ -1,8 +1,19 @@
-"""
-🔧 Front-End Loaders Module
+#===- act/front_end/loaders/__init__.py - Front-End Loaders Module -----====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Front-End Loaders Module. Contains the three core loaders for the
+#   front-end integration: ModelLoader for ONNX model loading and
+#   preprocessor auto-creation.
+#
+#===---------------------------------------------------------------------===#
 
-This module contains the three core loaders for the front-end integration:
-- ModelLoader: ONNX model loading and preprocessor auto-creation
+"""
 - DatasetLoader: Pure data loading (CSV, images, VNNLIB anchors)
 - SpecLoader: Specification generation and data+spec combination
 

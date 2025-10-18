@@ -29,7 +29,7 @@ act/
 │   ├── core.py                     # Net, Layer, Bounds, Con, ConSet data structures
 │   ├── verifier.py                 # Spec-free verification: verify_once(), verify_bab()
 │   ├── layer_schema.py             # Layer type definitions and validation rules
-│   ├── layer_validation.py         # Layer validation and creation utilities
+│   ├── layer_util.py               # Layer validation and creation utilities
 │   ├── bab.py                      # Branch-and-bound refinement with CE validation
 │   ├── utils.py                    # Backend utility functions
 │   ├── analyze.py                  # Network analysis and bounds propagation
@@ -246,3 +246,10 @@ The three-tier modular architecture provides several key advantages:
 - **Utility Reuse**: Common operations centralized to eliminate code duplication
 - **Efficient Imports**: Modular structure reduces import overhead and circular dependencies
 - **GPU Acceleration**: PyTorch-native verification leverages GPU computation where beneficial
+
+## Examples and Network Generation
+Example ACT networks are stored as JSON under `act/back_end/examples/nets/`.
+These files are generated from the YAML configuration `act/back_end/examples/examples_config.yaml`
+using the YAML-driven network factory. The test suite and serializer load networks
+from the `examples/nets` directory. When authoring new example networks prefer the
+YAML configuration and the factory rather than hand-editing the JSON files.

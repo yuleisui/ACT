@@ -1,10 +1,24 @@
+#===- act/back_end/core.py - ACT Core Data Structures ------------------====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Core data structures for ACT verification framework including Layer,
+#   Net, Bounds, and constraint set definitions.
+#
+#===---------------------------------------------------------------------===#
+
 # core.py
 import torch
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Optional, Any
 
 # Import validation functions
-from act.back_end.layer_validation import validate_layer, validate_graph, validate_wrapper_graph
+from act.back_end.layer_util import validate_layer, validate_graph, validate_wrapper_graph
 
 # Supported layer types: Please see them in act/back_end/layer_schema.py
 @dataclass

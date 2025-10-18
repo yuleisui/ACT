@@ -1,9 +1,17 @@
-"""
-HybridZ MLP Transfer Functions
+#===- act/back_end/hybridz_tf/tf_mlp.py - HybridZ MLP Transfer Functions ====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   HybridZ MLP Transfer Functions. Implements HybridZ-based transfer functions
+#   for MLP layers including dense, activation, and basic arithmetic operations.
+#
+#===---------------------------------------------------------------------===#
 
-This module implements HybridZ-based transfer functions for MLP layers
-including dense, activation, and basic arithmetic operations.
-"""
 
 import torch
 from typing import Optional

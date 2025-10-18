@@ -1,8 +1,16 @@
-# layer_validation.py
-"""
-Validation functions for ACT layers and networks.
-Separated from layer_schema.py to avoid circular import issues.
-"""
+#===- act/back_end/layer_util.py - Layer Utility Functions --------------====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Layer utility functions for ACT layers and networks. Separated from
+#   layer_schema.py to avoid circular import issues.
+#
+#===---------------------------------------------------------------------===#
 
 from __future__ import annotations
 from typing import Dict, Any, List

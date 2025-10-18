@@ -1,8 +1,18 @@
-"""
-Raw Data Processors
+#===- act/front_end/raw_processors/__init__.py - Raw Data Processors ---====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Raw Data Processors. Contains preprocessors for different data modalities
+#   including image preprocessing (ImgPre).
+#
+#===---------------------------------------------------------------------===#
 
-This module contains preprocessors for different data modalities:
-- Image preprocessing (ImgPre) 
+""" 
 - Text preprocessing (TextPre)
 - Base preprocessor interface (Preprocessor, ModelSignature)
 

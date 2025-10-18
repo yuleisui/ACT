@@ -1,8 +1,19 @@
-"""
-🧩 ACT Front-End Preprocessing Module (Self-Contained)
+#===- act/front_end/__init__.py - ACT Frontend Preprocessing Module ----====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   ACT Front-End Preprocessing Module (Self-Contained). Prepares samples,
+#   labels, and specs for DNN verification using its own spec types.
+#   No dependencies on external verification frameworks.
+#
+#===---------------------------------------------------------------------===#
 
-This front-end prepares samples, labels, and specs for DNN verification using its own spec types.
-No dependencies on external verification frameworks - everything self-contained.
+"""
 
 Key Features:
 - Unified specification system (InputSpec/OutputSpec)

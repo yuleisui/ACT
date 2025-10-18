@@ -1,10 +1,17 @@
-"""
-Front-end integration bridge for ACT pipeline.
-
-This module provides integration between the pipeline testing framework and 
-ACT's front-end components, enabling testing with real specifications,
-models, and datasets using the front_end loaders.
-"""
+#===- act/pipeline/integration.py - Front-End Integration Bridge -------====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Front-end integration bridge for ACT pipeline. Provides integration
+#   between the pipeline testing framework and ACT's front-end components,
+#   enabling testing with real specifications.
+#
+#===---------------------------------------------------------------------===#
 
 import torch
 import torch.nn as nn

@@ -1,8 +1,18 @@
-# act_schema.py
-"""
-ACT Layers: Single-File Schema + Strict Registry + Wrapper Checks + Tiny Example
+#===- act/back_end/layer_schema.py - ACT Layer Schema and Registry -----====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   ACT layer schema definitions, strict registry, wrapper checks,
+#   and validation for layer types and parameters.
+#
+#===---------------------------------------------------------------------===#
 
-WHY WERE THERE EXTRA CLASSES BEFORE?
+"""
 - Enums like DataFormat/PaddingMode and dataclasses like ConvMeta/PoolMeta/NormMeta are *convenience types*.
   They provide defaults and IDE/type hints, but they are **not required** for validation. In a verification
   toolchain where you want a slim, explicit surface, they can be replaced by plain strings/tuples stored in
@@ -11,10 +21,10 @@ WHY WERE THERE EXTRA CLASSES BEFORE?
 WHAT THIS FILE PROVIDES (concise):
 1) LayerKind enum + Layer dataclass (the only structured types you need).
 2) A single REGISTRY that lists **all allowed params/meta keys** per kind.
-3) Strict validators in layer_validation.py: `validate_layer`, `validate_graph`, and `validate_wrapper_graph` (for wrapper layout).
+3) Strict validators in layer_util.py: `validate_layer`, `validate_graph`, and `validate_wrapper_graph` (for wrapper layout).
 4) `create_layer(...)` helper that validates on creation.
 5) Clear header on how to add new kinds/keys.
-6) A tiny usage example runnable via `python layer_validation.py`.
+6) A tiny usage example runnable via `python layer_util.py`.
 
 HOW TO ADD NEW STUFF (READ THIS):
 - Add a new LAYER KIND:
@@ -33,13 +43,13 @@ HOW TO ADD NEW STUFF (READ THIS):
     * Re-run; unknown keys will fail with a message that suggests the closest valid key
       or tells you to add the key to REGISTRY.
 
-WRAPPER LAYOUT (validated by `validate_wrapper_graph` in layer_validation.py):
+WRAPPER LAYOUT (validated by `validate_wrapper_graph` in layer_util.py):
 InputLayer → InputAdapterLayer(s) → InputSpecLayer → Model → OutputSpecLayer
 - Exactly one `INPUT`
 - ≥1 `INPUT_SPEC`
 - Final layer must be `ASSERT`
 - Adapters are deterministic ops: PERMUTE, REORDER, SLICE, PAD, SCALE_SHIFT, LINEAR_PROJ
-  (ADAPTER_KINDS defined in layer_validation.py)
+  (ADAPTER_KINDS defined in layer_util.py)
 """
 
 from __future__ import annotations

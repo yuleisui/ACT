@@ -1,0 +1,227 @@
+{
+  "format_version": "1.0",
+  "act_net": {
+    "layers": [
+      {
+        "id": 0,
+        "kind": "INPUT",
+        "params": {},
+        "meta": {
+          "shape": [
+            1,
+            10
+          ]
+        },
+        "in_vars": [],
+        "out_vars": [
+          1
+        ],
+        "cache": {}
+      },
+      {
+        "id": 1,
+        "kind": "INPUT_SPEC",
+        "params": {},
+        "meta": {
+          "kind": "LINF_BALL",
+          "eps": 0.1
+        },
+        "in_vars": [
+          1
+        ],
+        "out_vars": [
+          2
+        ],
+        "cache": {}
+      },
+      {
+        "id": 2,
+        "kind": "DENSE",
+        "params": {
+          "W": {
+            "data": "k05VTVBZAQB2AHsnZGVzY3InOiAnPGY4JywgJ2ZvcnRyYW5fb3JkZXInOiBGYWxzZSwgJ3NoYXBlJzogKDgsIDEwKSwgfSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIApEZSo1HYCyP/yXUj/6Hm+/UqcphVn80r/ngpe6BmSyP5pUy+/SaZC/5afYQOSmsr+0alyaNxDNv86SdFh2pZE/BTzh50QUor8zCbZzv7mwP0DndQ5cKsS/YjFL+LEelT+nueuMTmDAP2c3QY/X7ak/1T5ewUJMvb8/QZHtvEvLP7EbfG1tMsG/SpvTkhbgrr8zA2LLFifWP2WtCOpbfbw/whDx9m4Dnj/3fZlpI6eAP7937t447cO/yCy/tSHafT+c/Zuw36LDv49rCFd5scI/DEQGZu86dz8wnLWwbH5qv83Pe8H4FGs/ToAL4x0Poj/K+a8rZQ+2Pzb5vEJaiLc/Kk1e4QIjyT+sdVVv3DKuv+qAxWc7c6Q/gsQ+f83VSD8dR3TqB4W9v2Y9lHNz4MO/7G5eNYeEpD/be2IGqTCoP5qWzlgsRs4/MOgDvq+7sT8EzvUvWkGZP+XTA6FgmLw/6Xc58gsvxj8hew0nr/a3v/UhL4hxULg/DGvs5buJiz+EFZpLMSK1v5gGHRgS0aG/brE/rJJatr80OSJtRyiqPwlSrDaTCrG/8iDM/yyBuj8fiEBdK+jEv5I0dV2QgLi/T8r+wosqoz88CSE5EiypP/yfulaL/r0/QE4y8gobnr8Es8kJSV63P5lWHFD7bMO/Wxxu5GGuqL8vRVSZteusvzs1q0FvKaI/tBZZGPOUpb+7QSPlvetxv7Lec7/g47G/Bb1+QAh3jD9alhKKZsbIv0RJ9txl07Y/ouP0Z/C7wb/d0HkUG16rv9CqZoTvy5S/vkATrN9qqT/vN/TMJtCbP5QwcIyz68W/WOLXJ09gyj80vBSnsLLNv6zXn3XZwZM/",
+            "dtype": "torch.float64",
+            "shape": [
+              8,
+              10
+            ],
+            "device": "cpu",
+            "requires_grad": false
+          }
+        },
+        "meta": {
+          "in_features": 10,
+          "out_features": 8
+        },
+        "in_vars": [
+          2
+        ],
+        "out_vars": [
+          3
+        ],
+        "cache": {}
+      },
+      {
+        "id": 3,
+        "kind": "RELU",
+        "params": {},
+        "meta": {},
+        "in_vars": [
+          3
+        ],
+        "out_vars": [
+          4
+        ],
+        "cache": {}
+      },
+      {
+        "id": 4,
+        "kind": "DENSE",
+        "params": {
+          "W": {
+            "data": "k05VTVBZAQB2AHsnZGVzY3InOiAnPGY4JywgJ2ZvcnRyYW5fb3JkZXInOiBGYWxzZSwgJ3NoYXBlJzogKDQsIDgpLCB9ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIApMWBrn35jPv+MCU55WzGA/e8ZLdhxiuD/L6J7i2MSSP99f6yT+LaO/V9ZmgUUTsr8+82A518u3v4JPDyUMy76/29ySehEDwD9lLFLPEDq+Pzv7//NVfcA/Yaxb/FKVwz/zvItYcCuxv9blOv8QfrO/EP4l9dR2wr/aBTXHmiamPz1kVFDZRNI/RdcvyVlLnL+D8QqDlvSyPw2EqMQkrr2/asuyDJjYmz8vKgWapWGjv0ndNuImPMe/HFU4mgFVar8cDuITEPbSP5De6ISIo7S/gvFZIgnVmT9rxW4oFP2yP+vs5YGZUHS/0GRhmOWWpz+LCFGBsv3Av/U0kFyZOao/",
+            "dtype": "torch.float64",
+            "shape": [
+              4,
+              8
+            ],
+            "device": "cpu",
+            "requires_grad": false
+          }
+        },
+        "meta": {
+          "in_features": 8,
+          "out_features": 4
+        },
+        "in_vars": [
+          4
+        ],
+        "out_vars": [
+          5
+        ],
+        "cache": {}
+      },
+      {
+        "id": 5,
+        "kind": "RELU",
+        "params": {},
+        "meta": {},
+        "in_vars": [
+          5
+        ],
+        "out_vars": [
+          6
+        ],
+        "cache": {}
+      },
+      {
+        "id": 6,
+        "kind": "DENSE",
+        "params": {
+          "W": {
+            "data": "k05VTVBZAQB2AHsnZGVzY3InOiAnPGY4JywgJ2ZvcnRyYW5fb3JkZXInOiBGYWxzZSwgJ3NoYXBlJzogKDMsIDQpLCB9ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAqtEa/zyDZ7vxjL01444jA/mCvRBuCiyz+DOtou/Y95P3iqD/kK7Ly/fCq1Dwb2w79snvcHNV6wPzbiihfXRqG/a/h9FDsYwb98h7AcnyWsP/CK0RMPrr8/JMJlpx+uhT8=",
+            "dtype": "torch.float64",
+            "shape": [
+              3,
+              4
+            ],
+            "device": "cpu",
+            "requires_grad": false
+          }
+        },
+        "meta": {
+          "in_features": 4,
+          "out_features": 3
+        },
+        "in_vars": [
+          6
+        ],
+        "out_vars": [
+          7
+        ],
+        "cache": {}
+      },
+      {
+        "id": 7,
+        "kind": "ASSERT",
+        "params": {},
+        "meta": {
+          "kind": "TOP1_ROBUST"
+        },
+        "in_vars": [
+          7
+        ],
+        "out_vars": [
+          8
+        ],
+        "cache": {}
+      }
+    ],
+    "graph": {
+      "preds": {
+        "0": [],
+        "1": [
+          0
+        ],
+        "2": [
+          1
+        ],
+        "3": [
+          2
+        ],
+        "4": [
+          3
+        ],
+        "5": [
+          4
+        ],
+        "6": [
+          5
+        ],
+        "7": [
+          6
+        ]
+      },
+      "succs": {
+        "0": [
+          1
+        ],
+        "1": [
+          2
+        ],
+        "2": [
+          3
+        ],
+        "3": [
+          4
+        ],
+        "4": [
+          5
+        ],
+        "5": [
+          6
+        ],
+        "6": [
+          7
+        ],
+        "7": []
+      }
+    },
+    "metadata": {
+      "creation_time": "2025-10-18T15:28:39.271806",
+      "framework_version": "ACT-1.0",
+      "layer_count": 8,
+      "layer_kinds": [
+        "INPUT",
+        "INPUT_SPEC",
+        "DENSE",
+        "RELU",
+        "DENSE",
+        "RELU",
+        "DENSE",
+        "ASSERT"
+      ],
+      "generated_by": "NetFactory"
+    }
+  }
+}

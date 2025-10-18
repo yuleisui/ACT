@@ -1,8 +1,19 @@
-"""
-Transfer Function Interface
+#===- act/back_end/transfer_function.py - Transfer Function Interface ---====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
+#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
+#===---------------------------------------------------------------------===#
+#
+# Purpose:
+#   Transfer Function Interface. Defines the abstract interface for transfer
+#   function implementations in the ACT verification framework. Transfer
+#   functions compute bounds and constraints.
+#
+#===---------------------------------------------------------------------===#
 
-This module defines the abstract interface for transfer function implementations
-in the ACT verification framework. Transfer functions compute bounds and constraints
+"""
 for different layer types during the analysis phase.
 
 The interface supports multiple implementations:

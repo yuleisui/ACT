@@ -1,34 +1,15 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
-#===- act/main.py - ACT Native Torch2ACT Entry Point ----------------====#
+#===- act/main.py - ACT Entry Point ------------------------------------====#
+# ACT: Abstract Constraint Transformer
+# Copyright (C) 2025– ACT Team
 #
-#                 ACT: Abstract Constraints Transformer
-#
-# Copyright (C) <2025->  ACT Team
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
-#
-# You should have received a copy of the GNU Affero General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
+# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
+# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
 #===---------------------------------------------------------------------===#
 #
 # Purpose:
 #   Entry point for ACT native torch2act verification pipeline.
 #   Supports only the --verifier act option for spec-free, input-free
 #   PyTorch model verification using the torch2act converter.
-#
-# Usage:
-#   python act/main.py --verifier act
 #
 #===---------------------------------------------------------------------===#
 
