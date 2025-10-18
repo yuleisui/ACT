@@ -31,15 +31,15 @@ class abCrownVerifier:
         
         print(self.spec.input_spec.norm)
         if self.spec.spec_type == SpecType.LOCAL_LP:
-            spec_type = 'local_lp'
+            spec_type = 'lp'
         elif self.spec.spec_type == SpecType.SET_BOX:
-            spec_type = 'set_box'
+            spec_type = 'box'
         elif self.spec.spec_type == SpecType.SET_VNNLIB:
-            spec_type = 'set_vnnlib'
+            spec_type = 'bound'
         elif self.spec.spec_type == SpecType.LOCAL_VNNLIB:
-            spec_type = 'local_vnnlib'
+            spec_type = 'bound'
         else:
-            raise ValueError(f"Unsupported specification type for abCrown: {self.spec.spec_type}. Supported types are 'local_lp', 'local_vnnlib', 'set_vnnlib', 'set_box'.")
+            raise ValueError(f"Unsupported specification type for abCrown: {self.spec.spec_type}. Supported types are 'lp', 'box', 'bound'.")
 
         netname = self.spec.model.model_path
         if netname is not None and not os.path.isabs(netname):
