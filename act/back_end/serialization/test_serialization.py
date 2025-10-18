@@ -55,7 +55,8 @@ def create_test_networks():
         net_name = json_file.stem
         try:
             # Use proper deserialization which handles tensor decoding and validation gracefully
-            net, metadata = load_net_from_file(str(json_file))
+            # Force CPU device for CI environments that don't have CUDA
+            net, metadata = load_net_from_file(str(json_file), target_device='cpu')
             
             # Get architecture type from metadata or infer from filename
             arch_type = metadata.get('architecture_type', 'unknown')
