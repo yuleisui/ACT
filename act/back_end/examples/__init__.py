@@ -1,4 +1,4 @@
-#===- act/util/__init__.py - ACT Utility Package ---------------------====#
+#===- act/back_end/examples/__init__.py - Examples Package -----====#
 # ACT: Abstract Constraint Transformer
 # Copyright (C) 2025– ACT Team
 #
@@ -7,14 +7,10 @@
 #===---------------------------------------------------------------------===#
 #
 # Purpose:
-#   Utility package containing common functions for ACT network manipulation,
-#   analysis, validation, and serialization utilities.
+#   Package exports for ACT network example generation.
+#   Pure YAML-driven factory with no hardcoded templates.
 #
 #===---------------------------------------------------------------------===#
 
-# Device management utilities
-from .device_manager import *
-
-__all__ = [
-    # Device management utilities are imported with *
-]
+# Simple factory for YAML-driven network generation (moved to back_end folder)
+# from act.back_end.net_factory import NetFactory

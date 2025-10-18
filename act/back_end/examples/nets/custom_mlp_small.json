@@ -1,0 +1,229 @@
+{
+  "format_version": "1.0",
+  "act_net": {
+    "layers": [
+      {
+        "id": 0,
+        "kind": "INPUT",
+        "params": {},
+        "meta": {
+          "shape": [
+            1,
+            10
+          ]
+        },
+        "in_vars": [],
+        "out_vars": [
+          1
+        ],
+        "cache": {}
+      },
+      {
+        "id": 1,
+        "kind": "INPUT_SPEC",
+        "params": {
+          "lb": -1.0,
+          "ub": 1.0
+        },
+        "meta": {
+          "kind": "BOX"
+        },
+        "in_vars": [
+          1
+        ],
+        "out_vars": [
+          2
+        ],
+        "cache": {}
+      },
+      {
+        "id": 2,
+        "kind": "DENSE",
+        "params": {
+          "W": {
+            "data": "k05VTVBZAQB2AHsnZGVzY3InOiAnPGY4JywgJ2ZvcnRyYW5fb3JkZXInOiBGYWxzZSwgJ3NoYXBlJzogKDE2LCAxMCksIH0gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAquNziUovq1P8MPUgeIe1G/Yrz+P+EKoL9OF4F0NNfEPz+hagjObaO/r4J65DtPxj9jNDMMZGO2P8qVHm9mHKg/Jxw/biCZ0L8U2fp1IvCZP/8RxX3Hm5Q/tDeippuIlj/nVJyv6CW3v5owy2ZlE7E/vKv8syj/n7/ndebiAnCwPw2oCPQva4y/T8cKwl4yqr/SsBDX90OyP/gzJzEF2Ks/gnQ+qChfur8uxFlgbOKjv/X5bs2yJac/eOnWVAz/uz/j/bvOcmbDv7WcjfVuta4/olGsblBRu7+KHyWoRoSIv2v8yzy5MbO/8O+aoQ0+tb+xciP9Z6awv5x1nTWYOaw/aRNKPiXvsz9zDUnVoJ1zvw9e8pVeW7C/pOOBBb7qvr9TxBhhT261v/J9DL/8Ga2/69G8pGAkxL+6PZm6FbebP7QGDWdI5bY/pFw6tBvDyb9g8cdNhTaUv3L05OMgUoM/pcEEQxXNsT+vAZkKMsa6v8XfsYLUNHU/7SXGt35bnD+IelCssbnFP65BVobBEri/ASMA/ipMkj/Qhkariu6jP0ispgMIrqk/YeMJCBaxoj+LQ8TN+VGiP9xa/fwKJYM/lNcsEngxT78Qp8b+EYCoP+fHV2eO4Mk/7nocG+oJpj+bw9Gu976BP6fTA1XBCao/1UMFsd0YjT/+4ig9RnKTv1em1hBmgL4/OAFgCsQfqj8/zrdeI4yXP4qQs0yhaYS/W+DAuTd7pr8tLI2cKojBP1ShGWYoNLw/VLAS6cJdpb8XvPheWoWmP649kABHB8I/Y4wgIVDrpD8I8T5k9Uu1v0kyWk5UjrI/rGe9DDgptb8NyAPrMIW3v7t+7bsjQIE/KBhUluG6qj88SmjfR/W3vy9X3xmhGcU/2hSdeO/0wL86zJSGpHa/P5zZaV+LS5c/uJIMrm0XmL+E4oM5pb2xvxrAxznGAr+/W9yjNPgduT8sTkX12KqlP/ycYxrmY7K/tl07eZWQpz8WjkyzKwW5P4i7L/NePcu/t8KyhoUDwD9kBHaETs2fv3pxxOfodrG/tS+dgeQusb84Env/PPW4PwFPz8GT0LK/9JdwUZjzpj9QK/8q0/6WP9Q3nXkRpbe/zZBJbfuZqT98lPnTGnzFv06yU9Snjqm/w7LxTnsLt798ZLKf7jetv9MxUmq+s7I/lpd8rXIXoz/Ep9UMdffBPxiy7u4VyHq/eLZR4f++1D9wjpgF9S6hv67kCRYF1sE/Qt5OjGueuL/IAzo65Kq3P3+bMLGWPcI/9kqpSLn+w78emNmPW/d3vw1WGQFxi62/lM9icCRPxD/vpmkv4pe6P/Rnz0kyhsQ/CueCAFAWvz+VnpSLhBaAP9LhEx+r+rM/+9DCB3gxsL9ASzI5PeyYvzA68Km7OLw/eO/SaOROtr84ToGI983RvwiQg+LT766/YYJlKPDCoj9YEtdX1Je2Pwgwq+OBx8A/iEaLJWFkvL/Ey3TDLSqdP+c98u9Nv6m/pB98kJm4tL8vCv2tBZPGP+ji6l7YFa4/TfT3VR++tT/6XuDL+uyBvyVFI5I7S8Q/jT8GoOOpyD+WrBo/qK54v3CYnTI1n6c/StZrNwzljz/unsGk0323v6Ra5pwLJW2//7ZqtOIeiD8I7vey9M+4v6TxrzXlmVm/gH6UfxRixj8pRedytsiBv607YH4Fhps/JbpacebEz78mH+MTpEzFvw==",
+            "dtype": "torch.float64",
+            "shape": [
+              16,
+              10
+            ],
+            "device": "cuda:0",
+            "requires_grad": false
+          }
+        },
+        "meta": {
+          "in_features": 10,
+          "out_features": 16
+        },
+        "in_vars": [
+          2
+        ],
+        "out_vars": [
+          3
+        ],
+        "cache": {}
+      },
+      {
+        "id": 3,
+        "kind": "RELU",
+        "params": {},
+        "meta": {},
+        "in_vars": [
+          3
+        ],
+        "out_vars": [
+          4
+        ],
+        "cache": {}
+      },
+      {
+        "id": 4,
+        "kind": "DENSE",
+        "params": {
+          "W": {
+            "data": "k05VTVBZAQB2AHsnZGVzY3InOiAnPGY4JywgJ2ZvcnRyYW5fb3JkZXInOiBGYWxzZSwgJ3NoYXBlJzogKDgsIDE2KSwgfSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAqPi8q3vETGP58eSf1RraG/OvSoKE/DvT+WToI/IIh4P+yATMkNVaQ/mP1IXFi6lD/oL23sUNqav61xVzmoNpU/2hL/jSPFv79ayoUqXsWcvz0CVUK+h7y/agYHssnazj9WkQYjpFaZP3DRyApAd7W/Esd9N0/irD/rNMcHHnrBv5BZXZXR0cC/n9qE/OJ4a7+/km2lek3CP7qf7uG9drk/NdPAE8GHtD8EM2kB6dq5P0VxopDk736/gIBm3y3Kmb/aTkHhKfa/P6jtGAmdz6Q/v1jajsxNvz8Us/LymUW8P9t5opBETHG/24F2/1cBwr/WsLS3GkOEPwTz+ImHSau/GD9FYGvSqD/qGwM0S865v1aolsbrT8i/1a4pA0bMib/zw2WEwpfDPyc1Mu4zFoI/2mua42Kfyr+6W9WoW4ecP9x6St9icrw/t7REKQvdwL8nZo11wG6vv42NKktFX8E/hQ53fQvmub+tQhHpXgCYv0X92Nq3waA/H9ToFXxDtb+mcfI4JYmlP7Ef7xcmLLC/JrOCYDDMwD+dEI1cJy7DP5uSXUtJY7C/xxxAPkX5wT/KH5u4LkmRP4+kOf9R45w/GpYSL5ZYuT92QrG7iwymP1erjy2+DrI/ojs2RPEuuT+cqojgEOewvyRapNMn/sc/ebf/4ukjwT9ZJIsON4mSv62ZBfBeXqa/l9iH6Gvw0L/yI/ltQMyQv0uBhN3CDsC/fP01zbF6nr/fylIr27TMv2GDBFyBNKQ/HEsKgJxNt78cc1249+eTv6IZeof72aU/+MPAPQ+uoz8ceNqLTd98PyDEC4eLeMI/sF8Barbeq786yF7WjEewP+Ufbp2HG7K/jAdKQgjDnj9ZDw0G52mwv/qXDeJMu8e/2LIKEwTRlT9lcqX7UFTTP7rU8Go+ia2/odlQkqgjob86d9g+0qvFP5cJJqKsQZw/BOUPX0xkpT8KFEUTcY6ov/pm+3edCKa/r96hAsEjqz9CxCy3jYS7v8TbsT3kkbm/ok6HvJKFrj+JX7Km8cyov//bCRBUrKq/VMDFIps8rz8aP3cOaPidv2OWigJjLZE/Zz4XaZbDhb88y11JnUauv9uDrT8oEsE/a17mZmQdoT90Jy8/utHDvzegCJnjtcO/sdt5dexUwL/EUb3X70i3vwTjLDGtwag/9VX1ox9hrL9EVgAdG866vwlXYZYQ85U/MnfOBLp4sj+XKA5SiCrSvxn3T3mv/5I/l0pELlMcsT+Si7O+322nvwXrQvkcC7y/tYxEkQsVwb9fV1d+xHiZvy2OPzVQpL2/gnUpB0GSvD80yT59Dh27vyAepccBLrs/dJWL9JDqmT+M23Q8Ic66vyr2PE3eqrw/",
+            "dtype": "torch.float64",
+            "shape": [
+              8,
+              16
+            ],
+            "device": "cuda:0",
+            "requires_grad": false
+          }
+        },
+        "meta": {
+          "in_features": 16,
+          "out_features": 8
+        },
+        "in_vars": [
+          4
+        ],
+        "out_vars": [
+          5
+        ],
+        "cache": {}
+      },
+      {
+        "id": 5,
+        "kind": "RELU",
+        "params": {},
+        "meta": {},
+        "in_vars": [
+          5
+        ],
+        "out_vars": [
+          6
+        ],
+        "cache": {}
+      },
+      {
+        "id": 6,
+        "kind": "DENSE",
+        "params": {
+          "W": {
+            "data": "k05VTVBZAQB2AHsnZGVzY3InOiAnPGY4JywgJ2ZvcnRyYW5fb3JkZXInOiBGYWxzZSwgJ3NoYXBlJzogKDMsIDgpLCB9ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAqUDvuOFSW/P6h911gKXbk/Vr1ki5pStD9lG1ozBH3Avxc8S9cXbbu/UPDt6HSTmz9oQ+p7gXWVvxX0W14QvLq/lnhQYTLwyD+wHRR+n/2ov3E46XKc8sQ/RMsQMe3Olz96w+MJERKHP8voEskIxoI/q9m3ZtnOwb8/tgjIYRHBP8BP+5wcG6c/DqTj4Jn1tD+T19NHWqq2v7tH7mmNm7Y//GeFluc/rr8kExLWQ3KxP+01Q3oeocM/QIi5U8jUub8=",
+            "dtype": "torch.float64",
+            "shape": [
+              3,
+              8
+            ],
+            "device": "cuda:0",
+            "requires_grad": false
+          }
+        },
+        "meta": {
+          "in_features": 8,
+          "out_features": 3
+        },
+        "in_vars": [
+          6
+        ],
+        "out_vars": [
+          7
+        ],
+        "cache": {}
+      },
+      {
+        "id": 7,
+        "kind": "ASSERT",
+        "params": {},
+        "meta": {
+          "kind": "TOP1_ROBUST"
+        },
+        "in_vars": [
+          7
+        ],
+        "out_vars": [
+          8
+        ],
+        "cache": {}
+      }
+    ],
+    "graph": {
+      "preds": {
+        "0": [],
+        "1": [
+          0
+        ],
+        "2": [
+          1
+        ],
+        "3": [
+          2
+        ],
+        "4": [
+          3
+        ],
+        "5": [
+          4
+        ],
+        "6": [
+          5
+        ],
+        "7": [
+          6
+        ]
+      },
+      "succs": {
+        "0": [
+          1
+        ],
+        "1": [
+          2
+        ],
+        "2": [
+          3
+        ],
+        "3": [
+          4
+        ],
+        "4": [
+          5
+        ],
+        "5": [
+          6
+        ],
+        "6": [
+          7
+        ],
+        "7": []
+      }
+    },
+    "metadata": {
+      "creation_time": "2025-10-18T15:08:28.343688",
+      "framework_version": "ACT-1.0",
+      "layer_count": 8,
+      "layer_kinds": [
+        "INPUT",
+        "INPUT_SPEC",
+        "DENSE",
+        "RELU",
+        "DENSE",
+        "RELU",
+        "DENSE",
+        "ASSERT"
+      ],
+      "generated_by": "NetFactory"
+    }
+  }
+}
