@@ -40,13 +40,11 @@ from .utils import box_join, changed_or_maskdiff, update_cache, affine_bounds
 from .utils import pwl_meta, bound_var_interval, scale_interval
 
 # Transfer function interface
-from .transfer_function import (
-    TransferFunction, AnalysisContext, 
+from .transfer_functions import (
+    TransferFunction, AnalysisContext,
     set_transfer_function, get_transfer_function, set_transfer_function_mode,
     dispatch_tf
-)
-
-# Transfer function implementations
+)# Transfer function implementations
 from .interval_tf import IntervalTF
 from .hybridz_tf import HybridzTF
 

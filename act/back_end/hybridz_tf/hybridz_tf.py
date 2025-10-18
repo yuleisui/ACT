@@ -19,7 +19,7 @@
 import torch
 from typing import Dict, List
 from act.back_end.core import Bounds, Fact, Layer, Net, ConSet
-from act.back_end.transfer_function import TransferFunction, AnalysisContext
+from act.back_end.transfer_functions import TransferFunction, AnalysisContext
 from act.back_end.hybridz_tf.tf_mlp import *
 from act.back_end.hybridz_tf.tf_cnn import *
 from act.back_end.hybridz_tf.tf_rnn import *

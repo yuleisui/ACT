@@ -1,4 +1,4 @@
-#===- act/back_end/transfer_function.py - Transfer Function Interface ---====#
+#===- act/back_end/transfer_functions.py - Transfer Function Interface ---====#
 # ACT: Abstract Constraint Transformer
 # Copyright (C) 2025– ACT Team
 #

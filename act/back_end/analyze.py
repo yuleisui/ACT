@@ -17,7 +17,7 @@ from collections import deque
 from typing import Dict, Tuple
 from act.back_end.core import Bounds, Fact, Net, ConSet
 from act.back_end.utils import box_join, changed_or_maskdiff, update_cache
-from act.back_end.transfer_function import dispatch_tf, set_transfer_function_mode
+from act.back_end.transfer_functions import dispatch_tf, set_transfer_function_mode
 
 # Initialize default transfer function mode
 def initialize_tf_mode(mode: str = "interval"):
@@ -28,7 +28,7 @@ def initialize_tf_mode(mode: str = "interval"):
 def analyze(net: Net, entry_id: int, entry_bounds: Bounds, eps: float=1e-9) -> Tuple[Dict[int, Fact], Dict[int, Fact], ConSet]:
     # Auto-initialize transfer function mode if not set
     try:
-        from act.back_end.transfer_function import get_transfer_function
+        from act.back_end.transfer_functions import get_transfer_function
         get_transfer_function()  # Check if already initialized
     except RuntimeError:
         initialize_tf_mode("interval")  # Default to interval mode
