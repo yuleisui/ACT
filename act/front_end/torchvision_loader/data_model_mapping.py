@@ -26,6 +26,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
             "resize_to": (224, 224),    # Then resize to model input size
             "normalize": {"mean": [0.1307]*3, "std": [0.3081]*3}
         },
+        "split_kwarg": {"train": {"train": True}, "test": {"train": False}},
         "notes": "Small resolution grayscale. Use simple_cnn/lenet5 for native 1-channel, or convert to RGB for pre-trained models."
     },
     "FashionMNIST": {
@@ -38,6 +39,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
             "resize_to": (224, 224),
             "normalize": {"mean": [0.5]*3, "std": [0.5]*3}
         },
+        "split_kwarg": {"train": {"train": True}, "test": {"train": False}},
         "notes": "Clothing items. Same preprocessing as MNIST. Simple architectures recommended for grayscale."
     },
     "KMNIST": {
@@ -50,6 +52,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
             "resize_to": (224, 224),
             "normalize": {"mean": [0.5]*3, "std": [0.5]*3}
         },
+        "split_kwarg": {"train": {"train": True}, "test": {"train": False}},
         "notes": "Japanese Kuzushiji characters. MNIST-like preprocessing required for pre-trained models."
     },
     "EMNIST": {
@@ -62,6 +65,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
             "resize_to": (224, 224),
             "normalize": {"mean": [0.5]*3, "std": [0.5]*3}
         },
+        "split_kwarg": {"train": {"split": "balanced"}, "test": {"split": "balanced", "train": False}},
         "notes": "Extended MNIST with letters/digits. Multiple splits available. Convert grayscale for ResNet."
     },
     "QMNIST": {
@@ -74,6 +78,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
             "resize_to": (224, 224),
             "normalize": {"mean": [0.1307]*3, "std": [0.3081]*3}
         },
+        "split_kwarg": {"train": {"train": True}, "test": {"train": False}},
         "notes": "MNIST reconstruction. Same preprocessing as original MNIST."
     },
     
@@ -87,6 +92,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
             "resize_to": (224, 224),  # Upsample to standard size
             "normalize": {"mean": [0.4914, 0.4822, 0.4465], "std": [0.2470, 0.2435, 0.2616]}
         },
+        "split_kwarg": {"train": {"train": True}, "test": {"train": False}},
         "notes": "Low resolution RGB. Resize to 224x224 for pre-trained models or train from scratch at 32x32."
     },
     "CIFAR100": {
@@ -98,6 +104,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
             "resize_to": (224, 224),
             "normalize": {"mean": [0.5071, 0.4867, 0.4408], "std": [0.2675, 0.2565, 0.2761]}
         },
+        "split_kwarg": {"train": {"train": True}, "test": {"train": False}},
         "notes": "100 fine-grained classes (20 superclasses). Same preprocessing as CIFAR10."
     },
     "STL10": {
@@ -109,6 +116,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
             "resize_to": (224, 224),  # Upsample from 96x96
             "normalize": {"mean": [0.4467, 0.4398, 0.4066], "std": [0.2603, 0.2566, 0.2713]}
         },
+        "split_kwarg": {"train": {"split": "train"}, "test": {"split": "test"}},
         "notes": "Higher resolution than CIFAR. Good for semi-supervised learning. Resize to 224x224."
     },
     "SVHN": {
@@ -120,6 +128,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
             "resize_to": (224, 224),
             "normalize": {"mean": [0.4377, 0.4438, 0.4728], "std": [0.1980, 0.2010, 0.1970]}
         },
+        "split_kwarg": {"train": {"split": "train"}, "test": {"split": "test"}},
         "notes": "Street View House Numbers. Digit recognition in natural images. Resize required."
     },
     
@@ -151,6 +160,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
             "resize_to": (224, 224),  # Already standard size
             "normalize": {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]}
         },
+        "split_kwarg": {"train": {"split": "train"}, "test": {"split": "val"}},
         "notes": "Standard benchmark. All models have pre-trained weights with ImageNet normalization. Use for transfer learning."
     },
     "Places365": {
@@ -162,6 +172,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
             "resize_to": (224, 224),
             "normalize": {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]}
         },
+        "split_kwarg": {"train": {"split": "train-standard"}, "test": {"split": "val"}},
         "notes": "Scene recognition. Use ImageNet pre-trained weights then fine-tune with Places365 data."
     },
     
@@ -171,6 +182,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": (3, 224, 224),
         "num_classes": 101,
         "category": "classification",
+        "split_kwarg": {"train": {}, "test": {}},
         "notes": "Object recognition, transfer learning from ImageNet strongly recommended"
     },
     "Caltech256": {
@@ -178,6 +190,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": (3, 224, 224),
         "num_classes": 257,
         "category": "classification",
+        "split_kwarg": {"train": {}, "test": {}},
         "notes": "Extended Caltech101, more challenging with more classes"
     },
     "Flowers102": {
@@ -185,6 +198,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": (3, 224, 224),
         "num_classes": 102,
         "category": "classification",
+        "split_kwarg": {"train": {"split": "train"}, "test": {"split": "test"}},
         "notes": "Fine-grained flower species classification, 102 categories"
     },
     "Food101": {
@@ -192,6 +206,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": (3, 224, 224),
         "num_classes": 101,
         "category": "classification",
+        "split_kwarg": {"train": {"split": "train"}, "test": {"split": "test"}},
         "notes": "Food category classification, challenging with high intra-class variance"
     },
     "OxfordIIITPet": {
@@ -199,6 +214,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": (3, 224, 224),
         "num_classes": 37,
         "category": "classification",
+        "split_kwarg": {"train": {"split": "trainval"}, "test": {"split": "test"}},
         "notes": "Pet breed classification, 37 breeds (cats and dogs)"
     },
     "StanfordCars": {
@@ -206,6 +222,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": (3, 224, 224),
         "num_classes": 196,
         "category": "classification",
+        "split_kwarg": {"train": {"split": "train"}, "test": {"split": "test"}},
         "notes": "Fine-grained car model recognition, requires attention to subtle details"
     },
     "FGVCAircraft": {
@@ -213,6 +230,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": (3, 224, 224),
         "num_classes": 100,
         "category": "classification",
+        "split_kwarg": {"train": {"split": "trainval"}, "test": {"split": "test"}},
         "notes": "Fine-grained aircraft variant recognition, 100 aircraft models"
     },
     "EuroSAT": {
@@ -220,6 +238,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": (3, 64, 64),
         "num_classes": 10,
         "category": "classification",
+        "split_kwarg": {"train": {}, "test": {}},
         "notes": "Satellite image classification, land use/cover classification"
     },
     "SUN397": {
@@ -227,6 +246,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": (3, 224, 224),
         "num_classes": 397,
         "category": "classification",
+        "split_kwarg": {"train": {}, "test": {}},
         "notes": "Scene understanding, 397 scene categories"
     },
     "Country211": {
@@ -234,6 +254,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": (3, 224, 224),
         "num_classes": 211,
         "category": "classification",
+        "split_kwarg": {"train": {"split": "train"}, "test": {"split": "test"}},
         "notes": "Geographic location recognition from images"
     },
     
@@ -253,6 +274,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": "variable",
         "num_classes": 80,
         "category": "detection",
+        "split_kwarg": {"train": {}, "test": {}},
         "notes": "COCO object detection, 80 object categories. Models maintain aspect ratio."
     },
     "VOCDetection": {
@@ -265,6 +287,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": "variable",
         "num_classes": 20,
         "category": "detection",
+        "split_kwarg": {"train": {"image_set": "train"}, "test": {"image_set": "val"}},
         "notes": "PASCAL VOC detection, 20 object categories (person, vehicles, animals, household)"
     },
     "WIDERFace": {
@@ -272,6 +295,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": "variable",
         "num_classes": 1,
         "category": "detection",
+        "split_kwarg": {"train": {"split": "train"}, "test": {"split": "val"}},
         "notes": "Face detection benchmark with diverse scales and occlusions"
     },
     
@@ -288,6 +312,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": "variable",
         "num_classes": 21,
         "category": "segmentation",
+        "split_kwarg": {"train": {"image_set": "train"}, "test": {"image_set": "val"}},
         "notes": "PASCAL VOC semantic segmentation, 20 object classes + background"
     },
     "Cityscapes": {
@@ -301,6 +326,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": (3, 1024, 2048),
         "num_classes": 19,
         "category": "segmentation",
+        "split_kwarg": {"train": {"split": "train"}, "test": {"split": "val"}},
         "notes": "Urban street scene segmentation for autonomous driving"
     },
     "SBDataset": {
@@ -308,6 +334,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": "variable",
         "num_classes": 20,
         "category": "segmentation",
+        "split_kwarg": {"train": {"image_set": "train"}, "test": {"image_set": "val"}},
         "notes": "Semantic Boundaries Dataset, augments PASCAL VOC"
     },
     
@@ -317,6 +344,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": (3, 224, 224),
         "num_classes": 40,  # for attribute classification
         "category": "classification",
+        "split_kwarg": {"train": {"split": "train"}, "test": {"split": "test"}},
         "notes": "Celebrity faces with 40 binary attributes. Also used for face detection/recognition."
     },
     "LFWPeople": {
@@ -324,6 +352,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": (3, 224, 224),
         "num_classes": 5749,
         "category": "classification",
+        "split_kwarg": {"train": {"split": "train"}, "test": {"split": "test"}},
         "notes": "Labeled Faces in the Wild for face verification and recognition"
     },
     "LFWPairs": {
@@ -331,6 +360,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": (3, 224, 224),
         "num_classes": 2,  # same/different person
         "category": "classification",
+        "split_kwarg": {"train": {"split": "train"}, "test": {"split": "test"}},
         "notes": "Face verification pairs (same/different person)"
     },
     
@@ -350,6 +380,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": "T x H x W (video clips)",
         "num_classes": 400,  # Kinetics-400
         "category": "video",
+        "split_kwarg": {"train": {"split": "train"}, "test": {"split": "val"}},
         "notes": "Action recognition in videos, large-scale benchmark (400/600/700 classes)"
     },
     "HMDB51": {
@@ -357,6 +388,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": "T x H x W",
         "num_classes": 51,
         "category": "video",
+        "split_kwarg": {"train": {"train": True}, "test": {"train": False}},
         "notes": "Human motion recognition, 51 action categories"
     },
     "UCF101": {
@@ -364,6 +396,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": "T x H x W",
         "num_classes": 101,
         "category": "video",
+        "split_kwarg": {"train": {"train": True}, "test": {"train": False}},
         "notes": "Action recognition, 101 action categories from YouTube"
     },
     
@@ -373,6 +406,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": "variable",
         "num_classes": None,
         "category": "optical_flow",
+        "split_kwarg": {"train": {"split": "train"}, "test": {"split": "val"}},
         "notes": "Optical flow estimation, synthetic training data with ground truth"
     },
     "FlyingThings3D": {
@@ -380,6 +414,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": "variable",
         "num_classes": None,
         "category": "optical_flow",
+        "split_kwarg": {"train": {"split": "train"}, "test": {"split": "test"}},
         "notes": "Optical flow estimation, synthetic 3D scenes with complex motion"
     },
     "Sintel": {
@@ -387,6 +422,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": "variable",
         "num_classes": None,
         "category": "optical_flow",
+        "split_kwarg": {"train": {"split": "train"}, "test": {"split": "test"}},
         "notes": "Optical flow benchmark from animated movie, realistic motion blur"
     },
     "KittiFlow": {
@@ -394,6 +430,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": "variable",
         "num_classes": None,
         "category": "optical_flow",
+        "split_kwarg": {"train": {"split": "train"}, "test": {"split": "test"}},
         "notes": "Optical flow for autonomous driving, real-world scenarios"
     },
     
@@ -408,6 +445,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
             "resize_to": (224, 224),
             "normalize": {"mean": [0.5]*3, "std": [0.5]*3}
         },
+        "split_kwarg": {"train": {"background": True}, "test": {"background": False}},
         "notes": "Few-shot learning benchmark. Handwritten characters from 50 alphabets. Convert grayscale for ResNet."
     },
     "PCAM": {
@@ -415,6 +453,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": (3, 96, 96),
         "num_classes": 2,
         "category": "classification",
+        "split_kwarg": {"train": {"split": "train"}, "test": {"split": "test"}},
         "notes": "Patch Camelyon, histopathologic cancer detection in tissue images"
     },
     "INaturalist": {
@@ -422,6 +461,7 @@ DATASET_MODEL_MAPPING: Dict[str, Dict[str, Any]] = {
         "input_size": (3, 224, 224),
         "num_classes": 8142,  # varies by year
         "category": "classification",
+        "split_kwarg": {"train": {"version": "2021_train"}, "test": {"version": "2021_valid"}},
         "notes": "Species classification, highly imbalanced with long tail"
     },
 

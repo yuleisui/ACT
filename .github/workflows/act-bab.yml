@@ -43,7 +43,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install coverage torch onnx onnx2torch onnx-simplifier pandas numpy pyyaml tqdm psutil
+          pip install coverage torch onnx onnx2torch onnx-simplifier pandas numpy scipy pyyaml tqdm psutil
 
       # ── BaB module unit tests ──────────────────────────────────────────
       - name: BaB module
