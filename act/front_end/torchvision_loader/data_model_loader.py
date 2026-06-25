@@ -154,33 +154,21 @@ def _download_dataset(
             
             return [], errors
 
-        if split in ['test', 'both']:
-            print(f"  • Downloading test split...")
+        for split_name in ('test', 'train'):
+            if split not in (split_name, 'both'):
+                continue
+            print(f"  • Downloading {split_name} split...")
             try:
-                test_dataset = dataset_class(
+                # Split-selection kwarg differs per dataset (train= / split= / image_set= / version= / background= / none), so unpack the per-dataset set declared in split_kwarg.
+                ds = dataset_class(
                     root=str(raw_dir),
-                    train=False,
+                    **dataset_info["split_kwarg"][split_name],
                     download=True
                 )
-                downloaded_splits.append('test')
-                print(f"    ✓ Test split: {len(test_dataset)} samples")
+                downloaded_splits.append(split_name)
+                print(f"    ✓ {split_name.capitalize()} split: {len(ds)} samples")
             except Exception as e:
-                error = f"Test split failed: {e}"
-                errors.append(error)
-                print("    ⚠ " + error)
-
-        if split in ['train', 'both']:
-            print(f"  • Downloading train split...")
-            try:
-                train_dataset = dataset_class(
-                    root=str(raw_dir),
-                    train=True,
-                    download=True
-                )
-                downloaded_splits.append('train')
-                print(f"    ✓ Train split: {len(train_dataset)} samples")
-            except Exception as e:
-                error = f"Train split failed: {e}"
+                error = f"{split_name.capitalize()} split failed: {e}"
                 errors.append(error)
                 print("    ⚠ " + error)
     
@@ -749,7 +737,7 @@ def load_dataset_model_pair(
             dataset_class = getattr(torchvision.datasets, dataset_name)
             dataset = dataset_class(
                 root=str(raw_dir),
-                train=is_train,
+                **dataset_info["split_kwarg"]["train" if is_train else "test"],
                 transform=preprocessing,
                 download=False  # Already downloaded
             )
