@@ -45,6 +45,7 @@ python -m act.back_end --help
 
 ### Pubs and Docs
 - Kaijie Liu and Yulei Sui. [Detecting Unsoundness in Neural Network Verifiers via Concrete–Abstract Consistency](https://openreview.net/forum?id=6vjnMGdx5i). ACM/IEEE International Conference on AI-Powered Software Engineering (AIware 2026)
+- Guanqin Zhang and Yulei Sui. [Tensor-Based Batch Fuzzing with Adaptive Perturbation Scaling for Deep Neural Networks](https://arxiv.org/abs/2606.25239). 41st IEEE/ACM International Conference on Automated Software Engineering (ASE 2026)
 
 ### License
 ACT is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
