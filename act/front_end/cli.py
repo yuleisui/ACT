@@ -402,7 +402,7 @@ Examples:
   # LISTING - Browse available datasets and categories
   # ============================================================================
   
-  # List all available items (40 TorchVision + 26 VNNLIB)
+  # List all available items (40 TorchVision + 34 VNNLIB)
   python -m act.front_end --list
   
   # List only TorchVision datasets

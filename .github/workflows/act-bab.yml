@@ -73,9 +73,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/vnnlib
-          key: vnnlib-acasxu-distshift-safenlp-v1
-          restore-keys: |
-            vnnlib-
+          key: vnnlib-acasxu-distshift-safenlp-v2
 
       - name: VNNLIB — download benchmarks
         run: |

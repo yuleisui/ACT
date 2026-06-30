@@ -4,7 +4,7 @@ A comprehensive framework for downloading, managing, and loading VNNLIB benchmar
 
 ## Features
 
-- **26 Categories**: Complete coverage of VNN-COMP 2022-2025 benchmarks
+- **34 Categories**: Complete coverage of VNN-COMP 2022-2026 (VNNLIB 2.0 format) benchmarks
 - **Standardized Instances**: Pre-validated ONNX models + VNNLIB property files
 - **Multiple Domains**: Image classification, control systems, object detection, transformers, and more
 - **Auto-Download**: Automatically download VNNLIB categories with ONNX models and properties
@@ -29,7 +29,7 @@ act/front_end/vnnlib_loader/
 ├── __init__.py              # Package exports and imports
 ├── __main__.py              # Entry point for python -m execution
 ├── cli.py                   # Command-line interface
-├── category_mapping.py      # Core category mapping and API (26 categories)
+├── category_mapping.py      # Core category mapping and API (34 categories)
 ├── create_specs.py          # VNNLibSpecCreator implementation
 ├── data_model_loader.py     # Download and load VNNLIB instances
 ├── vnnlib_parser.py         # Parse VNNLIB files (SMT-LIB format)
@@ -41,7 +41,7 @@ act/front_end/vnnlib_loader/
 
 **`category_mapping.py` (494 lines)**
 - Core category mapping dictionary (`CATEGORY_MAPPING`)
-- 26 VNN-COMP categories with metadata (type, description, models, properties, dimensions, year)
+- 34 VNN-COMP categories with metadata (type, description, models, properties, dimensions, year)
 - Category information retrieval (`get_category_info`, `list_categories`)
 - Search and query functions (`search_categories`, `find_category_name`)
 - Category type filtering (`list_categories_by_type`, `get_all_types`)
@@ -105,7 +105,7 @@ conda activate act-py312
 
 ## VNNLIB Categories
 
-The framework supports 26 categories from VNN-COMP 2022-2025, organized by application domain:
+The framework supports 34 categories from VNN-COMP 2022-2026 (VNNLIB 2.0 format), organized by application domain:
 
 ### Image Classification (5 categories)
 

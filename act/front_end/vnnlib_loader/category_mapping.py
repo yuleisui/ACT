@@ -11,8 +11,10 @@ License: AGPLv3+
 
 from typing import Dict, List, Optional
 
-# VNNLIB Category Mapping
-# Categories from VNN-COMP 2025 benchmarks
+# VNN-COMP 2026 benchmarks: https://github.com/VNN-COMP/vnncomp2026_benchmarks
+# Each registry key equals the repo folder name; the loader resolves instances
+# under the "<name>/2.0/" version subdirectory by default (override per entry
+# with a "version" field).
 CATEGORY_MAPPING: Dict[str, Dict] = {
     "acasxu_2023": {
         "type": "collision_avoidance",
@@ -22,7 +24,6 @@ CATEGORY_MAPPING: Dict[str, Dict] = {
         "input_dim": 5,
         "output_dim": 5,
         "year": 2023,
-        "repo_name": "acasxu_2023",
     },
     "cctsdb_yolo_2023": {
         "type": "object_detection",
@@ -32,7 +33,6 @@ CATEGORY_MAPPING: Dict[str, Dict] = {
         "input_dim": "3×640×640",
         "output_dim": "Variable",
         "year": 2023,
-        "repo_name": "cctsdb_yolo_2023",
     },
     "cersyve": {
         "type": "image_classification",
@@ -42,7 +42,6 @@ CATEGORY_MAPPING: Dict[str, Dict] = {
         "input_dim": "Variable",
         "output_dim": "Variable",
         "year": 2024,
-        "repo_name": "cersyve",  # Not in vnncomp2024, may need alternative source
     },
     "cgan_2023": {
         "type": "generative",
@@ -52,7 +51,6 @@ CATEGORY_MAPPING: Dict[str, Dict] = {
         "input_dim": "Variable",
         "output_dim": "Variable",
         "year": 2023,
-        "repo_name": "cgan_2023",
     },
     "cifar100_2024": {
         "type": "image_classification",
@@ -62,7 +60,6 @@ CATEGORY_MAPPING: Dict[str, Dict] = {
         "input_dim": "3×32×32",
         "output_dim": 100,
         "year": 2024,
-        "repo_name": "cifar100",  # Actual name in VNN-COMP repository
     },
     "collins_aerospace_benchmark": {
         "type": "aerospace",
@@ -72,7 +69,6 @@ CATEGORY_MAPPING: Dict[str, Dict] = {
         "input_dim": "Variable",
         "output_dim": "Variable",
         "year": 2024,
-        "repo_name": "collins_aerospace_benchmark",
     },
     "collins_rul_cnn_2022": {
         "type": "remaining_useful_life",
@@ -82,7 +78,6 @@ CATEGORY_MAPPING: Dict[str, Dict] = {
         "input_dim": "Time series",
         "output_dim": 1,
         "year": 2022,
-        "repo_name": "collins_rul_cnn_2023",  # Year mismatch in repo
     },
     "cora_2024": {
         "type": "reachability",
@@ -92,7 +87,6 @@ CATEGORY_MAPPING: Dict[str, Dict] = {
         "input_dim": "Variable",
         "output_dim": "Variable",
         "year": 2024,
-        "repo_name": "cora",
     },
     "dist_shift_2023": {
         "type": "distribution_shift",
@@ -102,7 +96,6 @@ CATEGORY_MAPPING: Dict[str, Dict] = {
         "input_dim": "Variable",
         "output_dim": "Variable",
         "year": 2023,
-        "repo_name": "dist_shift_2023",
     },
     "linearizenn_2024": {
         "type": "linearization",
@@ -112,7 +105,6 @@ CATEGORY_MAPPING: Dict[str, Dict] = {
         "input_dim": "Variable",
         "output_dim": "Variable",
         "year": 2024,
-        "repo_name": "linearizenn",
     },
     "lsnc_relu": {
         "type": "control",
@@ -122,7 +114,6 @@ CATEGORY_MAPPING: Dict[str, Dict] = {
         "input_dim": "Variable",
         "output_dim": "Variable",
         "year": 2024,
-        "repo_name": "lsnc",
     },
     "malbeware": {
         "type": "malware_detection",
@@ -132,7 +123,6 @@ CATEGORY_MAPPING: Dict[str, Dict] = {
         "input_dim": "Variable",
         "output_dim": "Binary",
         "year": 2024,
-        "repo_name": "malbeware",  # Not in vnncomp2024, may need alternative source
     },
     "metaroom_2023": {
         "type": "3d_reconstruction",
@@ -142,17 +132,15 @@ CATEGORY_MAPPING: Dict[str, Dict] = {
         "input_dim": "Variable",
         "output_dim": "Variable",
         "year": 2023,
-        "repo_name": "metaroom_2023",
     },
     "ml4acopf_2024": {
         "type": "power_systems",
         "description": "ML for AC Optimal Power Flow",
         "models": "Neural networks for power grid optimization",
-        "properties": "Physical constraint satisfaction",
+        "properties": "Physical constraint satisfaction (uses sin/cos)",
         "input_dim": "Variable",
         "output_dim": "Variable",
         "year": 2024,
-        "repo_name": "ml4acopf_2024",
     },
     "nn4sys": {
         "type": "systems",
@@ -162,7 +150,6 @@ CATEGORY_MAPPING: Dict[str, Dict] = {
         "input_dim": "Variable",
         "output_dim": "Variable",
         "year": 2024,
-        "repo_name": "nn4sys_2023",
     },
     "relusplitter": {
         "type": "verification_algorithm",
@@ -172,7 +159,6 @@ CATEGORY_MAPPING: Dict[str, Dict] = {
         "input_dim": "Variable",
         "output_dim": "Variable",
         "year": 2024,
-        "repo_name": "relusplitter",  # Not in vnncomp2024, may need alternative source
     },
     "safenlp_2024": {
         "type": "nlp",
@@ -182,7 +168,6 @@ CATEGORY_MAPPING: Dict[str, Dict] = {
         "input_dim": "Token sequences",
         "output_dim": "Token sequences",
         "year": 2024,
-        "repo_name": "safenlp",
     },
     "sat_relu": {
         "type": "sat_encoding",
@@ -192,7 +177,6 @@ CATEGORY_MAPPING: Dict[str, Dict] = {
         "input_dim": "Variable",
         "output_dim": "Variable",
         "year": 2024,
-        "repo_name": "sat_relu",  # Not in vnncomp2024, may need alternative source
     },
     "soundnessbench": {
         "type": "soundness_testing",
@@ -202,7 +186,6 @@ CATEGORY_MAPPING: Dict[str, Dict] = {
         "input_dim": "Variable",
         "output_dim": "Variable",
         "year": 2024,
-        "repo_name": "soundnessbench",  # Not in vnncomp2024, may need alternative source
     },
     "test": {
         "type": "testing",
@@ -212,7 +195,6 @@ CATEGORY_MAPPING: Dict[str, Dict] = {
         "input_dim": "Variable",
         "output_dim": "Variable",
         "year": 2024,
-        "repo_name": "test",
     },
     "tinyimagenet_2024": {
         "type": "image_classification",
@@ -222,7 +204,6 @@ CATEGORY_MAPPING: Dict[str, Dict] = {
         "input_dim": "3×64×64",
         "output_dim": 200,
         "year": 2024,
-        "repo_name": "tinyimagenet",
     },
     "tllverifybench_2023": {
         "type": "transfer_learning",
@@ -232,7 +213,6 @@ CATEGORY_MAPPING: Dict[str, Dict] = {
         "input_dim": "Variable",
         "output_dim": "Variable",
         "year": 2023,
-        "repo_name": "tllverifybench_2023",
     },
     "traffic_signs_recognition_2023": {
         "type": "traffic_sign_recognition",
@@ -242,7 +222,6 @@ CATEGORY_MAPPING: Dict[str, Dict] = {
         "input_dim": "3×32×32",
         "output_dim": "Variable",
         "year": 2023,
-        "repo_name": "traffic_signs_recognition_2023",
     },
     "vggnet16_2022": {
         "type": "image_classification",
@@ -252,7 +231,6 @@ CATEGORY_MAPPING: Dict[str, Dict] = {
         "input_dim": "3×224×224",
         "output_dim": 1000,
         "year": 2022,
-        "repo_name": "vggnet16_2023",  # Year mismatch in repo
     },
     "vit_2023": {
         "type": "vision_transformer",
@@ -262,7 +240,6 @@ CATEGORY_MAPPING: Dict[str, Dict] = {
         "input_dim": "3×224×224",
         "output_dim": "Variable",
         "year": 2023,
-        "repo_name": "vit_2023",
     },
     "yolo_2023": {
         "type": "object_detection",
@@ -272,7 +249,79 @@ CATEGORY_MAPPING: Dict[str, Dict] = {
         "input_dim": "3×640×640",
         "output_dim": "Variable",
         "year": 2023,
-        "repo_name": "yolo_2023",
+    },
+    # --- VNN-COMP 2026 additions (new benchmarks in the 2026 suite) ---
+    "adaptive_cruise_control_non_linear_2026": {
+        "type": "control",
+        "description": "Adaptive cruise control with a non-linear plant model",
+        "models": "Fully-connected ReLU controllers (Gemm/ReLU)",
+        "properties": "Closed-loop safety under non-linear vehicle dynamics",
+        "input_dim": "Variable",
+        "output_dim": "Variable",
+        "year": 2026,
+    },
+    "cgan2026": {
+        "type": "generative",
+        "description": "Conditional GAN generators (2026 edition)",
+        "models": "Generators with Conv/ConvTranspose/Upsample/Sigmoid/Tanh",
+        "properties": "Input/output epsilon robustness of generated images",
+        "input_dim": "Latent vector + class condition",
+        "output_dim": "Image (1 or 3 channels, 32×32 / 64×64)",
+        "year": 2026,
+    },
+    "challenging_certified_training_2026": {
+        "type": "image_classification",
+        "description": "Challenging instances for certified-training networks",
+        "models": "CNNs (Conv/BatchNorm/Gemm/ReLU), including large cnn7",
+        "properties": "L-inf adversarial robustness",
+        "input_dim": "3×H×W",
+        "output_dim": "Variable",
+        "year": 2026,
+    },
+    "isomorphic_acasxu_2026": {
+        "type": "equivalence",
+        "description": "ACAS Xu network-equivalence (isomorphism) benchmark",
+        "models": "Pairs of original vs perturbed ACAS Xu networks (f vs g)",
+        "properties": "Functional equivalence between two networks (dual-model instances.csv)",
+        "input_dim": 5,
+        "output_dim": 5,
+        "year": 2026,
+    },
+    "monotonic_acasxu_2026": {
+        "type": "monotonicity",
+        "description": "ACAS Xu monotonicity benchmark",
+        "models": "ACAS Xu fully-connected ReLU networks",
+        "properties": "Output monotonicity with respect to selected inputs",
+        "input_dim": 5,
+        "output_dim": 5,
+        "year": 2026,
+    },
+    "relusplitter_2026": {
+        "type": "verification_algorithm",
+        "description": "ReLUSplitter benchmark (2026 edition)",
+        "models": "ReLU networks (Gemm/ReLU) with split/unsplit variants",
+        "properties": "Robustness equivalence across ReLU-split transformations",
+        "input_dim": "Variable",
+        "output_dim": "Variable",
+        "year": 2026,
+    },
+    "smart_turn_multimodal_2026": {
+        "type": "multimodal",
+        "description": "Smart-turn multimodal (audio) turn-taking model",
+        "models": "Quantized transformer (Conv/Softmax/Erf/Sqrt/Quantize)",
+        "properties": "Robustness of turn-taking prediction",
+        "input_dim": "Audio features",
+        "output_dim": "Variable",
+        "year": 2026,
+    },
+    "soundnessbench_2026": {
+        "type": "soundness_testing",
+        "description": "Verifier soundness testing benchmark (2026 edition)",
+        "models": "Networks with known properties (incl. residual model)",
+        "properties": "Ground-truth (un)satisfiable instances for verifier validation",
+        "input_dim": "Variable",
+        "output_dim": "Variable",
+        "year": 2026,
     },
 }
 
@@ -313,7 +362,7 @@ def list_categories() -> List[str]:
     Example:
         >>> categories = list_categories()
         >>> print(f"Total categories: {len(categories)}")
-        Total categories: 26
+        Total categories: 34
     """
     return sorted(CATEGORY_MAPPING.keys())
 
@@ -331,7 +380,7 @@ def list_categories_by_type(category_type: str) -> List[str]:
     Example:
         >>> image_cats = list_categories_by_type('image_classification')
         >>> print(image_cats)
-        ['cersyve', 'cifar100_2024', 'tinyimagenet_2024', 'vggnet16_2022']
+        ['cersyve', 'challenging_certified_training_2026', 'cifar100_2024', 'tinyimagenet_2024', 'vggnet16_2022']
     """
     return [
         name for name, info in CATEGORY_MAPPING.items()
@@ -430,7 +479,7 @@ def get_summary_statistics() -> Dict:
     Example:
         >>> stats = get_summary_statistics()
         >>> print(f"Total categories: {stats['total_categories']}")
-        Total categories: 26
+        Total categories: 34
     """
     types = get_all_types()
     type_counts = {t: len(list_categories_by_type(t)) for t in types}

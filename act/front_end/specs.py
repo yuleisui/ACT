@@ -322,24 +322,41 @@ class OutputSpec:
         if self.kind == OutKind.LINEAR_LE:
             if self.c is None or self.d is None:
                 raise ValueError("LINEAR_LE requires both c and d")
-            c_vec = self.c.to(device=device, dtype=dtype).flatten()
-            if c_vec.shape[0] != n_out:
-                raise ValueError(
-                    f"LINEAR_LE: c length {c_vec.shape[0]} != n_out {n_out}"
-                )
+            c_full = self.c.to(device=device, dtype=dtype)
+            c_vec = c_full.flatten()
             d_t = self.d.to(device=device, dtype=dtype).flatten()
-            if d_t.numel() != 1:
+            if c_vec.shape[0] == n_out and d_t.numel() == 1:
+                d_scalar = float(d_t.item())
+                c_batched = c_vec.unsqueeze(0).expand(B, -1).contiguous()
+                d_batched = torch.full((B,), d_scalar, device=device, dtype=dtype)
+                params["c"] = c_batched
+                params["d"] = d_batched
+                c_rows = c_batched
+                thresholds = d_batched.unsqueeze(1)
+                m_specs = 1
+            elif c_full.dim() == 2 and c_full.shape[1] == n_out:
+                # Conjunction c_i.y <= d_i for all i. Reuses UNSAFE_LINEAR's row
+                # LAYOUT only; kind MUST stay LINEAR_LE (AND-certify/OR-falsify) —
+                # relabeling to UNSAFE_LINEAR flips polarity and is unsound.
+                n_rows = int(c_full.shape[0])
+                if d_t.numel() == 1:
+                    d_t = d_t.expand(n_rows).contiguous()
+                elif d_t.numel() != n_rows:
+                    raise ValueError(
+                        f"LINEAR_LE: d length {d_t.numel()} != rows {n_rows}"
+                    )
+                params["c"] = c_full.unsqueeze(0).expand(B, -1, -1).contiguous()
+                params["d"] = d_t.unsqueeze(0).expand(B, -1).contiguous()
+                c_rows = c_full.unsqueeze(0).expand(B, -1, -1).reshape(
+                    B * n_rows, n_out
+                ).contiguous()
+                thresholds = d_t.unsqueeze(0).expand(B, -1).contiguous()
+                m_specs = n_rows
+            else:
                 raise ValueError(
-                    f"LINEAR_LE: d must be scalar (got numel={d_t.numel()})"
+                    f"LINEAR_LE: c shape {tuple(self.c.shape)} incompatible "
+                    f"with n_out {n_out}"
                 )
-            d_scalar = float(d_t.item())
-            c_batched = c_vec.unsqueeze(0).expand(B, -1).contiguous()
-            d_batched = torch.full((B,), d_scalar, device=device, dtype=dtype)
-            params["c"] = c_batched
-            params["d"] = d_batched
-            c_rows = c_batched
-            thresholds = d_batched.unsqueeze(1)
-            m_specs = 1
 
         elif self.kind == OutKind.UNSAFE_LINEAR:
             if self.c is None or self.d is None:

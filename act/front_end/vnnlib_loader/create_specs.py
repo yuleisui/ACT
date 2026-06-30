@@ -26,7 +26,10 @@ from act.front_end.vnnlib_loader.data_model_loader import (
     load_vnnlib_pair,
     list_local_categories
 )
-from act.front_end.vnnlib_loader.vnnlib_parser import parse_vnnlib_queries
+from act.front_end.vnnlib_loader.vnnlib_parser import (
+    UnsupportedSpecError,
+    parse_vnnlib_queries,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -235,6 +238,9 @@ class VNNLibSpecCreator(BaseSpecCreator):
                 f"Parsed VNNLIB specs: {len(queries)} queries, "
                 f"first kind=({queries[0][0].kind}, {queries[0][1].kind})"
             )
+        except UnsupportedSpecError as e:
+            logger.warning("UNSUPPORTED spec %s: %s", instance_id, e)
+            return None
         except Exception as e:
             logger.error(f"Failed to parse VNNLIB specs: {e}")
             return None
