@@ -63,8 +63,12 @@
 #   act_net = TorchToACT(model).run()
 #
 # Supported Constraints:
-#   InKind: BOX, LINF_BALL, LIN_POLY
-#   OutKind: TOP1_ROBUST, MARGIN_ROBUST, LINEAR_LE, RANGE
+#   InKind: BOX, LINF_BALL, LIN_POLY, LP_EMBEDDING
+#     LP_EMBEDDING: Lp-norm ball in embedding space for verify-from-embeddings
+#       text models. Perturbs only selected token positions (perturbed_positions)
+#       by eps under p_norm, holding all other positions fixed at center.
+#       See act.front_end.specs.InKind for the full definition.
+#   OutKind: TOP1_ROBUST, MARGIN_ROBUST, LINEAR_LE, RANGE, UNSAFE_LINEAR
 #
 #===---------------------------------------------------------------------===#
 
@@ -96,7 +100,7 @@ class VerifiableModel(nn.Module):
     in a single forward pass. Collects constraint results from spec layers.
     
     Batched Architecture:
-        Input: (N, C, H, W) or (N, features)
+        Input: (N, C, H, W), (N, features), or embedding block (N, L, D)
         → InputLayer: declares symbolic input block (pass-through at inference)
         → InputSpecLayer: checks each sample's input constraints
         → model: inner network (any nn.Module — Sequential, ResNet, Transformer, ...)
@@ -105,7 +109,7 @@ class VerifiableModel(nn.Module):
     
     Args (keyword-only):
         input_layer: InputLayer declaring the symbolic input block.
-        input_spec: InputSpecLayer carrying input constraints (BOX/LINF_BALL/LIN_POLY).
+        input_spec: InputSpecLayer carrying input constraints.
         model: inner nn.Module. Can be any graph (Sequential, DAG, skip-connection net).
         output_spec: OutputSpecLayer carrying output property (TOP1/MARGIN/LINEAR_LE/RANGE).
     
@@ -421,7 +425,7 @@ class InputLayer(nn.Module):
 
 class InputSpecLayer(nn.Module):
     """
-    Batched input constraint checker (BOX, L∞, LIN_POLY).
+    Batched input constraint checker (BOX, L∞, LIN_POLY, LP_EMBEDDING).
     
     Batch Processing:
         Input: x with shape (N, C, H, W)
@@ -441,12 +445,33 @@ class InputSpecLayer(nn.Module):
         super().__init__()
         self.spec = spec or InputSpec(**kwargs)
         self.kind = self.spec.kind
+
+        if self.kind == InKind.LP_EMBEDDING:
+            self.spec.lb, self.spec.ub = self.spec.materialize_box_seed()
+        elif self.kind == InKind.LINF_BALL and self.spec.center is not None and self.spec.eps is not None:
+            eps = self.spec.eps
+            if isinstance(eps, torch.Tensor):
+                eps_t = eps.to(device=self.spec.center.device, dtype=self.spec.center.dtype)
+            else:
+                eps_t = self.spec.center.new_tensor(eps)
+            self.spec.lb = self.spec.center - eps_t
+            self.spec.ub = self.spec.center + eps_t
         
         # Register eps as buffer for device mobility
-        if self.spec.eps is not None:
+        if isinstance(self.spec.eps, torch.Tensor):
             self.register_buffer("eps", self.spec.eps)
         else:
             self.eps = None
+
+        if isinstance(self.spec.p_norm, torch.Tensor):
+            self.register_buffer("p_norm", self.spec.p_norm)
+        else:
+            self.p_norm = None
+
+        if isinstance(self.spec.perturbed_positions, torch.Tensor):
+            self.register_buffer("perturbed_positions", self.spec.perturbed_positions)
+        else:
+            self.perturbed_positions = None
 
         # Register tensor fields as buffers so .to(device) works
         for name in ("lb", "ub", "center", "A", "b"):
@@ -467,6 +492,16 @@ class InputSpecLayer(nn.Module):
                 params[name] = val
         if self.eps is not None:
             params["eps"] = self.eps
+        if self.kind == InKind.LP_EMBEDDING:
+            if self.p_norm is not None:
+                params["p_norm"] = self.p_norm
+            if self.perturbed_positions is not None:
+                params["perturbed_positions"] = self.perturbed_positions
+        if self.kind == InKind.LP_EMBEDDING:
+            if self.p_norm is None:
+                raise ValueError("LP_EMBEDDING requires p_norm")
+            if self.perturbed_positions is None:
+                raise ValueError("LP_EMBEDDING requires perturbed_positions")
         
         # Check schema compliance
         for key in schema["params_required"]:
@@ -497,7 +532,11 @@ class InputSpecLayer(nn.Module):
                 params[name] = val
         if self.eps is not None:
             params["eps"] = self.eps
-
+        if self.kind == InKind.LP_EMBEDDING:
+            if self.p_norm is not None:
+                params["p_norm"] = self.p_norm
+            if self.perturbed_positions is not None:
+                params["perturbed_positions"] = self.perturbed_positions
         layer = create_layer(
             id=layer_id_start,
             kind=LayerKind.INPUT_SPEC.value,
@@ -505,6 +544,11 @@ class InputSpecLayer(nn.Module):
             in_vars=in_vars,
             out_vars=in_vars,
         )
+        if self.kind == InKind.LP_EMBEDDING:
+            if self.p_norm is not None:
+                layer.cache["p_norm"] = self.p_norm
+            if self.perturbed_positions is not None:
+                layer.cache["perturbed_positions"] = self.perturbed_positions
         return [layer], in_vars
 
     def forward(self, x: torch.Tensor):
@@ -555,6 +599,17 @@ class InputSpecLayer(nn.Module):
             # Always return tensor (unified output format)
             return (x, satisfied, explanation)
         
+        elif self.kind == InKind.LP_EMBEDDING:
+            if self.lb is None or self.ub is None:
+                return (x, True, "⚠️ INPUT LP_EMBEDDING: Missing lb/ub")
+
+            lb_ok = (x >= self.lb).reshape(batch_size, -1).all(dim=1)
+            ub_ok = (x <= self.ub).reshape(batch_size, -1).all(dim=1)
+            satisfied = lb_ok & ub_ok
+            n_ok = satisfied.sum().item()
+            explanation = f"✅ INPUT LP_EMBEDDING: {n_ok}/{batch_size} satisfied"
+            return (x, satisfied, explanation)
+
         elif self.kind == InKind.LIN_POLY:
             if self.A is None or self.b is None:
                 return (x, True, "⚠️ INPUT LIN_POLY: Missing A/b")

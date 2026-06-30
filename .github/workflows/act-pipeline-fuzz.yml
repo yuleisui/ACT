@@ -60,6 +60,19 @@ jobs:
           cd ${{ github.workspace }}
           coverage run -p -m act.pipeline --download cifar100_2024
 
+      - name: Cache safeNLP VNNLIB benchmark
+        id: safenlp-cache
+        uses: actions/cache@v4
+        with:
+          path: data/vnnlib/safenlp_2024
+          key: vnnlib-safenlp-2024-v1
+
+      - name: Download safeNLP benchmark
+        if: steps.safenlp-cache.outputs.cache-hit != 'true'
+        run: |
+          cd ${{ github.workspace }}
+          coverage run -p -m act.pipeline --download safenlp_2024
+
       - name: List downloaded data-model pairs
         run: |
           cd ${{ github.workspace }}
@@ -80,6 +93,16 @@ jobs:
           cd ${{ github.workspace }}
           coverage run -p -m act.pipeline --fuzz --category cifar100_2024 --max-instances 2 --timeout 30 --iterations 500
 
+      - name: Run fuzzing with --category flag (safeNLP text benchmark, real FC+ReLU)
+        run: |
+          cd ${{ github.workspace }}
+          coverage run -p -m act.pipeline --fuzz --category safenlp_2024 --max-instances 2 --timeout 30 --iterations 500
+
+      - name: Run fuzzing with --creator bert (BERT creator, embedding-space)
+        run: |
+          cd ${{ github.workspace }}
+          coverage run -p -m act.pipeline --fuzz --creator bert --dataset sst --num-samples 2 --timeout 30 --iterations 500
+
       - name: Test list command
         run: |
           cd ${{ github.workspace }}
@@ -89,6 +112,11 @@ jobs:
         run: |
           cd ${{ github.workspace }}
           coverage run -p -m act.pipeline --search cifar
+
+      - name: Download test benchmark (tiny VNN-COMP fixtures for --category test)
+        run: |
+          cd ${{ github.workspace }}
+          coverage run -p -m act.pipeline --download test
 
       - name: VNNLIB real-instance coverage (tiny test fixtures) + execution tracing
         run: |
