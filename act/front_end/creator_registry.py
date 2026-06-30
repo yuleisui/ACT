@@ -2,7 +2,7 @@
 """
 Creator Registry for ACT Specification Creators.
 
-Provides factory pattern for managing multiple spec creators (TorchVision, VNNLIB)
+Provides factory pattern for managing multiple spec creators (TorchVision, VNNLIB, bert)
 with automatic detection and routing.
 
 Copyright (C) 2025 SVF-tools/ACT
@@ -59,6 +59,9 @@ class CreatorRegistry:
             elif name == 'vnnlib':
                 from act.front_end.vnnlib_loader.create_specs import VNNLibSpecCreator
                 cls._creators[name] = VNNLibSpecCreator()
+            elif name == 'bert':
+                from act.front_end.bert_loader.create_specs import BertSpecCreator
+                cls._creators['bert'] = BertSpecCreator()
             else:
                 raise ValueError(
                     f"Unknown creator '{name}'. "
@@ -75,7 +78,7 @@ class CreatorRegistry:
         Returns:
             List of creator names
         """
-        return ['torchvision', 'vnnlib']
+        return ['torchvision', 'vnnlib', 'bert']
     
     @classmethod
     def detect_creator(cls, name: str, explicit_creator: Optional[str] = None) -> Tuple[str, str]:
@@ -125,7 +128,7 @@ class CreatorRegistry:
                     raise ValueError(
                         f"Dataset '{name}' not found in TorchVision creator.\n{str(e)}"
                     )
-            else:  # vnnlib
+            elif explicit_creator == 'vnnlib':
                 from act.front_end.vnnlib_loader.category_mapping import find_category_name
                 try:
                     normalized = find_category_name(name)
@@ -134,12 +137,23 @@ class CreatorRegistry:
                     raise ValueError(
                         f"Category '{name}' not found in VNNLIB creator.\n{str(e)}"
                     )
+            else:
+                from act.front_end.bert_loader.data_loader import find_bert_dataset_name
+                try:
+                    normalized = find_bert_dataset_name(name)
+                    return ('bert', normalized)
+                except ValueError as e:
+                    raise ValueError(
+                        f"Dataset '{name}' not found in bert creator.\n{str(e)}"
+                    )
         
         # Auto-detection: try both creators
         torchvision_match = False
         vnnlib_match = False
+        bert_match = False
         tv_name = None
         vnnlib_name = None
+        bert_name = None
         
         # Try TorchVision
         try:
@@ -158,20 +172,33 @@ class CreatorRegistry:
         except ValueError as e:
             # Intentional: auto-detection probe; absence in VNNLIB is reported via the match flags below.
             logger.debug("suppressed: %s", e)
+
+        try:
+            from act.front_end.bert_loader.data_loader import find_bert_dataset_name
+            bert_name = find_bert_dataset_name(name)
+            bert_match = True
+        except ValueError as e:
+            logger.debug("suppressed: %s", e)
         
         # Handle results
-        if torchvision_match and vnnlib_match:
+        if sum([torchvision_match, vnnlib_match, bert_match]) > 1:
             raise ValueError(
-                f"Ambiguous name '{name}' matches both creators:\n"
+                f"Ambiguous name '{name}' matches multiple creators:\n"
                 f"  TorchVision: {tv_name}\n"
                 f"  VNNLIB: {vnnlib_name}\n"
+                f"  BERT: {bert_name}\n"
                 f"Use --creator to specify explicitly:\n"
-                f"  --creator torchvision  OR  --creator vnnlib"
+                f"  --creator torchvision  OR  --creator vnnlib  OR  --creator bert"
             )
         elif torchvision_match:
+            assert tv_name is not None
             return ('torchvision', tv_name)
         elif vnnlib_match:
+            assert vnnlib_name is not None
             return ('vnnlib', vnnlib_name)
+        elif bert_match:
+            assert bert_name is not None
+            return ('bert', bert_name)
         else:
             raise ValueError(
                 f"Dataset/category '{name}' not found in any creator.\n"

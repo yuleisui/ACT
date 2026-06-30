@@ -11,7 +11,7 @@ License: AGPLv3+
 
 import argparse
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional, cast
 
 from act.front_end.creator_registry import detect_creator, list_creators, get_creator
 from act.util.cli_utils import add_device_args, initialize_from_args
@@ -20,6 +20,7 @@ from act.util.cli_utils import add_device_args, initialize_from_args
 from act.front_end.torchvision_loader import data_model_mapping as tv_mapping
 from act.front_end.torchvision_loader import data_model_loader as tv_loader
 from act.front_end.vnnlib_loader import category_mapping as vnnlib_mapping
+from act.front_end.bert_loader import data_loader as bert_loader
 
 
 def print_unified_list(creator: Optional[str] = None):
@@ -52,6 +53,13 @@ def print_unified_list(creator: Optional[str] = None):
         for cat_name in sorted(categories):
             info = vnnlib_mapping.get_category_info(cat_name)
             print(f"  {cat_name:30s} ({info['type']}) - {info['description']}")
+    
+    if creator is None or creator == 'bert':
+        datasets = bert_loader.list_bert_datasets()
+        print(f"\nBERT Datasets ({len(datasets)}):")
+        print('-' * 100)
+        for ds_name in datasets:
+            print(f"  {ds_name:30s} [sentiment] - {bert_loader.BERT_DATASETS[ds_name]}")
     
     print(f"\n{'='*100}\n")
 
@@ -90,6 +98,18 @@ def print_unified_search(query: str, creator: Optional[str] = None):
             for cat_name in sorted(vnnlib_matches):
                 info = vnnlib_mapping.get_category_info(cat_name)
                 print(f"  {cat_name:30s} ({info['type']}) - {info['description']}")
+    
+    if creator is None or creator == 'bert':
+        bert_matches = [
+            name for name in bert_loader.list_bert_datasets()
+            if query.lower() in name.lower()
+        ]
+        if bert_matches:
+            found_any = True
+            print(f"\nBERT Datasets ({len(bert_matches)}):")
+            print('-' * 100)
+            for ds_name in sorted(bert_matches):
+                print(f"  {ds_name:30s} [sentiment] - {bert_loader.BERT_DATASETS[ds_name]}")
     
     if not found_any:
         print(f"\nNo results found for '{query}'")
@@ -138,6 +158,12 @@ def print_unified_info(name: str, explicit_creator: Optional[str] = None):
             print(f"  • Properties: {info['properties']}")
             print(f"  • Input Dim: {info['input_dim']}")
             print(f"  • Output Dim: {info['output_dim']}")
+        elif creator_name == 'bert':
+            print(f"\nDataset: {normalized_name}")
+            print("Type: binary sentiment text")
+            print("Models: embedding_classifier")
+            print("Input: clean embeddings [B, L, D]")
+            print("Specs: LP_EMBEDDING + MARGIN_ROBUST")
         
         print(f"\n{'='*100}\n")
         
@@ -228,6 +254,10 @@ def handle_unified_download(name: str, explicit_creator: Optional[str] = None):
                 print(f"\nNote: VNNLIB benchmarks must be downloaded manually from VNN-COMP.")
                 print(f"Expected location: data/vnnlib/{normalized_name}/")
                 print(f"{'='*100}\n")
+        elif creator_name == 'bert':
+            print("BERT datasets are file-based.")
+            print(f"Expected raw files under data/{normalized_name}/")
+            print("SST accepts test/dev .txt and train-nodes.tsv; fixture mode is deterministic.")
         
     except ValueError as e:
         print(f"Error: {e}")
@@ -276,6 +306,11 @@ def print_list_downloads(creator: Optional[str] = None):
         else:
             print(f"\nNo VNNLIB downloads found")
     
+    if creator is None or creator == 'bert':
+        print(f"\nBERT Downloads:")
+        print('-' * 100)
+        print("  File-based loader; place SST/Yelp raw files under data/sst or data/yelp")
+    
     print(f"\n{'='*100}\n")
 
 
@@ -305,6 +340,12 @@ def print_creators():
             print(f"  Module:      act.front_end.vnnlib_loader")
             print(f"  Items:       {len(categories)} VNN-COMP categories")
             print(f"  Kinds:       robustness, safety, reachability")
+        elif creator_name == 'bert':
+            datasets = bert_loader.list_bert_datasets()
+            print(f"  Description: BERT datasets for embedding-space verification")
+            print(f"  Module:      act.front_end.bert_loader")
+            print(f"  Items:       {len(datasets)} dataset names/aliases")
+            print(f"  Kinds:       binary sentiment robustness")
 
     print(f"\n{'='*100}\n")
 
@@ -341,6 +382,11 @@ def print_creator_info(name: str) -> None:
         print(f"  Categories ({len(categories)}): {sample} ...")
         print(f"  Kinds:        robustness, safety, reachability")
         print(f"  Spec types:   VNNLIB SMT-LIB format")
+    elif name == 'bert':
+        datasets = sorted(bert_loader.list_bert_datasets())
+        print(f"  Datasets ({len(datasets)}):  {datasets}")
+        print(f"  Kinds:        binary sentiment robustness")
+        print(f"  Spec types:   LP_EMBEDDING, MARGIN_ROBUST")
 
     print(f"\n{'='*100}\n")
 
@@ -525,7 +571,7 @@ Examples:
     parser.add_argument(
         "--creator", "-c",
         type=str,
-        choices=['torchvision', 'vnnlib'],
+        choices=['torchvision', 'vnnlib', 'bert'],
         help="Override auto-detection and use specific creator"
     )
     parser.add_argument(
@@ -603,7 +649,7 @@ Examples:
             print(f"{'='*100}\n")
             
             # model_inference extracts input from InputLayer 
-            successful_models = model_inference(wrapped_models)
+            successful_models = model_inference(cast(Any, wrapped_models))
             print(f"\n✓ Successfully ran inference on {len(successful_models)}/{len(wrapped_models)} models")
             print(f"  Models are ready for verification")
         except Exception as e:
