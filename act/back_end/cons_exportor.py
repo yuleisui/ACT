@@ -1006,6 +1006,248 @@ def _emit_sigmoid_canonical(
         le.add([z[i], y[i]], vals_d, b_hi[:, i])
 
 
+def _emit_erf_canonical(
+    con: Any,
+    le: _RowAcc,
+    lb_global: torch.Tensor,
+    ub_global: torch.Tensor,
+    N: int,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> None:
+    """Canonical 4-ineq ERF envelope, mirroring SIGMOID by curvature."""
+    n = len(con.var_ids) // 2
+    z = list(con.var_ids[:n])
+    y = list(con.var_ids[n:])
+    y_idx = torch.tensor(y, device=device, dtype=torch.long)
+    lo = lb_global[:, y_idx]
+    hi = ub_global[:, y_idx]
+    big = 1e30
+    lo_s = torch.where(torch.isfinite(lo), lo, torch.full_like(lo, -big))
+    hi_s = torch.where(torch.isfinite(hi), hi, torch.full_like(hi, big))
+    hi_s = torch.maximum(hi_s, lo_s)
+    f_lo = torch.erf(lo_s)
+    f_hi = torch.erf(hi_s)
+    df_lo = (2.0 / float(np.sqrt(np.pi))) * torch.exp(-lo_s * lo_s)
+    df_hi = (2.0 / float(np.sqrt(np.pi))) * torch.exp(-hi_s * hi_s)
+    gap = hi_s - lo_s
+    safe_gap = torch.where(gap > _TANH_LIN_EPS, gap, torch.ones_like(gap))
+    secant_slope = (f_hi - f_lo) / safe_gap
+    secant_intercept = f_lo - secant_slope * lo_s
+    tang_lo_intercept = f_lo - df_lo * lo_s
+    tang_hi_intercept = f_hi - df_hi * hi_s
+    point_bounds = gap <= _TANH_LIN_EPS
+    convex_seg = ~point_bounds & (hi_s <= -_TANH_LIN_EPS)
+    concave_seg = ~point_bounds & (lo_s >= _TANH_LIN_EPS)
+    mid = 0.5 * (lo_s + hi_s)
+    f_mid = torch.erf(mid)
+    zero = torch.zeros_like(lo_s)
+    slope_lo = torch.where(
+        point_bounds, zero,
+        torch.where(convex_seg, df_hi, torch.where(concave_seg, secant_slope, zero)),
+    )
+    b_lo = torch.where(
+        point_bounds, f_mid,
+        torch.where(convex_seg, tang_hi_intercept, torch.where(concave_seg, secant_intercept, f_lo)),
+    )
+    slope_hi = torch.where(
+        point_bounds, zero,
+        torch.where(convex_seg, secant_slope, torch.where(concave_seg, df_lo, zero)),
+    )
+    b_hi = torch.where(
+        point_bounds, f_mid,
+        torch.where(convex_seg, secant_intercept, torch.where(concave_seg, tang_lo_intercept, f_hi)),
+    )
+    for i in range(n):
+        vals_a = torch.full((N, 1), -1.0, device=device, dtype=dtype)
+        le.add([z[i]], vals_a, -f_lo[:, i])
+        vals_b = torch.full((N, 1), 1.0, device=device, dtype=dtype)
+        le.add([z[i]], vals_b, f_hi[:, i])
+        vals_c = torch.empty((N, 2), device=device, dtype=dtype)
+        vals_c[:, 0] = -1.0
+        vals_c[:, 1] = slope_lo[:, i]
+        le.add([z[i], y[i]], vals_c, -b_lo[:, i])
+        vals_d = torch.empty((N, 2), device=device, dtype=dtype)
+        vals_d[:, 0] = 1.0
+        vals_d[:, 1] = -slope_hi[:, i]
+        le.add([z[i], y[i]], vals_d, b_hi[:, i])
+
+
+
+def _emit_sqrt_canonical(
+    con: Any,
+    le: _RowAcc,
+    lb_global: torch.Tensor,
+    ub_global: torch.Tensor,
+    N: int,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> None:
+    """Canonical 4-ineq SQRT envelope on clamped domain x >= 0."""
+    n = len(con.var_ids) // 2
+    z = list(con.var_ids[:n])
+    y = list(con.var_ids[n:])
+    y_idx = torch.tensor(y, device=device, dtype=torch.long)
+    lo = lb_global[:, y_idx]
+    hi = ub_global[:, y_idx]
+    lo_e = torch.clamp(torch.where(torch.isfinite(lo), lo, torch.zeros_like(lo)), min=0.0)
+    hi_e = torch.clamp(torch.where(torch.isfinite(hi), hi, lo_e), min=0.0)
+    hi_e = torch.maximum(hi_e, lo_e)
+    f_lo = torch.sqrt(lo_e)
+    f_hi = torch.sqrt(hi_e)
+    gap = hi_e - lo_e
+    safe_gap = torch.where(gap > _TANH_LIN_EPS, gap, torch.ones_like(gap))
+    slope_lo = (f_hi - f_lo) / safe_gap
+    b_lo = f_lo - slope_lo * lo_e
+    slope_hi = 0.5 / torch.sqrt(torch.clamp(hi_e, min=_TANH_LIN_EPS))
+    b_hi = f_hi - slope_hi * hi_e
+    degenerate = (gap <= _TANH_LIN_EPS) | (hi_e <= _TANH_LIN_EPS)
+    mid_val = torch.sqrt(0.5 * (lo_e + hi_e))
+    zero = torch.zeros_like(lo_e)
+    slope_lo = torch.where(degenerate, zero, slope_lo)
+    b_lo = torch.where(degenerate, mid_val, b_lo)
+    slope_hi = torch.where(degenerate, zero, slope_hi)
+    b_hi = torch.where(degenerate, mid_val, b_hi)
+    for i in range(n):
+        vals_a = torch.full((N, 1), -1.0, device=device, dtype=dtype)
+        le.add([z[i]], vals_a, -f_lo[:, i])
+        vals_b = torch.full((N, 1), 1.0, device=device, dtype=dtype)
+        le.add([z[i]], vals_b, f_hi[:, i])
+        vals_c = torch.empty((N, 2), device=device, dtype=dtype)
+        vals_c[:, 0] = -1.0
+        vals_c[:, 1] = slope_lo[:, i]
+        le.add([z[i], y[i]], vals_c, -b_lo[:, i])
+        vals_d = torch.empty((N, 2), device=device, dtype=dtype)
+        vals_d[:, 0] = 1.0
+        vals_d[:, 1] = -slope_hi[:, i]
+        le.add([z[i], y[i]], vals_d, b_hi[:, i])
+
+
+def _emit_periodic_box_canonical(
+    con: Any,
+    le: _RowAcc,
+    lb_global: torch.Tensor,
+    ub_global: torch.Tensor,
+    N: int,
+    device: torch.device,
+    dtype: torch.dtype,
+    op_name: str,
+) -> None:
+    """Emit the four-row constant box relaxation for non-monotone periodic ops."""
+    n = len(con.var_ids) // 2
+    z = list(con.var_ids[:n])
+    z_idx = torch.tensor(z, device=device, dtype=torch.long)
+    lo = lb_global[:, z_idx]
+    hi = ub_global[:, z_idx]
+    if not torch.all(torch.isfinite(lo) & torch.isfinite(hi)):
+        raise ValueError(f"{op_name}: finite output bounds are required")
+    for i in range(n):
+        vals_a = torch.full((N, 1), -1.0, device=device, dtype=dtype)
+        le.add([z[i]], vals_a, -lo[:, i])
+        vals_b = torch.full((N, 1), 1.0, device=device, dtype=dtype)
+        le.add([z[i]], vals_b, hi[:, i])
+        vals_c = torch.full((N, 1), -1.0, device=device, dtype=dtype)
+        le.add([z[i]], vals_c, -lo[:, i])
+        vals_d = torch.full((N, 1), 1.0, device=device, dtype=dtype)
+        le.add([z[i]], vals_d, hi[:, i])
+
+
+def _emit_sin_canonical(
+    con: Any,
+    le: _RowAcc,
+    lb_global: torch.Tensor,
+    ub_global: torch.Tensor,
+    N: int,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> None:
+    _emit_periodic_box_canonical(con, le, lb_global, ub_global, N, device, dtype, "sin")
+
+
+def _emit_cos_canonical(
+    con: Any,
+    le: _RowAcc,
+    lb_global: torch.Tensor,
+    ub_global: torch.Tensor,
+    N: int,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> None:
+    _emit_periodic_box_canonical(con, le, lb_global, ub_global, N, device, dtype, "cos")
+
+
+
+def _quantize_params_flat(con: Any, n: int, device: torch.device, dtype: torch.dtype):
+    scale = con.meta["scale"].to(device=device, dtype=dtype).flatten()
+    zero_point = con.meta["zero_point"].to(device=device, dtype=dtype).flatten()
+    if scale.numel() == 1:
+        scale = scale.expand(n)
+    elif scale.numel() != n:
+        raise NotImplementedError(f"quantize: scale with {scale.numel()} entries cannot broadcast to flat size {n}")
+    if zero_point.numel() == 1:
+        zero_point = zero_point.expand(n)
+    elif zero_point.numel() != n:
+        raise NotImplementedError(f"quantize: zero_point with {zero_point.numel()} entries cannot broadcast to flat size {n}")
+    if torch.any(scale <= 0):
+        raise ValueError("quantize: scale must be positive")
+    qmin = torch.full((n,), float(con.meta["qmin"]), device=device, dtype=dtype)
+    qmax = torch.full((n,), float(con.meta["qmax"]), device=device, dtype=dtype)
+    return scale, zero_point, qmin, qmax
+
+
+def _quantize_qdq_value(x: torch.Tensor, scale: torch.Tensor, zero_point: torch.Tensor, qmin: torch.Tensor, qmax: torch.Tensor) -> torch.Tensor:
+    return scale * torch.clamp(torch.round(x / scale), min=qmin - zero_point, max=qmax - zero_point)
+
+
+def _emit_quantize_canonical(
+    con: Any,
+    le: _RowAcc,
+    lb_global: torch.Tensor,
+    ub_global: torch.Tensor,
+    N: int,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> None:
+    """Canonical QDQ envelope: saturating box plus guarded +/- scale/2 band."""
+    n = len(con.var_ids) // 2
+    z = list(con.var_ids[:n])
+    y = list(con.var_ids[n:])
+    y_idx = torch.tensor(y, device=device, dtype=torch.long)
+    lo = lb_global[:, y_idx]
+    hi = torch.maximum(ub_global[:, y_idx], lo)
+    if not torch.all(torch.isfinite(lo) & torch.isfinite(hi)):
+        raise ValueError("quantize: finite input bounds are required")
+    scale_1d, zp_1d, qmin_1d, qmax_1d = _quantize_params_flat(con, n, device, dtype)
+    scale = scale_1d.unsqueeze(0).expand(N, n)
+    zp = zp_1d.unsqueeze(0).expand(N, n)
+    qmin = qmin_1d.unsqueeze(0).expand(N, n)
+    qmax = qmax_1d.unsqueeze(0).expand(N, n)
+    z_lo_raw = _quantize_qdq_value(lo, scale, zp, qmin, qmax)
+    z_hi_raw = _quantize_qdq_value(hi, scale, zp, qmin, qmax)
+    z_lo = torch.minimum(z_lo_raw, z_hi_raw)
+    z_hi = torch.maximum(z_lo_raw, z_hi_raw)
+    q_lo = torch.round(lo / scale) + zp
+    q_hi = torch.round(hi / scale) + zp
+    unsaturated = (qmin <= q_lo) & (q_hi <= qmax)
+    slope_lo = torch.where(unsaturated, torch.ones_like(scale), torch.zeros_like(scale))
+    b_lo = torch.where(unsaturated, -0.5 * scale, z_lo)
+    slope_hi = torch.where(unsaturated, torch.ones_like(scale), torch.zeros_like(scale))
+    b_hi = torch.where(unsaturated, 0.5 * scale, z_hi)
+    for i in range(n):
+        vals_a = torch.full((N, 1), -1.0, device=device, dtype=dtype)
+        le.add([z[i]], vals_a, -z_lo[:, i])
+        vals_b = torch.full((N, 1), 1.0, device=device, dtype=dtype)
+        le.add([z[i]], vals_b, z_hi[:, i])
+        vals_c = torch.empty((N, 2), device=device, dtype=dtype)
+        vals_c[:, 0] = -1.0
+        vals_c[:, 1] = slope_lo[:, i]
+        le.add([z[i], y[i]], vals_c, -b_lo[:, i])
+        vals_d = torch.empty((N, 2), device=device, dtype=dtype)
+        vals_d[:, 0] = 1.0
+        vals_d[:, 1] = -slope_hi[:, i]
+        le.add([z[i], y[i]], vals_d, b_hi[:, i])
+
+
 def _emit_clipped_affine_hull(
     con: Any,
     le: _RowAcc,
@@ -1448,6 +1690,16 @@ def _emit_assert_canonical(
         # Negated LINEAR_LE in LE form: -c · y <= -d - eps.
         c_raw = assert_layer.params["c"]
         d_raw = assert_layer.params["d"]
+        _c_probe = c_raw if isinstance(c_raw, torch.Tensor) else torch.as_tensor(c_raw)
+        # Multi-row conjunction = more than one row PER batch lane (numel > N*n_out).
+        # A batched single-row LINEAR_LE is [N, n_out] (numel == N*n_out) and must
+        # NOT trip this guard, otherwise B>1 batches are misread as a conjunction.
+        if _c_probe.shape[-1] == n_out and _c_probe.numel() > N * n_out:
+            raise NotImplementedError(
+                "Multi-row LINEAR_LE (conjunction) is not supported by the "
+                "LP/export tier: its negation is disjunctive and needs one solve "
+                "per row. Use solver_tier in {dual, dual_alpha, dual_alpha_eta}."
+            )
         c_b = _coerce_b_tensor(c_raw, N, n_out, device, dtype, "c")
         d_b = (
             d_raw.to(device=device, dtype=dtype).reshape(-1)
@@ -1815,7 +2067,7 @@ def export_to_batch_problem(
             _emit_add_sub(con, eq, +1.0, N, device, dtype)
         elif tag.startswith("sub:"):
             _emit_add_sub(con, eq, -1.0, N, device, dtype)
-        elif tag.startswith("flatten:"):
+        elif tag.startswith(("flatten:", "reshape:", "transpose:")):
             _emit_flatten(con, eq, N, device, dtype)
         elif tag.startswith("relu:"):
             _emit_relu_canonical(con, le, lb_global, ub_global, N, device, dtype)
@@ -1827,6 +2079,16 @@ def export_to_batch_problem(
             _emit_tanh_canonical(con, le, lb_global, ub_global, N, device, dtype)
         elif tag.startswith("sigmoid:"):
             _emit_sigmoid_canonical(con, le, lb_global, ub_global, N, device, dtype)
+        elif tag.startswith("erf:"):
+            _emit_erf_canonical(con, le, lb_global, ub_global, N, device, dtype)
+        elif tag.startswith("sqrt:"):
+            _emit_sqrt_canonical(con, le, lb_global, ub_global, N, device, dtype)
+        elif tag.startswith("sin:"):
+            _emit_sin_canonical(con, le, lb_global, ub_global, N, device, dtype)
+        elif tag.startswith("cos:"):
+            _emit_cos_canonical(con, le, lb_global, ub_global, N, device, dtype)
+        elif tag.startswith("quantize:"):
+            _emit_quantize_canonical(con, le, lb_global, ub_global, N, device, dtype)
         elif tag.startswith("hardtanh:"):
             _emit_clipped_affine_hull(
                 con, le, lb_global, ub_global, 1.0, 0.0,
@@ -1853,7 +2115,11 @@ def export_to_batch_problem(
             _emit_attn_dual_planar(con, le, lb_global, ub_global, N, device, dtype)
         elif tag.startswith("mask:"):
             _emit_mask_add(con, eq, lb_global, ub_global, N, device, dtype)
+        elif tag.startswith(("att_scores:", "att_mix:")):
+            continue
         elif tag.startswith("mcc:"):
+            if len(con.var_ids) % 3 != 0:
+                continue
             _emit_mcc(con, le, lb_global, ub_global, N, device, dtype)
         elif tag.startswith("softmax:simplex:"):
             _emit_softmax_simplex(con, eq, le, N, device, dtype)

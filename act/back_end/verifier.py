@@ -204,6 +204,37 @@ def seed_from_input_specs(spec_layers) -> Bounds:
             if center is not None and eps is not None:
                 e = eps.to(device=center.device, dtype=center.dtype) if torch.is_tensor(eps) else center.new_tensor(eps)
                 return Bounds(center - e, center + e)
+
+    # LP_EMBEDDING seeds the enclosing box; finite-p precision is recovered by
+    # the dual input contribution, which reads p_norm/perturbed_positions.
+    for spec_layer in spec_layers:
+        if spec_layer.params.get("kind") == InKind.LP_EMBEDDING:
+            if "lb" in spec_layer.params and "ub" in spec_layer.params:
+                return Bounds(spec_layer.params["lb"].clone(), spec_layer.params["ub"].clone())
+            center = spec_layer.params.get("center")
+            eps = spec_layer.params.get("eps")
+            if center is None or eps is None:
+                raise ValueError("LP_EMBEDDING requires center/eps or lb/ub for seeding.")
+            e = eps.to(device=center.device, dtype=center.dtype) if torch.is_tensor(eps) else center.new_tensor(eps)
+            lb = center.clone()
+            ub = center.clone()
+            positions = spec_layer.params.get("perturbed_positions")
+            if positions is None:
+                mask = torch.ones(center.shape[:-1], device=center.device, dtype=torch.bool)
+            else:
+                pos_t = positions.to(device=center.device) if torch.is_tensor(positions) else torch.as_tensor(positions, device=center.device)
+                if pos_t.dtype == torch.bool:
+                    if tuple(pos_t.shape) == tuple(center.shape[:-1]):
+                        mask = pos_t.to(dtype=torch.bool)
+                    else:
+                        view_shape = [1] * (center.dim() - 1)
+                        view_shape[-1] = center.shape[-2]
+                        mask = pos_t.reshape(view_shape).expand(center.shape[:-1]).to(dtype=torch.bool)
+                else:
+                    mask = torch.zeros(center.shape[:-1], device=center.device, dtype=torch.bool)
+                    mask.index_fill_(-1, pos_t.to(dtype=torch.long).flatten(), True)
+            expanded = mask.unsqueeze(-1).expand_as(center)
+            return Bounds(torch.where(expanded, center - e, lb), torch.where(expanded, center + e, ub))
     
     # LIN_POLY only -> error
     if any(spec_layer.params.get("kind") == InKind.LIN_POLY for spec_layer in spec_layers):
@@ -218,7 +249,7 @@ def add_all_input_specs(globalC: ConSet, input_ids: List[int], spec_layers) -> N
     This function adds:
     - BOX constraints (box bounds)
     - LINF_BALL constraints (converted to box)
-    - LIN_POLY constraints (linear polytope A·x ≤ b)
+    - LP_EMBEDDING/LIN_POLY constraints (box seed or linear polytope A·x ≤ b)
     
     The LIN_POLY constraints are tagged with "in:linpoly" and will be
     exported by export_to_batch_problem() in cons_exportor.py.
@@ -228,6 +259,14 @@ def add_all_input_specs(globalC: ConSet, input_ids: List[int], spec_layers) -> N
         if k == InKind.BOX:
             globalC.add_box(-1, input_ids, Bounds(L.params["lb"], L.params["ub"]))
         elif k == InKind.LINF_BALL:
+            if "lb" in L.params and "ub" in L.params:
+                globalC.add_box(-1, input_ids, Bounds(L.params["lb"], L.params["ub"]))
+            else:
+                center = L.params["center"]
+                eps = L.params["eps"]
+                e = eps.to(device=center.device, dtype=center.dtype) if torch.is_tensor(eps) else center.new_tensor(eps)
+                globalC.add_box(-1, input_ids, Bounds(center - e, center + e))
+        elif k == InKind.LP_EMBEDDING:
             if "lb" in L.params and "ub" in L.params:
                 globalC.add_box(-1, input_ids, Bounds(L.params["lb"], L.params["ub"]))
             else:

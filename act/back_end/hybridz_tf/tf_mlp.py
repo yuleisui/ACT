@@ -207,6 +207,31 @@ def tf_sigmoid(L, bounds, tf):
     return fact
 
 
+def tf_erf(L, bounds, tf):
+    tf._hz_cache[L.id] = None
+    return interval.tf_erf(L, bounds)
+
+
+def tf_sqrt(L, bounds, tf):
+    tf._hz_cache[L.id] = None
+    return interval.tf_sqrt(L, bounds)
+
+
+def tf_sin(L, bounds, tf):
+    tf._hz_cache[L.id] = None
+    return interval.tf_sin(L, bounds)
+
+
+def tf_cos(L, bounds, tf):
+    tf._hz_cache[L.id] = None
+    return interval.tf_cos(L, bounds)
+
+
+def tf_quantize(L, bounds, tf):
+    tf._hz_cache[L.id] = None
+    return interval.tf_quantize(L, bounds)
+
+
 def tf_abs(L, bounds, tf):
     hz_in = tf._hz_cache.get(L.id)
     if hz_in is not None:

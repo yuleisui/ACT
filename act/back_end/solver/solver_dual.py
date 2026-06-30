@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union, cast
 
 import torch
-from act.back_end.core import Bounds, Net
+from act.back_end.core import Bounds, Layer, Net
 from act.back_end.layer_schema import LayerKind
 from act.back_end.solver.solver_base import Solver, SolverCaps
 from act.front_end.specs import OutputSpec, OutKind
@@ -67,6 +67,42 @@ def expand_bounds_dict(bounds_dict: Dict[int, Bounds], M: int) -> Dict[int, Boun
     return out
 
 
+def _alpha_tree_leaves(tree: Any):
+    """Yield the tensor leaves of a dual-alpha pytree.
+
+    A per-layer alpha is a pytree whose shape is interpreted by the matching
+    backward kernel: RELU is a single tensor leaf; future per-kind allocators
+    may nest leaves in lists/dicts. ``None`` marks a fixed-slope kind with no
+    alpha. The optimizer, projection, and keep-best clone all walk these leaves
+    so they cannot drift out of agreement on the pytree shape.
+    """
+    if tree is None:
+        return
+    if isinstance(tree, torch.Tensor):
+        yield tree
+    elif isinstance(tree, dict):
+        for value in tree.values():
+            yield from _alpha_tree_leaves(value)
+    elif isinstance(tree, (list, tuple)):
+        for value in tree:
+            yield from _alpha_tree_leaves(value)
+    else:
+        raise TypeError(f"unsupported alpha pytree node: {type(tree)!r}")
+
+
+def _clone_alpha_tree(tree: Any) -> Any:
+    """Detach-clone every leaf of an alpha pytree, preserving its structure."""
+    if tree is None:
+        return None
+    if isinstance(tree, torch.Tensor):
+        return tree.detach().clone()
+    if isinstance(tree, dict):
+        return {key: _clone_alpha_tree(value) for key, value in tree.items()}
+    if isinstance(tree, (list, tuple)):
+        return type(tree)(_clone_alpha_tree(value) for value in tree)
+    raise TypeError(f"unsupported alpha pytree node: {type(tree)!r}")
+
+
 def _reverse_topological_sort(net: Net) -> List[int]:
     """Kahn's algorithm on net.succs.
 
@@ -92,6 +128,48 @@ def _reverse_topological_sort(net: Net) -> List[int]:
             f"({len(order)}/{len(net.layers)} sorted)"
         )
     return order
+
+
+# Floor on the L2 witness denominator so a zero-coefficient block yields a
+# center witness instead of a divide-by-zero.
+_DUAL_NORM_EPS = 1e-12
+
+
+def _resolve_perturbation_norm(value: Any) -> float:
+    """Normalize a spec ``p_norm`` field to a float, defaulting to ``inf``.
+
+    LP_EMBEDDING carries the input perturbation norm ``p``; box / L_inf specs
+    omit it. A missing field (``None``) maps to ``inf`` so the dual solver keeps
+    the exact box concretization with zero behavior change.
+
+    Args:
+        value: Raw ``p_norm`` from the input-spec layer params. Accepts ``None``,
+            a number, or a string such as ``"inf"`` / ``"2"``.
+
+    Returns:
+        The perturbation norm ``p`` as a float (``float('inf')`` for L_inf).
+    """
+    if value is None:
+        return float("inf")
+    if isinstance(value, str):
+        token = value.strip().lower()
+        if token in ("inf", "+inf", "infinity", "linf", "l_inf"):
+            return float("inf")
+        return float(token)
+    return float(value)
+
+
+def _dual_norm_exponent(p: float) -> float:
+    """Return the Hölder dual exponent ``q`` with ``1/p + 1/q = 1``.
+
+    Used to evaluate the exact ``min`` of a linear form over an Lp input ball
+    (``min_{‖δ‖_p ≤ ε} ν·δ = −ε‖ν‖_q``): p=inf→q=1 (box), p=2→q=2, p=1→q=inf.
+    """
+    if p == float("inf"):
+        return 1.0
+    if p == 1.0:
+        return float("inf")
+    return p / (p - 1.0)
 
 
 class DualSolver(Solver):
@@ -442,6 +520,107 @@ class DualSolver(Solver):
             hypotheses.append({lid: signs[idx] for lid, signs in stacked_split_signs.items()})
         return hypotheses
 
+    def _init_alpha(
+        self,
+        layer: Layer,
+        bounds_dict: Dict[int, Bounds],
+        B: int,
+        M: int,
+        device: torch.device,
+        dtype: torch.dtype,
+        *,
+        per_class_alpha: bool,
+        optimize_alpha: bool,
+        incremental_alphas: Optional[Dict[int, torch.Tensor]],
+    ) -> Any:
+        """Per-kind dual-alpha allocation returning a pytree of leaves, or None.
+
+        RELU allocates an optimizable lower-envelope slope ``[B, M, n]`` (or
+        ``[B, n]`` when ``per_class_alpha`` is off), warm-started from
+        ``incremental_alphas`` when present. SOFTMAX and LAYERNORM are
+        fixed-slope for now and allocate no alpha (``None``), so only RELU
+        contributes optimizer leaves; their backward kernels interpret the
+        absent alpha as the fixed relaxation. Each kind owns the shape of its
+        own pytree, which the matching backward kernel reads back via
+        ``alpha.get(lid)``.
+        """
+        k = layer.kind.upper() if isinstance(layer.kind, str) else layer.kind
+        if k in (LayerKind.ATT_SCORES.value, LayerKind.ATT_MIX.value):
+            return self._init_attention_alpha(
+                layer, bounds_dict, device, dtype,
+                optimize_alpha=optimize_alpha,
+                incremental_alphas=incremental_alphas,
+            )
+        if k != LayerKind.RELU.value:
+            return None
+        b = bounds_dict.get(layer.id)
+        if b is None:
+            return None
+        if incremental_alphas is not None and layer.id in incremental_alphas:
+            alpha_init = (
+                incremental_alphas[layer.id]
+                .detach()
+                .clone()
+                .to(device=device, dtype=dtype)
+                .clamp(0.0, 1.0)
+            )
+        else:
+            lb_flat = b.lb.to(device=device, dtype=dtype).flatten(start_dim=1)
+            ub_flat = b.ub.to(device=device, dtype=dtype).flatten(start_dim=1)
+            n_neurons = lb_flat.shape[-1]
+            denom = (ub_flat - lb_flat).clamp(min=1e-12)
+            alpha_init_bn = (ub_flat / denom).clamp(0.0, 1.0).detach()
+            if per_class_alpha:
+                alpha_init = (
+                    alpha_init_bn.unsqueeze(1)
+                    .expand(B, M, n_neurons)
+                    .contiguous()
+                )
+            else:
+                alpha_init = alpha_init_bn.contiguous()
+        return torch.nn.Parameter(alpha_init) if optimize_alpha else alpha_init.detach()
+
+    def _init_attention_alpha(
+        self,
+        layer: Layer,
+        bounds_dict: Dict[int, Bounds],
+        device: torch.device,
+        dtype: torch.dtype,
+        *,
+        optimize_alpha: bool,
+        incremental_alphas: Optional[Dict[int, torch.Tensor]],
+    ) -> Any:
+        """Allocate the bilinear-attention fusion-slope pytree for one core.
+
+        The pytree is ``{omega_l, omega_u}`` with per-output ``[B, 1]`` slopes,
+        warm-started at the rule init derived from the same local input boxes the
+        backward kernel reads (so allocator, kernel, keep-best clone and the
+        ``[0, 1]`` projection all agree on the shape). Returns ``None`` when the
+        predecessor boxes are missing so the kernel falls back to its rule slope.
+        """
+        from act.back_end.dual_tf.tf_transformer import (
+            attention_rule_alpha, _attention_input_boxes,
+        )
+        try:
+            x_l, x_u, y_l, y_u, _scale, _mask = _attention_input_boxes(layer, bounds_dict)
+        except KeyError:
+            return None
+        x_l = x_l.to(device=device, dtype=dtype)
+        x_u = x_u.to(device=device, dtype=dtype)
+        y_l = y_l.to(device=device, dtype=dtype)
+        y_u = y_u.to(device=device, dtype=dtype)
+        if incremental_alphas is not None and layer.id in incremental_alphas:
+            prior = cast(Dict[str, torch.Tensor], cast(object, incremental_alphas[layer.id]))
+            tree = {
+                "omega_l": prior["omega_l"].detach().clone().to(device=device, dtype=dtype).clamp(0.0, 1.0),
+                "omega_u": prior["omega_u"].detach().clone().to(device=device, dtype=dtype).clamp(0.0, 1.0),
+            }
+        else:
+            tree = attention_rule_alpha(x_l, x_u, y_l, y_u)
+        if optimize_alpha:
+            return {key: torch.nn.Parameter(val.detach().clone()) for key, val in tree.items()}
+        return {key: val.detach() for key, val in tree.items()}
+
     def _optimize_alpha_eta(
         self,
         net: Net,
@@ -511,7 +690,7 @@ class DualSolver(Solver):
         input_lb = input_lb.to(device=device, dtype=dtype)
         input_ub = input_ub.to(device=device, dtype=dtype)
 
-        ancestor_lids: Optional[set] = None
+        ancestor_lids: Optional[set[int]] = None
         if start_lid is not None:
             # Interior-start objectives only depend on ancestor layers; alpha
             # parameters outside that cone receive no gradient and would crash
@@ -524,42 +703,18 @@ class DualSolver(Solver):
                         ancestor_lids.add(p)
                         stack.append(p)
 
-        alphas: Dict[int, torch.Tensor] = {}
+        alphas: Dict[int, Any] = {}
         for layer in net.layers:
-            k = layer.kind.upper() if isinstance(layer.kind, str) else layer.kind
-            if k != LayerKind.RELU.value:
-                continue
             if ancestor_lids is not None and layer.id not in ancestor_lids:
                 continue
-            b = bounds_dict.get(layer.id)
-            if b is None:
-                continue
-            if incremental_alphas is not None and layer.id in incremental_alphas:
-                alpha_init = (
-                    incremental_alphas[layer.id]
-                    .detach()
-                    .clone()
-                    .to(device=device, dtype=dtype)
-                    .clamp(0.0, 1.0)
-                )
-            else:
-                lb_flat = b.lb.to(device=device, dtype=dtype).flatten(start_dim=1)
-                ub_flat = b.ub.to(device=device, dtype=dtype).flatten(start_dim=1)
-                n_neurons = lb_flat.shape[-1]
-                denom = (ub_flat - lb_flat).clamp(min=1e-12)
-                alpha_init_bn = (ub_flat / denom).clamp(0.0, 1.0).detach()
-                if per_class_alpha:
-                    alpha_init = (
-                        alpha_init_bn.unsqueeze(1)
-                        .expand(B, M, n_neurons)
-                        .contiguous()
-                    )
-                else:
-                    alpha_init = alpha_init_bn.contiguous()
-            if optimize_alpha:
-                alphas[layer.id] = torch.nn.Parameter(alpha_init)
-            else:
-                alphas[layer.id] = alpha_init.detach()
+            tree = self._init_alpha(
+                layer, bounds_dict, B, M, device, dtype,
+                per_class_alpha=per_class_alpha,
+                optimize_alpha=optimize_alpha,
+                incremental_alphas=incremental_alphas,
+            )
+            if tree is not None:
+                alphas[layer.id] = tree
 
         etas: Dict[int, torch.nn.Parameter] = {}
         if split_signs is not None:
@@ -589,7 +744,12 @@ class DualSolver(Solver):
             return result.margins.detach(), result.sce, {}, {}
 
         param_groups: List[Dict[str, object]] = []
-        alpha_params = [a for a in alphas.values() if isinstance(a, torch.nn.Parameter)]
+        alpha_params = [
+            leaf
+            for tree in alphas.values()
+            for leaf in _alpha_tree_leaves(tree)
+            if isinstance(leaf, torch.nn.Parameter)
+        ]
         eta_params = list(etas.values())
         if alpha_params:
             param_groups.append({"params": alpha_params, "lr": lr_alpha})
@@ -604,7 +764,7 @@ class DualSolver(Solver):
             return (
                 result.margins.detach(),
                 result.sce,
-                {lid: a.detach().clone() for lid, a in alphas.items()},
+                {lid: _clone_alpha_tree(tree) for lid, tree in alphas.items()},
                 {},
             )
         optimizer = torch.optim.Adam(param_groups)
@@ -615,8 +775,8 @@ class DualSolver(Solver):
         )
         best_bounds = torch.full((BM,), float("-inf"), device=device, dtype=dtype)
         best_sce: Optional[torch.Tensor] = None
-        best_alpha_state: Dict[int, torch.Tensor] = {
-            lid: a.detach().clone() for lid, a in alphas.items()
+        best_alpha_state: Dict[int, Any] = {
+            lid: _clone_alpha_tree(tree) for lid, tree in alphas.items()
         }
         best_eta_state: Dict[int, torch.Tensor] = {
             lid: e.detach().clone() for lid, e in etas.items()
@@ -633,6 +793,7 @@ class DualSolver(Solver):
                     forward_alphas = {
                         lid: a[:, 0, :] if a.dim() == 3 else a
                         for lid, a in alpha_tensors.items()
+                        if isinstance(a, torch.Tensor)
                     }
                     fresh_bounds = compute_forward_bounds(
                         net,
@@ -667,8 +828,9 @@ class DualSolver(Solver):
                     scheduler.step()
 
                 with torch.no_grad():
-                    for a in alphas.values():
-                        a.data.clamp_(0.0, 1.0)
+                    for tree in alphas.values():
+                        for leaf in _alpha_tree_leaves(tree):
+                            leaf.data.clamp_(0.0, 1.0)
                     for e in etas.values():
                         e.data.clamp_(min=0)
 
@@ -676,7 +838,7 @@ class DualSolver(Solver):
                     if improved.any():
                         best_bounds = torch.where(improved, bound_bm.detach(), best_bounds)
                         best_alpha_state = {
-                            lid: a.detach().clone() for lid, a in alphas.items()
+                            lid: _clone_alpha_tree(tree) for lid, tree in alphas.items()
                         }
                         best_eta_state = {
                             lid: e.detach().clone() for lid, e in etas.items()
@@ -1262,7 +1424,13 @@ class DualSolver(Solver):
                                     return_sce: bool = False,
                                     enable_grad: bool = False
                                     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
-        """Compute lb·[nu]_+ + ub·[nu]_- over the input box (batched).
+        """Exact dual lower bound of ``nu @ x`` over the input region.
+
+        For a box / L_inf spec (``p_norm`` unset or ``inf``) this is the box
+        concretization ``lb·[nu]_+ + ub·[nu]_-``. For a finite-p LP_EMBEDDING
+        spec it is the closed-form per-perturbed-word dual norm
+        ``nu·center − Σ_block ‖half_block ⊙ nu_block‖_q`` (``q`` the Hölder dual
+        of ``p``), which coincides with the box result exactly at p=inf, q=1.
 
         Lazy M-broadcast: ``nu`` has leading dim ``B*M`` (sample-major)
         while batched ``bounds_dict[input_lid]`` is ``[B, *shape]``. The
@@ -1295,6 +1463,17 @@ class DualSolver(Solver):
             else:
                 lb = bounds.lb
                 ub = bounds.ub
+
+            # A finite input Lp ball (LP_EMBEDDING) is concretized by its exact
+            # per-block dual norm; p=inf (or unset) falls through to the box
+            # path below, bit-identical for every current vision / box spec.
+            p_norm = _resolve_perturbation_norm(input_layer.params.get("p_norm"))
+            if p_norm != float("inf"):
+                return self._dual_norm_contribution(
+                    input_layer, lb, ub, nu, B, M,
+                    q=_dual_norm_exponent(p_norm),
+                    return_sce=return_sce,
+                )
 
             orig_shape = lb.shape
             v_flat = nu.flatten(start_dim=1)                       # [BM, n_in]
@@ -1340,3 +1519,159 @@ class DualSolver(Solver):
                 total = int(torch.tensor(orig_shape[1:]).prod().item())
                 sce = sce_flat.view(BM, *orig_shape[1:]) if sce_flat.shape[-1] == total else sce_flat
             return contrib, sce
+
+    def _dual_norm_contribution(self, input_layer: Layer,
+                                lb: torch.Tensor, ub: torch.Tensor,
+                                nu: torch.Tensor, B: int, M: int,
+                                q: float, return_sce: bool
+                                ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        """Per-perturbed-word-block dual-norm input contribution (finite Lp).
+
+        Evaluates the inner minimization in closed form:
+        ``nu·center − Σ_block ‖half_block ⊙ nu_block‖_q`` with
+        ``center = (lb+ub)/2`` and ``half = (ub−lb)/2``. ``half`` equals the
+        radius ε on perturbed coordinates and 0 on degenerate (non-perturbed)
+        ones, so the latter contribute exactly ``nu·center`` with no penalty.
+        Each embedding block is normed independently, so word balls stay
+        decoupled. The dual norm is the exact value of ``min`` over the Lp ball,
+        so no second-order-cone constraint is needed (q=1↔p=inf reproduces the
+        box result, which the caller already routes through the box path).
+
+        Args:
+            input_layer: INPUT/INPUT_SPEC layer carrying ``p_norm`` and the
+                optional ``perturbed_positions`` / ``embed_dim`` block metadata.
+            lb: Input lower bounds, ``[B, *shape]`` (batched) or ``[*shape]``.
+            ub: Input upper bounds, matching ``lb``.
+            nu: Backward coefficient ``[B*M, *shape]`` (sample-major).
+            B: Number of samples (``B*M == nu.shape[0]``).
+            M: Spec rows per sample (lazy-M-broadcast factor).
+            q: Hölder dual exponent of the spec norm ``p``.
+            return_sce: Whether to also return the worst-case input witness.
+
+        Returns:
+            ``(contrib, sce)`` with ``contrib`` shape ``[B*M]`` and ``sce`` the
+            ball minimizer (``None`` when ``return_sce`` is False).
+        """
+        orig_shape = lb.shape
+        v_flat = nu.flatten(start_dim=1)                          # [BM, n_in]
+        batched = lb.dim() >= 2
+        if batched:
+            lb_f = lb.flatten(start_dim=1)                        # [B, n_in]
+            ub_f = ub.flatten(start_dim=1)
+        else:
+            lb_f = lb.flatten().unsqueeze(0)                      # [1, n_in]
+            ub_f = ub.flatten().unsqueeze(0)
+        n = min(v_flat.shape[-1], lb_f.shape[-1])
+        if v_flat.shape[-1] != lb_f.shape[-1]:
+            lb_f, ub_f, v_flat = lb_f[..., :n], ub_f[..., :n], v_flat[..., :n]
+        assert (lb_f <= ub_f).all(), "Invalid input bounds: lb > ub"
+
+        center = (lb_f + ub_f) * 0.5                              # [B|1, n]
+        half = (ub_f - lb_f) * 0.5
+        BM = v_flat.shape[0]
+        blocks = self._perturbed_block_slices(input_layer.params, orig_shape, n)
+
+        if batched:
+            v = v_flat.reshape(B, M, n)                           # [B, M, n]
+            center_bc = center.unsqueeze(1)                       # [B, 1, n]
+            half_bc = half.unsqueeze(1)
+            dot = (center_bc * v).sum(dim=-1)                     # [B, M]
+            penalty = torch.zeros_like(dot)
+            block_eps = input_layer.params.get("bab_block_eps")
+            if isinstance(block_eps, torch.Tensor):
+                eps_b = block_eps.to(device=v.device, dtype=v.dtype)
+                for block_idx, (s, e) in enumerate(blocks):
+                    penalty = penalty + eps_b[:, block_idx].unsqueeze(1) * torch.linalg.vector_norm(
+                        v[..., s:e], ord=q, dim=-1
+                    )
+            else:
+                for s, e in blocks:
+                    penalty = penalty + torch.linalg.vector_norm(
+                        half_bc[..., s:e] * v[..., s:e], ord=q, dim=-1
+                    )
+            contrib = (dot - penalty).reshape(BM)
+        else:
+            dot = (center * v_flat).sum(dim=-1)                   # [BM]
+            penalty = torch.zeros_like(dot)
+            for s, e in blocks:
+                penalty = penalty + torch.linalg.vector_norm(
+                    half[..., s:e] * v_flat[..., s:e], ord=q, dim=-1
+                )
+            contrib = dot - penalty
+
+        sce = None
+        if return_sce:
+            sce = self._dual_norm_sce(
+                center, half, v_flat, blocks, q, M, orig_shape, batched
+            )
+        return contrib, sce
+
+    @staticmethod
+    def _perturbed_block_slices(params: Dict[str, Any], orig_shape: torch.Size,
+                                n: int) -> List[Tuple[int, int]]:
+        """Coordinate ranges ``[start, end)`` of each per-word embedding block.
+
+        Each word occupies ``embed_dim`` contiguous embedding coordinates, so the
+        dual norm is taken over those ``D`` coordinates independently and word
+        balls do not couple. Splitting every token (not only perturbed ones) is
+        sound and format-agnostic: a non-perturbed token has zero half-width, so
+        its block penalty ``‖0 ⊙ nu_block‖_q`` is exactly 0 — the box already
+        encodes which coordinates carry width, so ``perturbed_positions`` (index
+        list or bool mask, possibly per-sample) need not be parsed here. The block
+        size is read from ``embed_dim`` or, failing that, the trailing
+        ``[..., L, D]`` axis when ``perturbed_positions`` flags an embedding spec.
+        Otherwise the whole input is one Lp ball (e.g. an image L2 spec).
+        """
+        embed_dim = params.get("embed_dim")
+        if embed_dim is None:
+            if params.get("perturbed_positions") is not None and len(orig_shape) >= 2:
+                embed_dim = int(orig_shape[-1])
+            else:
+                return [(0, n)]
+        d = int(embed_dim)
+        if d <= 0 or n % d != 0:
+            return [(0, n)]
+        return [(i * d, (i + 1) * d) for i in range(n // d)]
+
+    def _dual_norm_sce(self, center: torch.Tensor, half: torch.Tensor,
+                       v_flat: torch.Tensor, blocks: List[Tuple[int, int]],
+                       q: float, M: int, orig_shape: torch.Size,
+                       batched: bool) -> torch.Tensor:
+        """Worst-case input on the per-block Lp ball that attains the bound.
+
+        The minimizer is ``center + δ*`` where, per block, ``δ*`` is the Hölder
+        witness of ``‖half ⊙ nu‖_q``: the scaled-L2 ray ``−(half²⊙nu)/‖half⊙nu‖₂``
+        for q=2 and a single max-coordinate spike for q=inf. Both lie on the ball
+        boundary, so the witness is a sound counterexample candidate (the box
+        corner is not, as it leaves the Lp ball). Non-perturbed coordinates stay
+        at center (zero width).
+        """
+        BM = v_flat.shape[0]
+        if batched:
+            center_bm = center.repeat_interleave(M, dim=0)        # [B,n] -> [BM,n]
+            half_bm = half.repeat_interleave(M, dim=0)
+        else:
+            center_bm = center.expand(BM, -1)                     # [1,n] -> [BM,n]
+            half_bm = half.expand(BM, -1)
+        sce_flat = center_bm.clone()
+        for s, e in blocks:
+            nu_b = v_flat[:, s:e]                                  # [BM, bs]
+            h_b = half_bm[:, s:e]
+            if q == 2.0:
+                hn = h_b * nu_b
+                norm = torch.linalg.vector_norm(hn, ord=2, dim=-1, keepdim=True)
+                delta = -(h_b * hn) / norm.clamp_min(_DUAL_NORM_EPS)
+            elif q == float("inf"):
+                idx = (h_b * nu_b).abs().argmax(dim=-1, keepdim=True)
+                spike = -torch.sign(nu_b.gather(-1, idx)) * h_b.gather(-1, idx)
+                delta = torch.zeros_like(h_b)
+                delta.scatter_(-1, idx, spike)
+            else:
+                delta = torch.zeros_like(h_b)
+            sce_flat[:, s:e] = center_bm[:, s:e] + delta
+        if batched:
+            tail = orig_shape[1:]
+            total = int(torch.tensor(tail).prod().item()) if len(tail) else 1
+            return sce_flat.view(BM, *tail) if sce_flat.shape[-1] == total else sce_flat
+        total = int(torch.tensor(orig_shape).prod().item())
+        return sce_flat.view(BM, *orig_shape) if sce_flat.shape[-1] == total else sce_flat

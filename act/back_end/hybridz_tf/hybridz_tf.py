@@ -53,6 +53,11 @@ class HybridzTF(TransferFunction):
         LayerKind.LRELU.value: lambda L, b, tf: hz_mlp.tf_lrelu(L, b, tf),
         LayerKind.TANH.value: lambda L, b, tf: hz_mlp.tf_tanh(L, b, tf),
         LayerKind.SIGMOID.value: lambda L, b, tf: hz_mlp.tf_sigmoid(L, b, tf),
+        LayerKind.ERF.value: lambda L, b, tf: hz_mlp.tf_erf(L, b, tf),
+        LayerKind.SQRT.value: lambda L, b, tf: hz_mlp.tf_sqrt(L, b, tf),
+        LayerKind.SIN.value: lambda L, b, tf: hz_mlp.tf_sin(L, b, tf),
+        LayerKind.COS.value: lambda L, b, tf: hz_mlp.tf_cos(L, b, tf),
+        LayerKind.QUANTIZE.value: lambda L, b, tf: hz_mlp.tf_quantize(L, b, tf),
         LayerKind.ABS.value: lambda L, b, tf: hz_mlp.tf_abs(L, b, tf),
         LayerKind.BN.value: lambda L, b, tf: hz_mlp.tf_bn(L, b, tf),
         # Multi-input: HZ + interval

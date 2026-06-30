@@ -109,6 +109,55 @@ def dual_identity_backward(nu: torch.Tensor
     return nu, contrib
 
 
+# ---- MEAN ----
+def _mean_axes(L: Any) -> Tuple[Tuple[int, ...], Tuple[int, ...], bool, int]:
+    """Resolve ``(in_shape, dims, keepdim, N)`` for a MEAN layer."""
+    in_shape = tuple(int(d) for d in L.params["input_shape"])
+    dims = tuple(int(d) for d in L.params["dim"])
+    keepdim = bool(L.params.get("keepdim", 0))
+    n = 1
+    for d in dims:
+        n *= in_shape[d]
+    return in_shape, dims, keepdim, n
+
+
+def forward_mean(
+    L: Any,
+    parent_boxes: List[Bounds],
+    parent_lins: List[LinearBound],
+    parent_frames: List[Frame],
+    preds: List[int],
+    post_activation: bool,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> Tuple[Bounds, Bounds, LinearBound, Frame]:
+    """Forward box for MEAN. The average is monotone-linear, so the per-bound
+    mean is the exact interval image; the dual frame resets over it."""
+    parent = parent_boxes[0]
+    B = parent.lb.shape[0]
+    in_shape, dims, keepdim, _ = _mean_axes(L)
+    batch_dims = [d + 1 for d in dims]
+    lb = parent.lb.reshape(B, *in_shape).mean(dim=batch_dims, keepdim=keepdim).reshape(B, -1)
+    ub = parent.ub.reshape(B, *in_shape).mean(dim=batch_dims, keepdim=keepdim).reshape(B, -1)
+    lin, frame = _reset_forward_box(lb, ub, device, dtype)
+    out = Bounds(lb, ub)
+    return out, out, lin, frame
+
+
+def backward_mean(L: Any, nu: torch.Tensor, bounds_dict: Dict[int, Bounds],
+                  preds: List[int], M: int = 1, alpha=None
+                  ) -> Tuple[List[torch.Tensor], torch.Tensor]:
+    """MEAN backward: each input shares 1/N of its output's ν (transpose of the
+    averaging), broadcast back over the reduced axes. Exact, contrib zero."""
+    assert len(preds) == 1, f"MEAN expects 1 predecessor, got {len(preds)}"
+    in_shape, dims, _, n = _mean_axes(L)
+    BM = nu.shape[0]
+    broadcast_shape = [s if i not in dims else 1 for i, s in enumerate(in_shape)]
+    nu_in = (nu.reshape(BM, *broadcast_shape) / n).expand(BM, *in_shape).reshape(BM, -1)
+    contrib = torch.zeros(BM, dtype=nu.dtype, device=nu.device)
+    return [nu_in], contrib
+
+
 # ---- RESHAPE ----
 def forward_reshape(
     L: Any,
