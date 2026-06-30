@@ -818,6 +818,14 @@ REGISTRY: Dict[str, Dict[str, Any]] = {
             "key_position",
             "input_shape",
             "output_shape",
+            # Interval-domain dual-planar relaxation (interval_tf/tf_attention.py):
+            # bypasses the McCormick box path below when attn_mode=="dual_planar".
+            "attn_mode",
+            "q_lb",
+            "k_lb",
+            "head_size",
+            "k_thresh",
+            "clamp_alpha",
         ],
     },
     LayerKind.ATT_MIX.value: {
@@ -893,6 +901,7 @@ SUPPORTED_EXPORT_OPS = {
     "adaptiveavgpool2d",
     "add",
     "arg_extremum",
+    "att_dual_planar",
     "att_mix",
     "att_scores",
     "avgpool1d",
