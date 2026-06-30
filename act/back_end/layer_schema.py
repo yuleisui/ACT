@@ -879,7 +879,12 @@ REGISTRY: Dict[str, Dict[str, Any]] = {
     },
     LayerKind.LAYERNORM.value: {
         "params_required": ["gamma", "beta"],
-        "params_optional": ["eps", "input_shape", "output_shape"],
+        "params_optional": [
+            "eps", "input_shape", "output_shape",
+            # "no_var" skips the variance/std division (tighter, no relaxation);
+            # "variant" is the canonical key, "layer_norm" an accepted alias.
+            "variant", "layer_norm",
+        ],
     },
     LayerKind.MASK_ADD.value: {
         "params_required": ["M"],
