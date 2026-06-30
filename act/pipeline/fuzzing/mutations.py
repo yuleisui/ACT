@@ -503,6 +503,8 @@ class MutationEngine:
             eps = self.input_spec.eps.to(device=center.device, dtype=center.dtype)
             lb = center - eps
             ub = center + eps
+        elif self.input_spec.kind == InKind.LP_EMBEDDING:
+            lb, ub = self.input_spec.materialize_box_seed()
         else:
             print(f"[MutationEngine] Unsupported InputSpec kind '{self.input_spec.kind}', falling back to fixed perturb_size=0.01")
             return 0.01
@@ -604,9 +606,14 @@ class MutationEngine:
                 _lb = _orig - _eps
                 _ub = _orig + _eps
             else:
-                assert self.input_spec.lb is not None and self.input_spec.ub is not None
-                _lb = self.input_spec.lb.to(self.device)
-                _ub = self.input_spec.ub.to(self.device)
+                if self.input_spec.kind == InKind.LP_EMBEDDING:
+                    _lb, _ub = self.input_spec.materialize_box_seed()
+                    _lb = _lb.to(self.device)
+                    _ub = _ub.to(self.device)
+                else:
+                    assert self.input_spec.lb is not None and self.input_spec.ub is not None
+                    _lb = self.input_spec.lb.to(self.device)
+                    _ub = self.input_spec.ub.to(self.device)
                 if _lb.shape[0] > 1:
                     _ix = seeds.original_index.clamp(max=_lb.shape[0] - 1).to(self.device)
                     _lb, _ub = _lb[_ix], _ub[_ix]
@@ -668,10 +675,15 @@ class MutationEngine:
         
         B = tensor.shape[0]
         
-        if self.input_spec.kind == InKind.BOX:
-            assert self.input_spec.lb is not None and self.input_spec.ub is not None
-            lb = self.input_spec.lb.to(tensor.device)
-            ub = self.input_spec.ub.to(tensor.device)
+        if self.input_spec.kind in (InKind.BOX, InKind.LP_EMBEDDING):
+            if self.input_spec.kind == InKind.LP_EMBEDDING:
+                lb, ub = self.input_spec.materialize_box_seed()
+                lb = lb.to(tensor.device)
+                ub = ub.to(tensor.device)
+            else:
+                assert self.input_spec.lb is not None and self.input_spec.ub is not None
+                lb = self.input_spec.lb.to(tensor.device)
+                ub = self.input_spec.ub.to(tensor.device)
             
             # bounds: use seeds.original_index to gather correct bounds
             if lb.shape[0] > 1 and seeds is not None:

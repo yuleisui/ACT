@@ -406,6 +406,22 @@ def cmd_fuzz(args):
                 num_samples=args.num_samples,
             )
 
+        elif creator == "bert":
+            from act.front_end.bert_loader.create_specs import BertSpecCreator
+
+            spec_creator = BertSpecCreator()
+            datasets = [args.dataset] if args.dataset else ["sst"]
+
+            print(f"Loading {len(datasets)} bert dataset(s):")
+            for ds in datasets:
+                print(f"  • {ds}")
+            print()
+
+            spec_results = spec_creator.create_specs_for_data_model_pairs(
+                dataset_names=datasets,
+                num_samples=args.num_samples,
+            )
+
     except Exception as e:
         print(f"❌ Error loading data-model pairs: {e}")
         import traceback
@@ -1132,7 +1148,7 @@ Examples:
         "--creator",
         "-c",
         type=str,
-        choices=["vnnlib", "torchvision"],
+        choices=["vnnlib", "torchvision", "bert"],
         default="vnnlib",
         help="Spec creator (default: vnnlib)",
     )

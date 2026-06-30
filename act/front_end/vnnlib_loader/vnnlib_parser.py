@@ -32,6 +32,11 @@ class VNNLibParseError(Exception):
     pass
 
 
+class UnsupportedSpecError(Exception):
+    """Exception raised for soundly unsupported VNNLIB features."""
+    pass
+
+
 # -------------------------------------------------------------------------
 # Public API
 # -------------------------------------------------------------------------
@@ -40,7 +45,7 @@ class VNNLibParseError(Exception):
 def parse_vnnlib_to_tensors(
     vnnlib_path: Path,
     input_shape: Optional[Tuple[int, ...]] = None
-) -> Tuple[torch.Tensor, Dict[str, any]]:
+) -> Tuple[torch.Tensor, Dict[str, Any]]:
     """
     Parse a VNNLIB file to extract input tensor and metadata.
     
@@ -67,9 +72,19 @@ def parse_vnnlib_to_tensors(
         with open(vnnlib_path, 'r') as f:
             content = f.read()
         
-        # Extract variable declarations to determine shapes
-        num_inputs = _extract_num_inputs(content)
-        num_outputs = _extract_num_outputs(content)
+        # VNNLIB 2.0 (declare-network) uses bracket vars X[i,..]/Y[j,..]; rewrite
+        # them to flat X_n/Y_n so the shared bound-extraction logic below applies.
+        if "(vnnlib-version" in content or "(declare-network" in content:
+            if len(re.findall(r"\(\s*declare-network\b", content)) >= 2:
+                raise UnsupportedSpecError("multi-network (f/g) not yet supported")
+            in_name, in_shape = _extract_vnnlib_2_decl(content, "input")
+            out_name, out_shape = _extract_vnnlib_2_decl(content, "output")
+            num_inputs = _numel(in_shape)
+            num_outputs = _numel(out_shape)
+            content = _rewrite_vnnlib_2_bracket_vars(content, in_name, in_shape, out_name, out_shape)
+        else:
+            num_inputs = _extract_num_inputs(content)
+            num_outputs = _extract_num_outputs(content)
 
         # Extract input bounds from top-level simple X-bound asserts only.
         # Constraints inside (or ...) branches must not be intersected here —
@@ -129,7 +144,9 @@ def parse_vnnlib_to_tensors(
         )
         
         return input_tensor, metadata
-        
+
+    except (VNNLibParseError, UnsupportedSpecError):
+        raise
     except Exception as e:
         raise VNNLibParseError(f"Failed to parse {vnnlib_path}: {str(e)}")
 
@@ -161,6 +178,9 @@ def parse_vnnlib_queries(
             content = f.read()
     except Exception as e:
         raise VNNLibParseError(f"Failed to read {vnnlib_path}: {e}") from e
+
+    if "(vnnlib-version" in content or "(declare-network" in content:
+        return parse_vnnlib_2_0(vnnlib_path, labeled_tensor=labeled_tensor)
 
     num_inputs = _extract_num_inputs(content)
     num_outputs = _extract_num_outputs(content)
@@ -330,6 +350,208 @@ _Query = List[_Ineq]
 
 
 # -------------------------------------------------------------------------
+# VNNLIB 2.0 parsing and legacy-token rewrite
+# -------------------------------------------------------------------------
+
+
+def parse_vnnlib_2_0(
+    vnnlib_path: Path,
+    labeled_tensor: Optional['LabeledInputTensor'] = None,
+) -> List[Tuple[InputSpec, OutputSpec]]:
+    """Parse VNNLIB 2.0 by ravel-rewriting bracket variables to legacy names."""
+    if not vnnlib_path.exists():
+        raise VNNLibParseError(f"VNNLIB file not found: {vnnlib_path}")
+    try:
+        with open(vnnlib_path, 'r') as f:
+            content = f.read()
+    except Exception as e:
+        raise VNNLibParseError(f"Failed to read {vnnlib_path}: {e}") from e
+
+    if len(re.findall(r"\(\s*declare-network\b", content)) >= 2:
+        raise UnsupportedSpecError("multi-network (f/g) not yet supported")
+
+    input_name, input_shape = _extract_vnnlib_2_decl(content, "input")
+    output_name, output_shape = _extract_vnnlib_2_decl(content, "output")
+    num_inputs = _numel(input_shape)
+    num_outputs = _numel(output_shape)
+    tensor_shape = tuple(labeled_tensor.tensor.shape) if labeled_tensor is not None else tuple(input_shape)
+    tensor_numel = _numel(tensor_shape)
+    if tensor_numel != num_inputs:
+        raise VNNLibParseError(
+            f"VNNLIB 2.0 declared input shape {input_shape} has {num_inputs} elements, "
+            f"but model/sample input shape {tensor_shape} has {tensor_numel}"
+        )
+    true_label = labeled_tensor.label if labeled_tensor is not None else None
+
+    rewritten = _rewrite_vnnlib_2_bracket_vars(
+        content,
+        input_name=input_name,
+        input_shape=input_shape,
+        output_name=output_name,
+        output_shape=output_shape,
+    )
+    try:
+        forms = _parse_all_forms(rewritten)
+    except VNNLibParseError:
+        raise
+    except Exception as e:
+        raise VNNLibParseError(f"S-expression parse failed: {e}") from e
+
+    asserts = [f for f in forms if isinstance(f, list) and len(f) >= 2 and f[0] == "assert"]
+    assert_bodies = [_normalize_vnnlib_2_body(f[1]) for f in asserts]
+    for body in assert_bodies:
+        if _contains_non_affine(body, num_inputs, num_outputs):
+            raise UnsupportedSpecError("nonlinear VNNLIB 2.0 assertion not supported")
+
+    simple_assert_bodies = [f for f in assert_bodies if _is_simple_x_bound(f)]
+    complex_assert_bodies = [f for f in assert_bodies if not _is_simple_x_bound(f)]
+    bounds_dict = _extract_input_bounds(simple_assert_bodies, num_inputs)
+    base_in_spec = _build_input_spec(num_inputs, tensor_shape, bounds_dict, [])
+
+    if not complex_assert_bodies:
+        out_spec = _build_output_spec([], num_outputs, true_label)
+        logger.info(f"Parsed {vnnlib_path.name}: 1 query(ies) [vnnlib 2.0 input-only]")
+        return [(base_in_spec, out_spec)]
+
+    per_assert: List[List[_Query]] = []
+    for body in complex_assert_bodies:
+        qs = _process_body(body, num_inputs, num_outputs)
+        if qs is None:
+            raise UnsupportedSpecError(f"unsupported VNNLIB 2.0 assertion: {body}")
+        per_assert.append(qs)
+
+    complex_queries = _combine_conjunctive_queries(per_assert)
+    results: List[Tuple[InputSpec, OutputSpec]] = []
+    for q in complex_queries:
+        x_ineqs: _Query = []
+        y_ineqs: _Query = []
+        skip = False
+        for xc, yc, d in q:
+            if any(v != 0 for v in yc):
+                y_ineqs.append((xc, yc, d))
+            elif any(v != 0 for v in xc):
+                x_ineqs.append((xc, yc, d))
+            elif d < 0:
+                logger.debug(f"Infeasible constant constraint: 0 <= {d}")
+                skip = True
+                break
+        if skip:
+            continue
+        in_spec = _build_input_spec(num_inputs, tensor_shape, bounds_dict, x_ineqs) if x_ineqs else base_in_spec
+        out_spec = _build_output_spec(y_ineqs, num_outputs, true_label)
+        results.append((in_spec, out_spec))
+
+    if true_label is not None:
+        promoted = _try_promote_to_top1(results, num_outputs, true_label)
+        if promoted is not None:
+            results = [promoted]
+
+    logger.info(f"Parsed {vnnlib_path.name}: {len(results)} query(ies) [vnnlib 2.0]")
+    return results
+
+
+def _extract_vnnlib_2_decl(content: str, io_kind: str) -> Tuple[str, Tuple[int, ...]]:
+    pattern = re.compile(
+        rf"\(\s*declare-{io_kind}\s+([A-Za-z_]\w*)\s+\S+\s+\[([^\]]+)\]\s*\)",
+        re.MULTILINE,
+    )
+    match = pattern.search(content)
+    if match is None:
+        raise VNNLibParseError(f"VNNLIB 2.0 missing declare-{io_kind}")
+    dims = tuple(int(part.strip()) for part in match.group(2).split(",") if part.strip())
+    if not dims or any(dim <= 0 for dim in dims):
+        raise VNNLibParseError(f"Invalid VNNLIB 2.0 declare-{io_kind} shape: {match.group(2)}")
+    return match.group(1), dims
+
+
+def _numel(shape: Tuple[int, ...]) -> int:
+    total = 1
+    for dim in shape:
+        total *= int(dim)
+    return total
+
+
+def _ravel_c_order(indices: Tuple[int, ...], shape: Tuple[int, ...]) -> int:
+    if len(indices) != len(shape):
+        raise VNNLibParseError(f"Index rank {indices} does not match declared shape {shape}")
+    flat = 0
+    for idx, dim in zip(indices, shape):
+        if idx < 0 or idx >= dim:
+            raise VNNLibParseError(f"Index {indices} out of bounds for declared shape {shape}")
+        flat = flat * dim + idx
+    return flat
+
+
+def _rewrite_vnnlib_2_bracket_vars(
+    content: str,
+    input_name: str,
+    input_shape: Tuple[int, ...],
+    output_name: str,
+    output_shape: Tuple[int, ...],
+) -> str:
+    var_re = re.compile(r"\b([A-Za-z_]\w*)\s*\[([^\]]+)\]")
+
+    def repl(match: re.Match[str]) -> str:
+        name = match.group(1)
+        if name not in (input_name, output_name):
+            return match.group(0)
+        indices = tuple(int(part.strip()) for part in match.group(2).split(",") if part.strip())
+        if name == input_name:
+            return f"X_{_ravel_c_order(indices, input_shape)}"
+        return f"Y_{_ravel_c_order(indices, output_shape)}"
+
+    return var_re.sub(repl, content)
+
+
+def _normalize_vnnlib_2_body(body: Any) -> Any:
+    if not isinstance(body, list) or not body:
+        return body
+    op = body[0]
+    children = [_normalize_vnnlib_2_body(child) for child in body[1:]]
+    if op == "<" and len(children) == 2:
+        return ["<=", children[0], children[1]]
+    if op == ">" and len(children) == 2:
+        return [">=", children[0], children[1]]
+    if op == "=" and len(children) == 2:
+        return ["and", ["<=", children[0], children[1]], [">=", children[0], children[1]]]
+    return [op] + children
+
+
+def _contains_non_affine(expr: Any, num_inputs: int, num_outputs: int) -> bool:
+    if not isinstance(expr, list) or not expr:
+        return False
+    op = expr[0]
+    if op == "*":
+        non_const = sum(
+            1 for sub in expr[1:]
+            if not _is_constant_linear_expr(sub, num_inputs, num_outputs)
+        )
+        if non_const >= 2:
+            return True
+    if op == "/" and len(expr) >= 3:
+        for denom in expr[2:]:
+            if not _is_constant_linear_expr(denom, num_inputs, num_outputs):
+                return True
+    if op in ("^", "pow") and len(expr) == 3:
+        base_const = _is_constant_linear_expr(expr[1], num_inputs, num_outputs)
+        try:
+            exponent = float(expr[2])
+        except (TypeError, ValueError):
+            exponent = None
+        if not base_const and exponent != 1.0:
+            return True
+    return any(_contains_non_affine(sub, num_inputs, num_outputs) for sub in expr[1:])
+
+
+def _is_constant_linear_expr(expr: Any, num_inputs: int, num_outputs: int) -> bool:
+    parsed = _parse_linear_expr(expr, num_inputs, num_outputs)
+    if parsed is None:
+        return False
+    xc, yc, _d = parsed
+    return all(v == 0 for v in xc) and all(v == 0 for v in yc)
+
+
+# -------------------------------------------------------------------------
 # Legacy regex extractors (used by parse_vnnlib_to_tensors; not part of Steps 1-5)
 # -------------------------------------------------------------------------
 
@@ -392,7 +614,10 @@ def _extract_input_bounds(
             val = float(lit_tok)
         except (TypeError, ValueError):
             continue
-        idx = int(_X_RE.fullmatch(x_tok).group(1))
+        x_match = _X_RE.fullmatch(x_tok)
+        if x_match is None:
+            continue
+        idx = int(x_match.group(1))
         if idx >= num_inputs:
             continue
         # (<= X val)  -> X <= val   (upper)

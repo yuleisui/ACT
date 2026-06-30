@@ -13,14 +13,27 @@
 #===---------------------------------------------------------------------===#
 
 from __future__ import annotations
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar, Dict, List, Optional
 import torch
 
+ScalarTensor = torch.Tensor | float | int
+
 class InKind:
+    """Supported input-constraint kinds for :class:`InputSpec`.
+
+    Members:
+        BOX: Axis-aligned box ``lb <= x <= ub`` directly on the input.
+        LINF_BALL: L-infinity ball ``|x - center| <= eps`` around a clean input.
+        LIN_POLY: Linear polytope ``A x <= b`` over the input variables.
+        LP_EMBEDDING: Lp-norm ball ``||x - center||_p <= eps`` on the selected
+            embedding-space token positions (``perturbed_positions``).
+    """
     BOX = "BOX"
     LINF_BALL = "LINF_BALL"
     LIN_POLY = "LIN_POLY"
+    LP_EMBEDDING = "LP_EMBEDDING"
 
 @dataclass
 class InputSpec:
@@ -28,15 +41,26 @@ class InputSpec:
     lb: Optional[torch.Tensor] = None
     ub: Optional[torch.Tensor] = None
     center: Optional[torch.Tensor] = None
-    eps: Optional[torch.Tensor] = None
+    eps: Optional[ScalarTensor] = None
     A: Optional[torch.Tensor] = None
     b: Optional[torch.Tensor] = None
+    p_norm: ScalarTensor = float("inf")
+    perturbed_positions: torch.Tensor | Sequence[int] | Sequence[bool] | None = None
     
     def __post_init__(self):
         """Ensure all numeric fields are tensors for architecture."""
         # Convert eps (scalar → 1-D tensor)
         if self.eps is not None and not isinstance(self.eps, torch.Tensor):
             self.eps = torch.tensor([float(self.eps)])
+
+        if self.p_norm is not None and not isinstance(self.p_norm, torch.Tensor):
+            self.p_norm = torch.tensor([float(self.p_norm)])
+
+        if (
+            self.perturbed_positions is not None
+            and not isinstance(self.perturbed_positions, torch.Tensor)
+        ):
+            self.perturbed_positions = torch.tensor(self.perturbed_positions)
         
         # Convert lb, ub, center (list or scalar → tensor)
         for field in ['lb', 'ub', 'center']:
@@ -53,6 +77,147 @@ class InputSpec:
             if val is not None and not isinstance(val, torch.Tensor):
                 if isinstance(val, (list, tuple)):
                     setattr(self, field, torch.tensor(val))
+
+    def materialize_box_seed(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """Materialize the box seed used by interval and LP back ends.
+
+        For ``LP_EMBEDDING`` the seed perturbs only the ``perturbed_positions``
+        tokens by ``eps`` (under ``p_norm``) and pins every other position to
+        ``center``; other kinds use their natural box.
+
+        Args:
+            None.
+
+        Returns:
+            A pair ``(lb, ub)`` whose tensors match the input shape.
+
+        Raises:
+            ValueError: If fields required by the input kind are missing or
+                shape-incompatible.
+            NotImplementedError: If the input kind does not define a box seed.
+        """
+        if self.kind == InKind.BOX:
+            if self.lb is None or self.ub is None:
+                raise ValueError("BOX requires both lb and ub")
+            return self.lb.clone(), self.ub.clone()
+
+        if self.kind == InKind.LINF_BALL:
+            if self.center is None or self.eps is None:
+                raise ValueError("LINF_BALL requires both center and eps")
+            eps = self._eps_like(self.center)
+            return self.center - eps, self.center + eps
+
+        if self.kind == InKind.LP_EMBEDDING:
+            if self.center is None or self.eps is None:
+                raise ValueError("LP_EMBEDDING requires both center and eps")
+            lb = self.center.clone()
+            ub = self.center.clone()
+            mask = self._embedding_position_mask(self.center)
+            expanded_mask = mask.unsqueeze(-1).expand_as(self.center)
+            eps = self._eps_like(self.center)
+            full_lb = self.center - eps
+            full_ub = self.center + eps
+            lb = torch.where(expanded_mask, full_lb, lb)
+            ub = torch.where(expanded_mask, full_ub, ub)
+            return lb, ub
+
+        raise NotImplementedError(
+            f"Input kind {self.kind!r} does not define a box seed"
+        )
+
+    def _eps_like(self, center: torch.Tensor) -> torch.Tensor:
+        """Normalize epsilon to the clean input tensor layout.
+
+        Args:
+            center: Clean input tensor that supplies target device and dtype.
+
+        Returns:
+            Epsilon tensor on the same device and dtype as ``center``.
+
+        Raises:
+            ValueError: If epsilon is missing.
+        """
+        if self.eps is None:
+            raise ValueError(f"{self.kind} requires eps")
+        if isinstance(self.eps, torch.Tensor):
+            return self.eps.to(device=center.device, dtype=center.dtype)
+        return torch.tensor([float(self.eps)], device=center.device, dtype=center.dtype)
+
+    def _embedding_position_mask(self, center: torch.Tensor) -> torch.Tensor:
+        """Build a boolean token-position mask for embedding-space specs.
+
+        Args:
+            center: Clean embedding tensor with embedding dimension last.
+
+        Returns:
+            Boolean tensor with shape ``center.shape[:-1]``.
+
+        Raises:
+            ValueError: If ``center`` is not an embedding tensor or the provided
+                positions cannot be applied to its token dimension.
+        """
+        if center.dim() < 2:
+            raise ValueError("LP_EMBEDDING center must have at least [L, D] shape")
+
+        mask_shape = center.shape[:-1]
+        if self.perturbed_positions is None:
+            return torch.ones(mask_shape, device=center.device, dtype=torch.bool)
+
+        raw_positions = self.perturbed_positions
+        if isinstance(raw_positions, torch.Tensor):
+            positions = raw_positions.to(device=center.device)
+        else:
+            positions = torch.tensor(raw_positions, device=center.device)
+        if positions.dtype == torch.bool:
+            return self._normalize_embedding_bool_mask(positions, mask_shape, center)
+
+        token_count = center.shape[-2]
+        index_positions = positions.to(dtype=torch.long).flatten()
+        if index_positions.numel() == 0:
+            return torch.zeros(mask_shape, device=center.device, dtype=torch.bool)
+        if (index_positions < 0).any() or (index_positions >= token_count).any():
+            raise ValueError(
+                "LP_EMBEDDING perturbed_positions contains out-of-range token "
+                f"index for length {token_count}"
+            )
+        mask = torch.zeros(mask_shape, device=center.device, dtype=torch.bool)
+        mask.index_fill_(-1, index_positions, True)
+        return mask
+
+    def _normalize_embedding_bool_mask(
+        self,
+        positions: torch.Tensor,
+        mask_shape: torch.Size,
+        center: torch.Tensor,
+    ) -> torch.Tensor:
+        """Normalize a boolean token mask to the embedding-prefix shape.
+
+        Args:
+            positions: Boolean tensor supplied as token mask.
+            mask_shape: Expected mask shape, equal to ``center.shape[:-1]``.
+            center: Clean embedding tensor with embedding dimension last.
+
+        Returns:
+            Boolean tensor matching ``mask_shape``.
+
+        Raises:
+            ValueError: If the mask shape is not compatible with ``center``.
+        """
+        if tuple(positions.shape) == tuple(mask_shape):
+            return positions.to(dtype=torch.bool)
+
+        token_count = center.shape[-2]
+        if positions.dim() == 1 and positions.shape[0] == token_count:
+            view_shape = [1] * len(mask_shape)
+            view_shape[-1] = token_count
+            return positions.reshape(view_shape).expand(mask_shape).to(
+                dtype=torch.bool
+            )
+
+        raise ValueError(
+            "LP_EMBEDDING boolean perturbed_positions must match "
+            "center.shape[:-1] or the token dimension"
+        )
 
 class OutKind:
     LINEAR_LE   = "LINEAR_LE"
@@ -157,24 +322,41 @@ class OutputSpec:
         if self.kind == OutKind.LINEAR_LE:
             if self.c is None or self.d is None:
                 raise ValueError("LINEAR_LE requires both c and d")
-            c_vec = self.c.to(device=device, dtype=dtype).flatten()
-            if c_vec.shape[0] != n_out:
-                raise ValueError(
-                    f"LINEAR_LE: c length {c_vec.shape[0]} != n_out {n_out}"
-                )
+            c_full = self.c.to(device=device, dtype=dtype)
+            c_vec = c_full.flatten()
             d_t = self.d.to(device=device, dtype=dtype).flatten()
-            if d_t.numel() != 1:
+            if c_vec.shape[0] == n_out and d_t.numel() == 1:
+                d_scalar = float(d_t.item())
+                c_batched = c_vec.unsqueeze(0).expand(B, -1).contiguous()
+                d_batched = torch.full((B,), d_scalar, device=device, dtype=dtype)
+                params["c"] = c_batched
+                params["d"] = d_batched
+                c_rows = c_batched
+                thresholds = d_batched.unsqueeze(1)
+                m_specs = 1
+            elif c_full.dim() == 2 and c_full.shape[1] == n_out:
+                # Conjunction c_i.y <= d_i for all i. Reuses UNSAFE_LINEAR's row
+                # LAYOUT only; kind MUST stay LINEAR_LE (AND-certify/OR-falsify) —
+                # relabeling to UNSAFE_LINEAR flips polarity and is unsound.
+                n_rows = int(c_full.shape[0])
+                if d_t.numel() == 1:
+                    d_t = d_t.expand(n_rows).contiguous()
+                elif d_t.numel() != n_rows:
+                    raise ValueError(
+                        f"LINEAR_LE: d length {d_t.numel()} != rows {n_rows}"
+                    )
+                params["c"] = c_full.unsqueeze(0).expand(B, -1, -1).contiguous()
+                params["d"] = d_t.unsqueeze(0).expand(B, -1).contiguous()
+                c_rows = c_full.unsqueeze(0).expand(B, -1, -1).reshape(
+                    B * n_rows, n_out
+                ).contiguous()
+                thresholds = d_t.unsqueeze(0).expand(B, -1).contiguous()
+                m_specs = n_rows
+            else:
                 raise ValueError(
-                    f"LINEAR_LE: d must be scalar (got numel={d_t.numel()})"
+                    f"LINEAR_LE: c shape {tuple(self.c.shape)} incompatible "
+                    f"with n_out {n_out}"
                 )
-            d_scalar = float(d_t.item())
-            c_batched = c_vec.unsqueeze(0).expand(B, -1).contiguous()
-            d_batched = torch.full((B,), d_scalar, device=device, dtype=dtype)
-            params["c"] = c_batched
-            params["d"] = d_batched
-            c_rows = c_batched
-            thresholds = d_batched.unsqueeze(1)
-            m_specs = 1
 
         elif self.kind == OutKind.UNSAFE_LINEAR:
             if self.c is None or self.d is None:

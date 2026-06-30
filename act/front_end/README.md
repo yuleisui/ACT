@@ -9,7 +9,7 @@ The ACT front-end provides two specification creators for generating verificatio
 # LISTING - Browse available datasets and categories
 # ============================================================================
 
-# List all data sources (40 TorchVision + 26 VNNLIB)
+# List all data sources (40 TorchVision + 34 VNNLIB)
 python -m act.front_end --list
 
 # List only TorchVision datasets
@@ -137,7 +137,7 @@ python -m act.front_end --list-downloads       # Show what's downloaded
 | Creator | Data Source | Models | Specs | Documentation |
 |---------|-------------|--------|-------|---------------|
 | **TorchVision** | 40 PyTorch datasets | 63 models | ε-perturbations | [torchvision_loader/README.md](torchvision_loader/README.md) |
-| **VNNLIB** | 26 VNN-COMP categories | ONNX models | VNNLIB files | [vnnlib_loader/README.md](vnnlib_loader/README.md) |
+| **VNNLIB** | 34 VNN-COMP categories | ONNX models | VNNLIB files | [vnnlib_loader/README.md](vnnlib_loader/README.md) |
 
 Both creators implement `BaseSpecCreator` and generate:
 ```python
@@ -258,7 +258,7 @@ front_end/
     ├── README.md                # 🆕
     ├── cli.py                   # 🆕 Domain-specific CLI
     ├── create_specs.py
-    ├── category_mapping.py      # 🆕 26 VNN-COMP categories
+    ├── category_mapping.py      # 🆕 34 VNN-COMP categories
     ├── data_model_loader.py
     ├── vnnlib_parser.py
     └── onnx_converter.py
@@ -291,7 +291,7 @@ result = verify_once(net, solver=solver)
 ## See Also
 
 - **TorchVision**: [torchvision_loader/README.md](torchvision_loader/README.md) - 40 datasets, 63 models
-- **VNNLIB**: [vnnlib_loader/README.md](vnnlib_loader/README.md) - 26 VNN-COMP categories
+- **VNNLIB**: [vnnlib_loader/README.md](vnnlib_loader/README.md) - 34 VNN-COMP categories
 - **Data**: [../data/torchvision/README.md](../../data/torchvision/README.md), [../data/vnnlib/README.md](../../data/vnnlib/README.md)
 - **Pipeline**: [../pipeline/README.md](../pipeline/README.md)
 

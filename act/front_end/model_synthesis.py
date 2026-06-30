@@ -52,6 +52,8 @@ def prod(seq: Tuple[int, ...]) -> int:
 
 def infer_layout_from_tensor(x: torch.Tensor) -> str:
     """Infer tensor layout (HWC, CHW, or FLAT) from shape."""
+    if x.dim() == 3:
+        return "EMBEDDING"
     if x.dim() == 4 and x.shape[-1] in (1, 3, 4):
         return "HWC"
     elif x.dim() == 4:
@@ -117,6 +119,8 @@ def _merge_specs_to_batch(
     labels = torch.cat([lt.label for lt in lts], dim=0) if all(lt.label is not None for lt in lts) else None
     
     # Merge input specs based on kind
+    p_norm: torch.Tensor | None = None
+    perturbed_positions: torch.Tensor | None = None
     if in_kind == InKind.BOX:
         # Assert all lb/ub tensors have the same shape
         if len(in_specs) > 1:
@@ -144,15 +148,48 @@ def _merge_specs_to_batch(
         eps_values: List[torch.Tensor] = []
         for spec in in_specs:
             assert spec.center is not None and spec.eps is not None
+            eps_tensor = spec.eps if isinstance(spec.eps, torch.Tensor) else torch.tensor([float(spec.eps)])
             centers.append(spec.center)
-            lbs.append(torch.clamp(spec.center - spec.eps, 0))
-            ubs.append(torch.clamp(spec.center + spec.eps, 1))
-            eps_values.append(spec.eps.reshape(-1)[0])
+            lbs.append(torch.clamp(spec.center - eps_tensor, 0))
+            ubs.append(torch.clamp(spec.center + eps_tensor, 1))
+            eps_values.append(eps_tensor.reshape(-1)[0])
         center = torch.cat(centers, dim=0)
         lb = torch.cat(lbs, dim=0)
         ub = torch.cat(ubs, dim=0)
         eps = torch.stack(eps_values)
         eps = eps.reshape(center.shape[0], *([1] * (center.ndim - 1)))
+    elif in_kind == InKind.LP_EMBEDDING:
+        first_center = in_specs[0].center
+        assert first_center is not None
+        if len(in_specs) > 1:
+            first_center_shape = first_center.shape
+            assert all(s.center is not None and s.center.shape == first_center_shape for s in in_specs), \
+                f"InputSpec.center shape mismatch: {[s.center.shape if s.center is not None else None for s in in_specs]}"
+
+        centers = []
+        lbs = []
+        ubs = []
+        eps_values = []
+        position_masks = []
+        p_norm_values = []
+        for spec in in_specs:
+            assert spec.center is not None and spec.eps is not None
+            eps_tensor = spec.eps if isinstance(spec.eps, torch.Tensor) else torch.tensor([float(spec.eps)])
+            spec_lb, spec_ub = spec.materialize_box_seed()
+            centers.append(spec.center)
+            lbs.append(spec_lb)
+            ubs.append(spec_ub)
+            eps_values.append(eps_tensor.reshape(-1)[0])
+            position_masks.append((spec_lb != spec_ub).any(dim=-1))
+            p_norm = spec.p_norm if isinstance(spec.p_norm, torch.Tensor) else torch.tensor([float(spec.p_norm)])
+            p_norm_values.append(p_norm.reshape(-1)[0])
+
+        center = torch.cat(centers, dim=0)
+        lb = torch.cat(lbs, dim=0)
+        ub = torch.cat(ubs, dim=0)
+        eps = torch.stack(eps_values).reshape(center.shape[0], *([1] * (center.ndim - 1)))
+        p_norm = torch.stack(p_norm_values)
+        perturbed_positions = torch.cat(position_masks, dim=0)
     else:
         raise NotImplementedError(f"Batching for {in_kind} not implemented")
     
@@ -166,7 +203,19 @@ def _merge_specs_to_batch(
     
     # Create batched spec objects
     batched_lt = LabeledInputTensor(tensor=tensor, label=labels)
-    batched_in = InputSpec(kind=in_kind, lb=lb, ub=ub, center=center, eps=eps)
+    if in_kind == InKind.LP_EMBEDDING:
+        assert p_norm is not None and perturbed_positions is not None
+        batched_in = InputSpec(
+            kind=in_kind,
+            lb=lb,
+            ub=ub,
+            center=center,
+            eps=eps,
+            p_norm=p_norm,
+            perturbed_positions=perturbed_positions,
+        )
+    else:
+        batched_in = InputSpec(kind=in_kind, lb=lb, ub=ub, center=center, eps=eps)
     def _batch_attr(attr):
         """Batch a field that only exists for certain output spec kinds (e.g. c/d for LINEAR_LE, lb/ub for RANGE). Returns None if this kind doesn't use the field."""
         vals = [getattr(s, attr, None) for s in out_specs]

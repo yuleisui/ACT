@@ -225,6 +225,8 @@ REGISTRY: Dict[str, Dict[str, Any]] = {
             "A",
             "b",
             "eps",
+            "p_norm",
+            "perturbed_positions",
             "lb_val",
             "ub_val",
             "center_val",
