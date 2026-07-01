@@ -51,11 +51,6 @@ _ACTIVATIONS: FrozenSet[LayerKind] = frozenset(
     {
         LayerKind.RELU,
         LayerKind.TANH,
-        LayerKind.ERF,
-        LayerKind.SQRT,
-        LayerKind.SIN,
-        LayerKind.COS,
-        LayerKind.QUANTIZE,
         LayerKind.SIGMOID,
         LayerKind.LRELU,
         LayerKind.RELU6,
