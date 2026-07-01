@@ -1396,6 +1396,396 @@ def _test_new_elementwise_tf_soundness() -> None:  # pragma: no cover
     assert_sound("quantize", q_out.bounds.lb, q_out.bounds.ub, l_q, u_q, quantize_concrete)
 
 
+def _make_dual_att_cores_net(  # pragma: no cover
+    B: int, L: int, D: int, center: torch.Tensor, eps: float, assert_d: float,
+) -> "tuple[Net, dict[str, Any]]":
+    """DENSE Q/K/V -> ATT_SCORES -> SOFTMAX -> ATT_MIX -> CONCAT -> LAYERNORM -> GELU.
+
+    The dual attention path (dual_tf/tf_transformer.py) consumes the bilinear
+    cores ATT_SCORES (Q.Kt) / ATT_MIX (probs.V) with q_src/k_src/w_src/v_src
+    reading predecessor boxes; it stubs MHA_SPLIT/MHA_JOIN. So Q/K/V come from
+    DENSE (which dual supports) rather than the interval MHA_SPLIT decomposition,
+    giving a net the DualSolver can run end to end. Non-degenerate dims (L,D>1)
+    avoid the size-1 shape class.
+    """
+    from act.back_end.core import Layer
+    from act.front_end.specs import OutputSpec
+
+    n_in = L * D
+    in_v = list(range(n_in))
+    lb_in, ub_in = center - eps, center + eps
+    Wq = torch.randn(D, D, dtype=center.dtype, generator=torch.Generator().manual_seed(71)) * 0.2
+    Wk = torch.randn(D, D, dtype=center.dtype, generator=torch.Generator().manual_seed(72)) * 0.2
+    Wv = torch.randn(D, D, dtype=center.dtype, generator=torch.Generator().manual_seed(73)) * 0.2
+
+    layers = [
+        Layer(id=0, kind=LayerKind.INPUT.value, params={"shape": (B, n_in), "dtype": str(center.dtype)}, in_vars=[], out_vars=in_v),
+        Layer(id=1, kind=LayerKind.INPUT_SPEC.value, params={"kind": "BOX", "lb": lb_in, "ub": ub_in}, in_vars=in_v, out_vars=in_v),
+    ]
+    preds: "dict[int, list[int]]" = {0: [], 1: [0]}
+    succs: "dict[int, list[int]]" = {0: [1], 1: []}
+    next_id, next_var = 2, n_in
+
+    def alloc(n: int) -> "list[int]":
+        nonlocal next_var
+        v = list(range(next_var, next_var + n)); next_var += n
+        return v
+
+    def add(kind, params, in_vars, out_vars, pred_ids) -> int:
+        nonlocal next_id
+        layers.append(Layer(id=next_id, kind=kind, params=params, in_vars=in_vars, out_vars=out_vars))
+        lid = next_id; next_id += 1
+        preds[lid] = pred_ids
+        succs.setdefault(lid, [])
+        for p in pred_ids:
+            succs[p].append(lid)
+        return lid
+
+    def dense_pos(W, pos) -> int:
+        full = torch.zeros(D, n_in, dtype=center.dtype)
+        full[:, pos * D:(pos + 1) * D] = W
+        return add(LayerKind.DENSE.value, {
+            "weight": full, "in_features": n_in, "out_features": D,
+            "weight_pos": full.clamp(min=0), "weight_neg": full.clamp(max=0),
+            "bias": torch.zeros(D, dtype=center.dtype), "input_shape": (n_in,),
+        }, in_v, alloc(D), [1])
+
+    def dense_value_feature(W, feat) -> int:
+        full = torch.zeros(L, n_in, dtype=center.dtype)
+        for p in range(L):
+            full[p, p * D:(p + 1) * D] = W[feat]
+        return add(LayerKind.DENSE.value, {
+            "weight": full, "in_features": n_in, "out_features": L,
+            "weight_pos": full.clamp(min=0), "weight_neg": full.clamp(max=0),
+            "bias": torch.zeros(L, dtype=center.dtype), "input_shape": (n_in,),
+        }, in_v, alloc(L), [1])
+
+    q_ids = [dense_pos(Wq, p) for p in range(L)]
+    k_ids = [dense_pos(Wk, p) for p in range(L)]
+    v_ids = [dense_value_feature(Wv, f) for f in range(D)]
+
+    score_ids = []
+    score_vars: "list[int]" = []
+    for kp in range(L):
+        sv = alloc(1)
+        sid = add(LayerKind.ATT_SCORES.value, {
+            "dk": float(D) ** 0.5,
+            "q_vars": layers[q_ids[0]].out_vars, "k_vars": layers[k_ids[kp]].out_vars,
+            "q_src": q_ids[0], "k_src": k_ids[kp],
+        }, layers[q_ids[0]].out_vars + layers[k_ids[kp]].out_vars, sv, [q_ids[0], k_ids[kp]])
+        score_ids.append(sid); score_vars += sv
+    cat_id = add(LayerKind.CONCAT.value, {"concat_dim": -1}, score_vars, alloc(L), score_ids)
+    sm_id = add(LayerKind.SOFTMAX.value, {"axis": -1}, layers[cat_id].out_vars, alloc(L), [cat_id])
+    mix_ids = []
+    mix_vars: "list[int]" = []
+    for f in range(D):
+        mv = alloc(1)
+        mid = add(LayerKind.ATT_MIX.value, {
+            "rowsize": L, "w_vars": layers[sm_id].out_vars, "v_vars": layers[v_ids[f]].out_vars,
+            "w_src": sm_id, "v_src": v_ids[f],
+        }, layers[sm_id].out_vars + layers[v_ids[f]].out_vars, mv, [sm_id, v_ids[f]])
+        mix_ids.append(mid); mix_vars += mv
+    join_id = add(LayerKind.CONCAT.value, {"concat_dim": -1}, mix_vars, alloc(D), mix_ids)
+    gamma = torch.ones(D, dtype=center.dtype)
+    beta = torch.zeros(D, dtype=center.dtype)
+    ln_id = add(LayerKind.LAYERNORM.value, {"gamma": gamma, "beta": beta, "variant": "no_var"}, layers[join_id].out_vars, alloc(D), [join_id])
+    gelu_id = add(LayerKind.GELU.value, {}, layers[ln_id].out_vars, alloc(D), [ln_id])
+
+    out_spec = OutputSpec(kind="LINEAR_LE", c=torch.ones(D, dtype=center.dtype), d=torch.tensor(assert_d, dtype=center.dtype))
+    enc = out_spec.encode_linear(B=B, n_out=D, device=center.device, dtype=center.dtype)
+    add(LayerKind.ASSERT.value, enc, layers[gelu_id].out_vars, layers[gelu_id].out_vars, [gelu_id])
+
+    net = Net(layers=layers, preds=preds, succs=succs)
+    info: "dict[str, Any]" = {"Wq": Wq, "Wk": Wk, "Wv": Wv, "lb_in": lb_in, "ub_in": ub_in, "out_id": gelu_id, "L": L, "D": D}
+    return net, info
+
+
+def _make_dual_matmul_net(  # pragma: no cover
+    B: int, I: int, K: int, J: int, center: torch.Tensor, eps: float, assert_d: float,
+) -> "tuple[Net, dict[str, Any]]":
+    """DENSE X [I,K] + DENSE Y [K,J] -> MATMUL -> SOFTMAX -> LAYERNORM -> GELU.
+
+    The ONNX import lowers attention Q.Kt / probs.V to a generic var x var
+    MATMUL, a distinct dual kernel (forward_matmul / backward_matmul) from the
+    scalar ATT_SCORES/ATT_MIX cores. This net exercises that batched-bilinear
+    path end to end through the DualSolver.
+    """
+    from act.back_end.core import Layer
+    from act.front_end.specs import OutputSpec
+
+    n_in = center.shape[1]
+    in_v = list(range(n_in))
+    lb_in, ub_in = center - eps, center + eps
+    Wx = torch.randn(I * K, n_in, dtype=center.dtype, generator=torch.Generator().manual_seed(81)) * 0.2
+    Wy = torch.randn(K * J, n_in, dtype=center.dtype, generator=torch.Generator().manual_seed(82)) * 0.2
+
+    layers = [
+        Layer(id=0, kind=LayerKind.INPUT.value, params={"shape": (B, n_in), "dtype": str(center.dtype)}, in_vars=[], out_vars=in_v),
+        Layer(id=1, kind=LayerKind.INPUT_SPEC.value, params={"kind": "BOX", "lb": lb_in, "ub": ub_in}, in_vars=in_v, out_vars=in_v),
+    ]
+    x_vars = list(range(n_in, n_in + I * K))
+    y_vars = list(range(n_in + I * K, n_in + I * K + K * J))
+    z_vars = list(range(n_in + I * K + K * J, n_in + I * K + K * J + I * J))
+
+    def dense(W, out_vars, n_out):
+        return {
+            "weight": W, "in_features": n_in, "out_features": n_out,
+            "weight_pos": W.clamp(min=0), "weight_neg": W.clamp(max=0),
+            "bias": torch.zeros(n_out, dtype=center.dtype), "input_shape": (n_in,),
+        }
+
+    layers.append(Layer(id=2, kind=LayerKind.DENSE.value, params=dense(Wx, x_vars, I * K), in_vars=in_v, out_vars=x_vars))
+    layers.append(Layer(id=3, kind=LayerKind.DENSE.value, params=dense(Wy, y_vars, K * J), in_vars=in_v, out_vars=y_vars))
+    layers.append(Layer(id=4, kind=LayerKind.MATMUL.value, params={"x_vars": x_vars, "y_vars": y_vars, "x_shape": (I, K), "y_shape": (K, J)}, in_vars=x_vars + y_vars, out_vars=z_vars))
+    sm_vars = list(range(z_vars[-1] + 1, z_vars[-1] + 1 + I * J))
+    layers.append(Layer(id=5, kind=LayerKind.SOFTMAX.value, params={"axis": -1}, in_vars=z_vars, out_vars=sm_vars))
+    gamma = torch.ones(I * J, dtype=center.dtype)
+    beta = torch.zeros(I * J, dtype=center.dtype)
+    ln_vars = list(range(sm_vars[-1] + 1, sm_vars[-1] + 1 + I * J))
+    layers.append(Layer(id=6, kind=LayerKind.LAYERNORM.value, params={"gamma": gamma, "beta": beta, "variant": "no_var"}, in_vars=sm_vars, out_vars=ln_vars))
+    gelu_vars = list(range(ln_vars[-1] + 1, ln_vars[-1] + 1 + I * J))
+    layers.append(Layer(id=7, kind=LayerKind.GELU.value, params={}, in_vars=ln_vars, out_vars=gelu_vars))
+    out_spec = OutputSpec(kind="LINEAR_LE", c=torch.ones(I * J, dtype=center.dtype), d=torch.tensor(assert_d, dtype=center.dtype))
+    enc = out_spec.encode_linear(B=B, n_out=I * J, device=center.device, dtype=center.dtype)
+    layers.append(Layer(id=8, kind=LayerKind.ASSERT.value, params=enc, in_vars=gelu_vars, out_vars=gelu_vars))
+    preds = {0: [], 1: [0], 2: [1], 3: [1], 4: [2, 3], 5: [4], 6: [5], 7: [6], 8: [7]}
+    succs = {0: [1], 1: [2, 3], 2: [4], 3: [4], 4: [5], 5: [6], 6: [7], 7: [8], 8: []}
+    net = Net(layers=layers, preds=preds, succs=succs)
+    info: "dict[str, Any]" = {"Wx": Wx, "Wy": Wy, "lb_in": lb_in, "ub_in": ub_in, "z_id": 4, "I": I, "K": K, "J": J}
+    return net, info
+
+
+def _dual_forward_box(net, lb_in, ub_in, layer_id):  # pragma: no cover
+    """Run the dual forward pass and return the (lb, ub) box at ``layer_id``."""
+    from act.back_end.dual_tf.tf_forward import compute_forward_bounds
+
+    bounds_dict = compute_forward_bounds(net, lb_in.clone(), ub_in.clone(), post_activation=False)
+    box = bounds_dict[layer_id]
+    return box.lb, box.ub
+
+
+def _test_dual_transformer_att_cores() -> None:  # pragma: no cover
+    # Dual attention scalar cores end to end: the dual FORWARD pass
+    # (forward_attention/softmax/layernorm/gelu) box must bracket the concrete
+    # attention output, and the dual BACKWARD pass (DualSolver.evaluate_spec)
+    # must CERTIFY a loose bound yet NOT certify a bound below the true range
+    # (proving the certified bound is used, not vacuous).
+    from act.back_end.transfer_functions import set_solver_mode, get_solver_mode
+    from act.util.device_manager import get_default_dtype
+    from act.util.stats import VerifyStatus
+
+    dtype = get_default_dtype()
+    B, L, D = 1, 2, 2
+    torch.manual_seed(90)
+    center = torch.randn(B, L * D, dtype=dtype) * 0.05
+    eps = 0.02
+    net, info = _make_dual_att_cores_net(B, L, D, center, eps, assert_d=100.0)
+    Wq, Wk, Wv = info["Wq"], info["Wk"], info["Wv"]
+    l_box, u_box = info["lb_in"], info["ub_in"]
+
+    def concrete_gelu_out(x: torch.Tensor) -> torch.Tensor:
+        x3 = x.reshape(B, L, D)
+        q0 = x3[:, 0, :] @ Wq.t()
+        scores = torch.cat([(q0 * (x3[:, kp, :] @ Wk.t())).sum(-1, keepdim=True) / (D ** 0.5) for kp in range(L)], dim=-1)
+        probs = torch.softmax(scores, dim=-1)
+        v = torch.stack([x3[:, p, :] @ Wv.t() for p in range(L)], dim=1)
+        ctx = torch.cat([(probs * v[:, :, f]).sum(-1, keepdim=True) for f in range(D)], dim=-1)
+        normed = ctx - ctx.mean(dim=-1, keepdim=True)
+        return torch.nn.functional.gelu(normed)
+
+    lb, ub = _dual_forward_box(net, l_box, u_box, info["out_id"])
+    assert torch.isfinite(lb).all() and torch.isfinite(ub).all(), "dual att-cores forward box must be finite"
+    assert (lb <= ub + 1e-9).all(), "dual att-cores forward box lb must not exceed ub"
+    concrete_sum_max = float(concrete_gelu_out(l_box).sum(-1).item())
+    for _ in range(120):
+        x = l_box + torch.rand_like(l_box) * (u_box - l_box)
+        concrete_sum_max = max(concrete_sum_max, float(concrete_gelu_out(x).sum(-1).item()))
+
+    prev = get_solver_mode()
+    try:
+        set_solver_mode("dual")
+        loose = verify_once(net)
+        assert loose[0].status == VerifyStatus.CERTIFIED, f"dual att-cores: loose bound expected CERTIFIED, got {loose[0].status}"
+        assert concrete_sum_max <= 100.0 + 1e-6, (
+            f"dual att-cores: certified d=100 contradicted by concrete sum {concrete_sum_max}"
+        )
+        net_tight, _ = _make_dual_att_cores_net(B, L, D, center, eps, assert_d=concrete_sum_max - 1.0)
+        tight = verify_once(net_tight)
+        assert tight[0].status != VerifyStatus.CERTIFIED, (
+            f"dual att-cores: threshold below range must NOT certify, got {tight[0].status}"
+        )
+    finally:
+        set_solver_mode(prev)
+
+
+def _test_dual_transformer_matmul() -> None:  # pragma: no cover
+    # Dual batched-bilinear MATMUL core (the ONNX attention lowering) end to
+    # end: forward_matmul box brackets the concrete X@Y (through softmax/
+    # layernorm/gelu), and backward_matmul via DualSolver certifies a loose
+    # bound but not a below-range one.
+    from act.back_end.transfer_functions import set_solver_mode, get_solver_mode
+    from act.util.device_manager import get_default_dtype
+    from act.util.stats import VerifyStatus
+
+    dtype = get_default_dtype()
+    B, I, K, J = 1, 2, 2, 2
+    torch.manual_seed(91)
+    center = torch.randn(B, 3, dtype=dtype) * 0.05
+    eps = 0.02
+    net, info = _make_dual_matmul_net(B, I, K, J, center, eps, assert_d=100.0)
+    Wx, Wy = info["Wx"], info["Wy"]
+    l_box, u_box = info["lb_in"], info["ub_in"]
+
+    def concrete_matmul_z(x: torch.Tensor) -> torch.Tensor:
+        X = (x @ Wx.t()).reshape(B, I, K)
+        Y = (x @ Wy.t()).reshape(B, K, J)
+        return (X @ Y).reshape(B, I * J)
+
+    lb, ub = _dual_forward_box(net, l_box, u_box, info["z_id"])
+    n_samples = 120
+    true_min = concrete_matmul_z(l_box).clone()
+    true_max = true_min.clone()
+    for _ in range(n_samples):
+        x = l_box + torch.rand_like(l_box) * (u_box - l_box)
+        z = concrete_matmul_z(x)
+        true_min = torch.minimum(true_min, z)
+        true_max = torch.maximum(true_max, z)
+    # MATMUL forward box is the sound four-corner McCormick envelope; it must
+    # bracket the concrete X@Y (the layernorm/gelu that follow are checked via
+    # the end-to-end certified bound below, not this pre-softmax box).
+    assert (lb <= true_min + 1e-6).all(), "dual MATMUL forward: unsound lower bound"
+    assert (ub >= true_max - 1e-6).all(), "dual MATMUL forward: unsound upper bound"
+
+    prev = get_solver_mode()
+    try:
+        set_solver_mode("dual")
+        loose = verify_once(net)
+        assert loose[0].status == VerifyStatus.CERTIFIED, f"dual MATMUL: loose expected CERTIFIED, got {loose[0].status}"
+        net_tight, info_t = _make_dual_matmul_net(B, I, K, J, center, eps, assert_d=-50.0)
+        tight = verify_once(net_tight)
+        assert tight[0].status != VerifyStatus.CERTIFIED, (
+            f"dual MATMUL: threshold below range must NOT certify, got {tight[0].status}"
+        )
+    finally:
+        set_solver_mode(prev)
+
+
+def _test_dual_lp_embedding_finite_p() -> None:  # pragma: no cover
+    # Finite-p LP_EMBEDDING input spec (p_norm=2) verified through the dual
+    # solver: exercises seed_from_input_specs' LP_EMBEDDING center/eps/
+    # perturbed_positions seeding AND solver_dual's exact per-word Lp-ball
+    # dual-norm input contribution (_resolve_perturbation_norm ->
+    # _dual_norm_exponent -> _dual_norm_contribution / _perturbed_block_slices),
+    # the finite-p path box/L-inf specs never reach.
+    from act.back_end.core import Layer
+    from act.back_end.transfer_functions import set_solver_mode, get_solver_mode
+    from act.front_end.specs import OutputSpec, InKind
+    from act.util.device_manager import get_default_dtype
+    from act.util.stats import VerifyStatus
+
+    dtype = get_default_dtype()
+    B, L, D = 1, 2, 2
+    n_in = L * D
+    torch.manual_seed(97)
+    center3 = torch.randn(B, L, D, dtype=dtype) * 0.1
+    eps = 0.05
+    in_v = list(range(n_in))
+    d_v = list(range(n_in, n_in + 2))
+    W = torch.randn(2, n_in, dtype=dtype) * 0.2
+
+    def build(assert_d: float) -> Net:
+        layers = [
+            Layer(id=0, kind=LayerKind.INPUT.value, params={"shape": (B, L, D), "dtype": str(dtype)}, in_vars=[], out_vars=in_v),
+            Layer(id=1, kind=LayerKind.INPUT_SPEC.value, params={"kind": InKind.LP_EMBEDDING, "center": center3, "eps": torch.tensor([eps], dtype=dtype), "p_norm": 2.0, "perturbed_positions": torch.tensor([0])}, in_vars=in_v, out_vars=in_v),
+            Layer(id=2, kind=LayerKind.DENSE.value, params={"weight": W, "in_features": n_in, "out_features": 2, "weight_pos": W.clamp(min=0), "weight_neg": W.clamp(max=0), "bias": torch.zeros(2, dtype=dtype), "input_shape": (n_in,)}, in_vars=in_v, out_vars=d_v),
+        ]
+        enc = OutputSpec(kind="LINEAR_LE", c=torch.ones(2, dtype=dtype), d=torch.tensor(assert_d, dtype=dtype)).encode_linear(B=B, n_out=2, device=torch.device("cpu"), dtype=dtype)
+        layers.append(Layer(id=3, kind=LayerKind.ASSERT.value, params=enc, in_vars=d_v, out_vars=d_v))
+        return Net(layers=layers, preds={0: [], 1: [0], 2: [1], 3: [2]}, succs={0: [1], 1: [2], 2: [3], 3: []})
+
+    prev = get_solver_mode()
+    try:
+        set_solver_mode("dual")
+        loose = verify_once(build(100.0))
+        assert loose[0].status == VerifyStatus.CERTIFIED, f"dual LP_EMBEDDING: loose expected CERTIFIED, got {loose[0].status}"
+        tight = verify_once(build(-100.0))
+        assert tight[0].status != VerifyStatus.CERTIFIED, (
+            f"dual LP_EMBEDDING: threshold below range must NOT certify, got {tight[0].status}"
+        )
+    finally:
+        set_solver_mode(prev)
+
+
+def _test_dual_smooth_activations() -> None:  # pragma: no cover
+    # Dual backward for the new smooth activations (ERF/SQRT/SIN/COS/QUANTIZE
+    # in dual_tf/tf_smooth.py): a DENSE -> activation -> ASSERT net run through
+    # the DualSolver must CERTIFY a loose bound, exercising each activation's
+    # forward relaxation + backward routing.
+    from act.back_end.core import Layer
+    from act.back_end.transfer_functions import set_solver_mode, get_solver_mode
+    from act.util.device_manager import get_default_dtype
+    from act.util.stats import VerifyStatus
+
+    dtype = get_default_dtype()
+    B, n = 1, 3
+
+    def build(act_kind: str, act_params: "dict[str, Any]") -> Net:
+        center = torch.full((B, n), 0.7, dtype=dtype)
+        lb_in, ub_in = center - 0.05, center + 0.05
+        in_v = list(range(n))
+        d_v = list(range(n, 2 * n))
+        o_v = list(range(2 * n, 3 * n))
+        W = torch.eye(n, dtype=dtype)
+        layers = [
+            Layer(id=0, kind=LayerKind.INPUT.value, params={"shape": (B, n), "dtype": str(dtype)}, in_vars=[], out_vars=in_v),
+            Layer(id=1, kind=LayerKind.INPUT_SPEC.value, params={"kind": "BOX", "lb": lb_in, "ub": ub_in}, in_vars=in_v, out_vars=in_v),
+            Layer(id=2, kind=LayerKind.DENSE.value, params={"weight": W, "in_features": n, "out_features": n, "weight_pos": W, "weight_neg": W * 0, "bias": torch.zeros(n, dtype=dtype), "input_shape": (n,)}, in_vars=in_v, out_vars=d_v),
+            Layer(id=3, kind=act_kind, params=act_params, in_vars=d_v, out_vars=o_v),
+        ]
+        from act.front_end.specs import OutputSpec
+        enc = OutputSpec(kind="LINEAR_LE", c=torch.ones(n, dtype=dtype), d=torch.tensor(100.0, dtype=dtype)).encode_linear(B=B, n_out=n, device=torch.device("cpu"), dtype=dtype)
+        layers.append(Layer(id=4, kind=LayerKind.ASSERT.value, params=enc, in_vars=o_v, out_vars=o_v))
+        return Net(layers=layers, preds={0: [], 1: [0], 2: [1], 3: [2], 4: [3]}, succs={0: [1], 1: [2], 2: [3], 3: [4], 4: []})
+
+    cases = [
+        (LayerKind.ERF.value, {}),
+        (LayerKind.SQRT.value, {}),
+        (LayerKind.SIN.value, {}),
+        (LayerKind.COS.value, {}),
+        (LayerKind.QUANTIZE.value, {"scale": torch.tensor([0.1], dtype=dtype), "zero_point": torch.tensor([0.0], dtype=dtype), "qmin": -128, "qmax": 127}),
+    ]
+    prev = get_solver_mode()
+    try:
+        set_solver_mode("dual")
+        for kind, params in cases:
+            r = verify_once(build(kind, params))
+            assert r[0].status == VerifyStatus.CERTIFIED, f"dual {kind}: expected CERTIFIED, got {r[0].status}"
+    finally:
+        set_solver_mode(prev)
+
+
+def _test_dual_mha_split_join_not_implemented() -> None:  # pragma: no cover
+    # The dual path deliberately stubs the MHA split/join reshape family
+    # (only the ATT_SCORES/ATT_MIX scalar cores + MATMUL are relaxed); the
+    # stubs must raise NotImplementedError so a mis-lowered net fails loudly.
+    from act.back_end.core import Layer
+    from act.back_end.dual_tf.tf_transformer import forward_mha, backward_mha
+
+    dummy = Layer(id=0, kind=LayerKind.MHA_SPLIT.value, params={}, in_vars=[0], out_vars=[0])
+    raised_fwd = False
+    try:
+        forward_mha(dummy, [], [], [], [], False, torch.device("cpu"), torch.get_default_dtype())
+    except NotImplementedError:
+        raised_fwd = True
+    assert raised_fwd, "forward_mha must raise NotImplementedError"
+    raised_bwd = False
+    try:
+        backward_mha(dummy, torch.zeros(1, 1), {}, [])
+    except NotImplementedError:
+        raised_bwd = True
+    assert raised_bwd, "backward_mha must raise NotImplementedError"
+
+
 def _test_setup_and_solve_batch_b1_smoke() -> None:  # pragma: no cover
     from act.back_end.solver.solver_torchlp import TorchLPSolver
     from act.util.device_manager import get_default_device, get_default_dtype
@@ -1637,6 +2027,11 @@ _TESTS = [  # pragma: no cover
     _test_mini_transformer_block_analyze_soundness,
     _test_mha_split_edge_cases_and_mask_add,
     _test_new_elementwise_tf_soundness,
+    _test_dual_transformer_att_cores,
+    _test_dual_transformer_matmul,
+    _test_dual_lp_embedding_finite_p,
+    _test_dual_smooth_activations,
+    _test_dual_mha_split_join_not_implemented,
 ]
 
 
