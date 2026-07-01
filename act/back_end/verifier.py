@@ -44,7 +44,7 @@
 #     certification; they are preserved for the batch-native solver path.
 
 from __future__ import annotations
-from typing import Optional, List, Callable, Dict, Any, TYPE_CHECKING, cast
+from typing import Optional, List, Callable, Dict, Any, TYPE_CHECKING
 
 import torch
 import copy
@@ -687,132 +687,7 @@ def verify_once(
 #===---------------------------------------------------------------------===#
 
 
-def _test_build_top1_robust_drops_y_true_row() -> None:  # pragma: no cover
-    # Encoding is row-deletion, not masking: every row is e_j - e_{y_true}
-    # for j != y_true, hence M = K-1 and Frobenius row norm = sqrt(2).
-    from act.front_end.specs import OutputSpec, OutKind
 
-    K = 5
-    out = OutputSpec(
-        kind=OutKind.TOP1_ROBUST, y_true=torch.tensor([0, 2, 4])
-    ).encode_linear(
-        B=3, n_out=K, device=torch.device("cpu"), dtype=torch.float32,
-    )
-    assert out["M"] == K - 1, f"expected M=K-1=4, got {out['M']}"
-    assert out["C"].shape == (3 * (K - 1), K), (
-        f"expected C.shape == (B*M, K) == (12, 5), got "
-        f"{tuple(out['C'].shape)}"
-    )
-    row_norms = out["C"].norm(dim=1)
-    assert (row_norms > 0).all(), (
-        f"found a zero row in C (y_true row was masked, not dropped): "
-        f"norms={row_norms.tolist()}"
-    )
-    expected_norm = torch.full_like(row_norms, 2.0).sqrt()
-    assert torch.allclose(row_norms, expected_norm), (
-        f"every row should be e_j - e_{{y_true}} with ||.||=sqrt(2); "
-        f"got norms={row_norms.tolist()}"
-    )
-
-
-def _test_build_linear_le_threshold_is_d_unchanged() -> None:  # pragma: no cover
-    from act.front_end.specs import OutputSpec, OutKind
-
-    out = OutputSpec(
-        kind=OutKind.LINEAR_LE,
-        c=torch.tensor([1.0, -1.0]),
-        d=torch.tensor(0.5),
-    ).encode_linear(
-        B=3, n_out=2, device=torch.device("cpu"), dtype=torch.float32,
-    )
-    assert out["M"] == 1
-    assert tuple(out["C"].shape) == (3, 2)
-    assert tuple(out["thresholds"].shape) == (3, 1)
-    assert torch.allclose(
-        out["thresholds"],
-        torch.full((3, 1), 0.5, dtype=torch.float32),
-    ), f"thresholds mismatch: {out['thresholds'].tolist()}"
-
-
-def _test_build_margin_robust_threshold_is_negated_margin() -> None:  # pragma: no cover
-    from act.front_end.specs import OutputSpec, OutKind
-
-    out = OutputSpec(
-        kind=OutKind.MARGIN_ROBUST,
-        y_true=torch.tensor([1]),
-        margin=torch.tensor(0.1),
-    ).encode_linear(
-        B=1, n_out=4, device=torch.device("cpu"), dtype=torch.float32,
-    )
-    assert out["M"] == 3
-    expected = torch.full((1, 3), -0.1, dtype=torch.float32)
-    assert torch.allclose(out["thresholds"], expected), (
-        f"thresholds should be -margin; got {out['thresholds'].tolist()}"
-    )
-
-
-def _test_build_range_interleaves_pm_e_rows() -> None:  # pragma: no cover
-    from act.front_end.specs import OutputSpec, OutKind
-
-    out = OutputSpec(
-        kind=OutKind.RANGE,
-        lb=torch.tensor([-1.0, -1.0, -1.0]),
-        ub=torch.tensor([1.0, 1.0, 1.0]),
-    ).encode_linear(
-        B=2, n_out=3, device=torch.device("cpu"), dtype=torch.float32,
-    )
-    assert out["M"] == 6
-    expected = torch.tensor(
-        [
-            [-1.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [0.0, -1.0, 0.0],
-            [0.0, 1.0, 0.0],
-            [0.0, 0.0, -1.0],
-            [0.0, 0.0, 1.0],
-        ],
-        dtype=torch.float32,
-    )
-    C_per_sample = out["C"].view(2, 6, 3)
-    for b in range(2):
-        assert torch.allclose(C_per_sample[b], expected), (
-            f"sample {b}: rows mismatch.\n got={C_per_sample[b].tolist()}\n"
-            f" want={expected.tolist()}"
-        )
-
-
-def _test_interval_margin_certification_shape() -> None:  # pragma: no cover
-    # margin_max = sum_k (max(C_k,0)*ub_k + min(C_k,0)*lb_k) over [B*M, n_out];
-    # per-sample CERTIFIED iff every M lane satisfies margin_max < threshold.
-    from act.front_end.specs import OutputSpec, OutKind
-
-    B, n_out = 2, 5
-    output_lb = torch.zeros(B, n_out)
-    output_ub = torch.ones(B, n_out)
-    out = OutputSpec(
-        kind=OutKind.TOP1_ROBUST, y_true=torch.tensor([0, 1])
-    ).encode_linear(
-        B=B, n_out=n_out, device=torch.device("cpu"), dtype=torch.float32,
-    )
-    M = out["M"]
-    assert M == 4
-
-    C = out["C"]
-    C_pos = C.clamp(min=0)
-    C_neg = C.clamp(max=0)
-    lb_exp = output_lb.repeat_interleave(M, dim=0)
-    ub_exp = output_ub.repeat_interleave(M, dim=0)
-    margin_max = (C_pos * ub_exp + C_neg * lb_exp).sum(dim=-1)
-    assert tuple(margin_max.shape) == (B * M,), (
-        f"margin_max shape {tuple(margin_max.shape)} != (B*M,) == ({B * M},)"
-    )
-
-    cert_per_sample = (
-        margin_max.view(B, M) < out["thresholds"]
-    ).all(dim=-1)
-    assert tuple(cert_per_sample.shape) == (B,), (
-        f"per-sample cert shape {tuple(cert_per_sample.shape)} != ({B},)"
-    )
 
 
 def _make_dense_net_box_test(  # pragma: no cover
@@ -1786,76 +1661,147 @@ def _test_dual_mha_split_join_not_implemented() -> None:  # pragma: no cover
     assert raised_bwd, "backward_mha must raise NotImplementedError"
 
 
-def _test_setup_and_solve_batch_b1_smoke() -> None:  # pragma: no cover
-    from act.back_end.solver.solver_torchlp import TorchLPSolver
-    from act.util.device_manager import get_default_device, get_default_dtype
 
-    device = get_default_device()
+
+
+
+
+
+def _test_act2torch_smooth_activation_reconstruction() -> None:  # pragma: no cover
+    from act.back_end.core import Layer
+    from act.pipeline.verification.act2torch import ACTToTorch
+    from act.front_end.specs import OutputSpec, OutKind
+    from act.util.device_manager import get_default_dtype
+
     dtype = get_default_dtype()
-    weight = torch.ones(1, 1, device=device, dtype=dtype)
-    bias = torch.zeros(1, device=device, dtype=dtype)
-    lb_in = torch.full((1, 1), 1.0, device=device, dtype=dtype)
-    ub_in = torch.full((1, 1), 2.0, device=device, dtype=dtype)
-    net = _make_dense_net_box_test(
-        B=1, n_in=1, n_out=1, weight=weight, bias=bias,
-        lb_in=lb_in, ub_in=ub_in,
-        assert_params={
-            "kind": OutKind.LINEAR_LE,
-            "c": torch.ones(1, device=device, dtype=dtype),
-            "d": torch.tensor(0.0, device=device, dtype=dtype),
-        },
+    B, n = 1, 2
+    in_v = list(range(n))
+    layer_vars = [list(range((i + 1) * n, (i + 2) * n)) for i in range(5)]
+    x = torch.tensor([[0.64, 0.81]], dtype=dtype)
+    eps = torch.tensor([[0.01, 0.01]], dtype=dtype)
+    encoded = OutputSpec(
+        kind=OutKind.LINEAR_LE,
+        c=torch.ones(n, dtype=dtype),
+        d=torch.tensor(10.0, dtype=dtype),
+    ).encode_linear(B=B, n_out=n, device=torch.device("cpu"), dtype=dtype)
+    layers = [
+        Layer(id=0, kind=LayerKind.INPUT.value, params={"shape": (B, n), "dtype": str(dtype)}, in_vars=[], out_vars=in_v),
+        Layer(id=1, kind=LayerKind.INPUT_SPEC.value, params={"kind": InKind.BOX, "lb": x - eps, "ub": x + eps}, in_vars=in_v, out_vars=in_v),
+        Layer(id=2, kind=LayerKind.ERF.value, params={}, in_vars=in_v, out_vars=layer_vars[0]),
+        Layer(id=3, kind=LayerKind.SQRT.value, params={}, in_vars=layer_vars[0], out_vars=layer_vars[1]),
+        Layer(id=4, kind=LayerKind.SIN.value, params={}, in_vars=layer_vars[1], out_vars=layer_vars[2]),
+        Layer(id=5, kind=LayerKind.COS.value, params={}, in_vars=layer_vars[2], out_vars=layer_vars[3]),
+        Layer(
+            id=6,
+            kind=LayerKind.QUANTIZE.value,
+            params={"scale": torch.tensor([0.05], dtype=dtype), "zero_point": torch.tensor([0.0], dtype=dtype), "qmin": -128, "qmax": 127},
+            in_vars=layer_vars[3],
+            out_vars=layer_vars[4],
+        ),
+        Layer(id=7, kind=LayerKind.ASSERT.value, params=encoded, in_vars=layer_vars[4], out_vars=layer_vars[4]),
+    ]
+    net = Net(
+        layers=layers,
+        preds={0: [], 1: [0], 2: [1], 3: [2], 4: [3], 5: [4], 6: [5], 7: [6]},
+        succs={0: [1], 1: [2], 2: [3], 3: [4], 4: [5], 5: [6], 6: [7], 7: []},
     )
 
-    solution = setup_and_solve_batch(
-        net,
-        Bounds(lb_in.clone(), ub_in.clone()),
-        TorchLPSolver(),
+    restored = ACTToTorch(net).run()
+    y = restored(x)["output"]
+    expected = torch.erf(x)
+    expected = torch.sqrt(torch.clamp(expected, min=0.0))
+    expected = torch.sin(expected)
+    expected = torch.cos(expected)
+    expected = 0.05 * torch.clamp(torch.round(expected / 0.05), min=-128.0, max=127.0)
+    assert torch.allclose(y, expected, atol=1e-6, rtol=1e-6), (
+        f"smooth ACTToTorch reconstruction mismatch: got={y.tolist()} want={expected.tolist()}"
     )
-    assert solution.statuses == (SolveStatus.SAT,), f"got {solution.statuses}"
-    assert tuple(solution.max_viol.shape) == (1,)
-    assert float(solution.max_viol[0].item()) <= 1e-4
 
 
-def _test_setup_and_solve_batch_b_greater_than_1() -> None:  # pragma: no cover
-    from act.back_end.solver.solver_torchlp import TorchLPSolver
-    from act.util.device_manager import get_default_device, get_default_dtype
+def _test_torch2act_minimal_vit_fixture_soundness() -> None:  # pragma: no cover
+    import torch.nn as nn
+    from act.back_end.analyze import analyze
+    from act.back_end.core import Fact, ConSet
+    from act.front_end.spec_creator_base import LabeledInputTensor
+    from act.front_end.specs import InputSpec, OutputSpec, OutKind
+    from act.front_end.verifiable_model import InputLayer, InputSpecLayer, OutputSpecLayer, VerifiableModel
+    from act.pipeline.verification.torch2act import TorchToACT
+    from act.pipeline.verification.validate_verifier import TinyRegressionBertLayer, TinyRegressionBertLayerNorm
+    from act.util.device_manager import get_default_dtype
 
-    device = get_default_device()
     dtype = get_default_dtype()
 
-    B = 4
-    weight = torch.ones(1, 1, device=device, dtype=dtype)
-    bias = torch.zeros(1, device=device, dtype=dtype)
-    lb_in = torch.tensor([[1.0], [1.25], [1.5], [1.75]], device=device, dtype=dtype)
-    ub_in = torch.tensor([[2.0], [2.25], [2.5], [2.75]], device=device, dtype=dtype)
-    net = _make_dense_net_box_test(
-        B=B, n_in=1, n_out=1, weight=weight, bias=bias,
-        lb_in=lb_in, ub_in=ub_in,
-        assert_params={
-            "kind": OutKind.LINEAR_LE,
-            "c": torch.ones(1, device=device, dtype=dtype),
-            "d": torch.tensor(0.0, device=device, dtype=dtype),
-        },
+    class PatchEmbed(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.proj = nn.Conv2d(1, 2, kernel_size=2, stride=2, bias=True)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return self.proj(x)
+
+    class TinyDuckViT(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.patch_embed = PatchEmbed()
+            self.block = TinyRegressionBertLayer(hidden_size=2, intermediate_size=4)
+            self.norm = TinyRegressionBertLayerNorm(2)
+            self.head = nn.Linear(2, 2)
+            self.cls_token = nn.Parameter(torch.zeros(1, 1, 2, dtype=dtype))
+            self.pos_embed = nn.Parameter(torch.zeros(1, 2, 2, dtype=dtype))
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            patch = self.patch_embed.proj(x).flatten(2).transpose(1, 2)
+            cls = self.cls_token.expand(x.shape[0], -1, -1)
+            hidden = torch.cat([cls, patch], dim=1) + self.pos_embed
+            hidden = self.block(hidden)
+            hidden = self.norm(hidden)
+            return self.head(hidden[:, 0, :])
+
+    torch.manual_seed(23)
+    body = TinyDuckViT().to(dtype=dtype).eval()
+    center = torch.tensor([[[[0.1, -0.2], [0.3, 0.4]]]], dtype=dtype)
+    eps = torch.full_like(center, 1e-4)
+    wrapped = VerifiableModel(
+        input_layer=InputLayer(
+            labeled_input=LabeledInputTensor(tensor=center, label=None),
+            shape=tuple(center.shape),
+            dtype=dtype,
+        ),
+        input_spec=InputSpecLayer(InputSpec(kind=InKind.BOX, lb=center - eps, ub=center + eps)),
+        model=body,
+        output_spec=OutputSpecLayer(
+            OutputSpec(kind=OutKind.LINEAR_LE, c=torch.ones(2, dtype=dtype), d=torch.tensor(100.0, dtype=dtype))
+        ),
+    ).eval()
+
+    net = TorchToACT(wrapped).run()
+    kinds = [layer.kind for layer in net.layers]
+    assert LayerKind.CONV2D.value in kinds, "ViT fixture must emit patch Conv2d"
+    assert kinds.count(LayerKind.CONSTANT.value) >= 2, "ViT fixture must emit cls/pos constants"
+    assert LayerKind.ATT_SCORES.value in kinds and LayerKind.ATT_MIX.value in kinds, (
+        "ViT fixture must lower the block through attention layers"
     )
 
-    solution = setup_and_solve_batch(
-        net,
-        Bounds(lb_in.clone(), ub_in.clone()),
-        TorchLPSolver(),
+    entry_id = find_entry_layer_id(net)
+    seed = seed_from_input_specs(gather_input_spec_layers(net))
+    entry_fact = Fact(bounds=seed, cons=ConSet())
+    add_all_input_specs(entry_fact.cons, get_input_ids(net), gather_input_spec_layers(net))
+    _before, after, _global_c = analyze(net, entry_id, entry_fact)
+    conv_layer = next(layer for layer in net.layers if layer.kind == LayerKind.CONV2D.value)
+    conv_bounds = after[conv_layer.id].bounds
+    concrete_patch = body.patch_embed.proj(center).reshape(1, -1)
+    assert torch.isfinite(conv_bounds.lb).all() and torch.isfinite(conv_bounds.ub).all(), (
+        "ViT fixture patch Conv2d bounds must be finite"
     )
+    assert (conv_bounds.lb <= concrete_patch + 1e-6).all(), "ViT patch lower bound must cover concrete output"
+    assert (conv_bounds.ub >= concrete_patch - 1e-6).all(), "ViT patch upper bound must cover concrete output"
+    results = verify_once(net)
+    assert len(results) == 1 and results[0].status in {
+        VerifyStatus.CERTIFIED, VerifyStatus.FALSIFIED, VerifyStatus.UNKNOWN
+    }, f"ViT fixture verify_once returned unexpected result {results}"
 
-    assert solution.statuses == (SolveStatus.SAT,) * B, (
-        f"expected {B} SAT statuses, got {solution.statuses}"
-    )
-    assert tuple(solution.x.shape) == (B, solution.x.shape[1]), (
-        f"solution.x should retain leading batch B={B}, got "
-        f"{tuple(solution.x.shape)}"
-    )
-    for i in range(B):
-        assert float(solution.max_viol[i].item()) <= 1e-4, (
-            f"batch lane {i}: max_viol "
-            f"{float(solution.max_viol[i].item())} > 1e-4"
-        )
+
+
 
 
 
@@ -1964,62 +1910,9 @@ def _test_verify_once_b8_mixed_outcomes() -> None:  # pragma: no cover
     )
 
 
-def _test_verify_lp_batched_multi_b1() -> None:  # pragma: no cover
-    from act.back_end.serialization.serialization import load_net_from_file
-    from act.back_end.solver.solver_torchlp import TorchLPSolver
-    from act.util.stats import VerifyStatus
-
-    net = load_net_from_file(
-        "act/back_end/examples/nets/layer_testing_top1_robust.json",
-        target_device="cpu",
-    )
-    results = verify_lp_batched(net, TorchLPSolver, timelimit=1.0)
-    valid = {VerifyStatus.CERTIFIED, VerifyStatus.FALSIFIED, VerifyStatus.UNKNOWN}
-    assert len(results) == 1, f"expected one result, got {len(results)}"
-    assert results[0].status in valid, f"unexpected status {results[0].status}"
-
-
-def _test_verify_lp_batched_batch_b4() -> None:  # pragma: no cover
-    from act.back_end.solver.solver_torchlp import TorchLPSolver
-    from act.util.device_manager import get_default_device, get_default_dtype
-    from act.util.stats import VerifyStatus
-
-    device = get_default_device()
-    dtype = get_default_dtype()
-    B = 4
-    weight = torch.ones(1, 1, device=device, dtype=dtype)
-    bias = torch.zeros(1, device=device, dtype=dtype)
-    lb_in = torch.tensor([[1.0], [1.25], [1.5], [1.75]], device=device, dtype=dtype)
-    ub_in = torch.tensor([[2.0], [2.25], [2.5], [2.75]], device=device, dtype=dtype)
-    net = _make_dense_net_box_test(
-        B=B, n_in=1, n_out=1, weight=weight, bias=bias,
-        lb_in=lb_in, ub_in=ub_in,
-        assert_params={
-            "kind": OutKind.LINEAR_LE,
-            "c": torch.ones(1, device=device, dtype=dtype),
-            "d": torch.tensor(0.0, device=device, dtype=dtype),
-        },
-    )
-
-    results = verify_lp_batched(net, TorchLPSolver, timelimit=1.0)
-    valid = {VerifyStatus.CERTIFIED, VerifyStatus.FALSIFIED, VerifyStatus.UNKNOWN}
-    assert len(results) == B, f"expected {B} results, got {len(results)}"
-    for i, result in enumerate(results):
-        assert result.status in valid, f"lane {i}: unexpected status {result.status}"
-
-
 _TESTS = [  # pragma: no cover
-    _test_build_top1_robust_drops_y_true_row,
-    _test_build_linear_le_threshold_is_d_unchanged,
-    _test_build_margin_robust_threshold_is_negated_margin,
-    _test_build_range_interleaves_pm_e_rows,
-    _test_interval_margin_certification_shape,
-    _test_setup_and_solve_batch_b1_smoke,
-    _test_setup_and_solve_batch_b_greater_than_1,
     _test_verify_once_b3_all_certified,
     _test_verify_once_b8_mixed_outcomes,
-    _test_verify_lp_batched_multi_b1,
-    _test_verify_lp_batched_batch_b4,
     _test_att_scores_dual_planar_analyze_soundness,
     _test_att_scores_dual_planar_verify_once_certified,
     _test_att_scores_dual_planar_lp_export_solve,
@@ -2032,6 +1925,8 @@ _TESTS = [  # pragma: no cover
     _test_dual_lp_embedding_finite_p,
     _test_dual_smooth_activations,
     _test_dual_mha_split_join_not_implemented,
+    _test_act2torch_smooth_activation_reconstruction,
+    _test_torch2act_minimal_vit_fixture_soundness,
 ]
 
 

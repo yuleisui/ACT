@@ -101,6 +101,7 @@ class IntervalTF(TransferFunction):
         LayerKind.POWER.value: lambda L, bounds, tf: tf_power(L, bounds),
         LayerKind.SIGN.value: lambda L, bounds, tf: tf_sign(L, bounds),
         LayerKind.REDUCE_SUM.value: lambda L, bounds, tf: tf_reduce_sum(L, bounds),
+        LayerKind.MEAN.value: lambda L, bounds, tf: tf_mean(L, bounds),
         LayerKind.CONSTANT.value: lambda L, bounds, tf: tf_constant(L, bounds),
         LayerKind.COMPARE.value: lambda L, bounds, tf: tf_compare(L,
             tf._net.get_predecessor_bounds(L.id, tf._after, tf._before, 0),

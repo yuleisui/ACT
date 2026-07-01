@@ -146,11 +146,12 @@
 import os
 import copy
 import torch
+import torch.nn as nn
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional, Tuple, List, Sequence
+from typing import Dict, Any, Optional, Tuple, List, Sequence, cast
 
-from act.back_end.core import Net, Layer
+from act.back_end.core import ConSet, Net, Layer
 from act.pipeline.verification.model_factory import ModelFactory
 from act.pipeline.verification.torch2act import TorchToACT
 from act.pipeline.verification.per_neuron_bounds import (
@@ -168,10 +169,265 @@ from act.back_end.verifier import (
 from act.util.stats import VerifyStatus
 from act.back_end.solver.solver_gurobi import is_gurobi_available
 from act.util.options import PerformanceOptions
-from act.front_end.specs import OutKind
+from act.front_end.spec_creator_base import LabeledInputTensor
+from act.front_end.specs import InKind, InputSpec, OutKind, OutputSpec
+from act.front_end.verifiable_model import (
+    InputLayer,
+    InputSpecLayer,
+    OutputSpecLayer,
+    VerifiableModel,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+class TinyRegressionBertLayerNorm(nn.LayerNorm):
+    """BERT-style LayerNorm surface used by transformer regression nets."""
+
+    def __init__(self, hidden_size: int) -> None:
+        """Initialize a one-dimensional LayerNorm with the BERT epsilon name."""
+        super().__init__(hidden_size, eps=1e-5)
+        self.variance_epsilon = self.eps
+
+
+class TinyRegressionBertSelfAttention(nn.Module):
+    """Explicit scaled-dot attention matching the ACT transformer mapping."""
+
+    def __init__(self, hidden_size: int) -> None:
+        """Create query, key, and value projections for one attention head."""
+        super().__init__()
+        self.num_attention_heads = 1
+        self.attention_head_size = hidden_size
+        self.query = nn.Linear(hidden_size, hidden_size)
+        self.key = nn.Linear(hidden_size, hidden_size)
+        self.value = nn.Linear(hidden_size, hidden_size)
+
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Run one-head self-attention on embedding-space hidden states."""
+        query_layer = self.query(hidden_states)
+        key_layer = self.key(hidden_states)
+        value_layer = self.value(hidden_states)
+        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+        attention_scores = attention_scores / (self.attention_head_size ** 0.5)
+        attention_probs = torch.softmax(attention_scores, dim=-1)
+        return torch.matmul(attention_probs, value_layer)
+
+
+class TinyRegressionBertSelfOutput(nn.Module):
+    """Attention output projection, residual connection, and LayerNorm."""
+
+    def __init__(self, hidden_size: int) -> None:
+        """Initialize the attention output block."""
+        super().__init__()
+        self.dense = nn.Linear(hidden_size, hidden_size)
+        self.LayerNorm = TinyRegressionBertLayerNorm(hidden_size)
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        input_tensor: torch.Tensor,
+    ) -> torch.Tensor:
+        """Apply output projection with the residual tensor."""
+        return self.LayerNorm(self.dense(hidden_states) + input_tensor)
+
+
+class TinyRegressionBertAttention(nn.Module):
+    """Self-attention wrapper with BERT-compatible attribute names."""
+
+    def __init__(self, hidden_size: int) -> None:
+        """Create the self-attention and post-attention output blocks."""
+        super().__init__()
+        self.self = TinyRegressionBertSelfAttention(hidden_size)
+        self.output = TinyRegressionBertSelfOutput(hidden_size)
+
+    def forward(self, input_tensor: torch.Tensor) -> torch.Tensor:
+        """Run self-attention followed by residual output normalization."""
+        return self.output(self.self(input_tensor), input_tensor)
+
+
+class TinyRegressionBertIntermediate(nn.Module):
+    """Feed-forward expansion with GELU activation."""
+
+    def __init__(self, hidden_size: int, intermediate_size: int) -> None:
+        """Initialize the transformer feed-forward expansion."""
+        super().__init__()
+        self.dense = nn.Linear(hidden_size, intermediate_size)
+        self.intermediate_act_fn = nn.GELU()
+
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Apply the intermediate dense layer and GELU activation."""
+        return self.intermediate_act_fn(self.dense(hidden_states))
+
+
+class TinyRegressionBertOutput(nn.Module):
+    """Feed-forward projection, residual connection, and LayerNorm."""
+
+    def __init__(self, hidden_size: int, intermediate_size: int) -> None:
+        """Initialize the transformer feed-forward output block."""
+        super().__init__()
+        self.dense = nn.Linear(intermediate_size, hidden_size)
+        self.LayerNorm = TinyRegressionBertLayerNorm(hidden_size)
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        input_tensor: torch.Tensor,
+    ) -> torch.Tensor:
+        """Apply output projection with the residual tensor."""
+        return self.LayerNorm(self.dense(hidden_states) + input_tensor)
+
+
+class TinyRegressionBertLayer(nn.Module):
+    """One tiny encoder block for regression-harness transformer coverage."""
+
+    def __init__(self, hidden_size: int, intermediate_size: int) -> None:
+        """Initialize attention and feed-forward sublayers."""
+        super().__init__()
+        self.attention = TinyRegressionBertAttention(hidden_size)
+        self.intermediate = TinyRegressionBertIntermediate(
+            hidden_size,
+            intermediate_size,
+        )
+        self.output = TinyRegressionBertOutput(hidden_size, intermediate_size)
+
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Run the encoder block on embedding-space hidden states."""
+        attention_output = self.attention(hidden_states)
+        intermediate_output = self.intermediate(attention_output)
+        return self.output(intermediate_output, attention_output)
+
+
+class TinyRegressionEmbeddingTransformer(nn.Module):
+    """Embedding-consuming one-block classifier for verifier validation."""
+
+    def __init__(self) -> None:
+        """Initialize a one-token, two-hidden-dimension transformer classifier."""
+        super().__init__()
+        self.layer = nn.ModuleList(
+            [TinyRegressionBertLayer(hidden_size=2, intermediate_size=4)]
+        )
+        self.classifier = nn.Linear(2, 2)
+
+    def forward(self, embeddings: torch.Tensor) -> torch.Tensor:
+        """Classify the first embedding token after one transformer block."""
+        hidden_states = embeddings
+        for layer in self.layer:
+            hidden_states = layer(hidden_states)
+        return self.classifier(hidden_states[:, 0, :])
+
+
+def _build_tiny_transformer_regression_model() -> VerifiableModel:
+    """Build the deterministic transformer model used by the harness."""
+    torch.manual_seed(7)
+    center = torch.tensor([[[0.125, -0.25]]], dtype=torch.get_default_dtype())
+    model = TinyRegressionEmbeddingTransformer().eval()
+    logits = model(center)
+    y_true = logits.argmax(dim=1)
+    input_spec = InputSpec(
+        kind=InKind.LP_EMBEDDING,
+        center=center,
+        eps=torch.tensor([0.0], dtype=center.dtype),
+        p_norm=2,
+        perturbed_positions=torch.tensor([0]),
+    )
+    output_spec = OutputSpec(kind=OutKind.TOP1_ROBUST, y_true=y_true)
+    return VerifiableModel(
+        input_layer=InputLayer(
+            labeled_input=LabeledInputTensor(tensor=center, label=y_true),
+            shape=tuple(center.shape),
+            dtype=center.dtype,
+            domain="text",
+        ),
+        input_spec=InputSpecLayer(input_spec),
+        model=model,
+        output_spec=OutputSpecLayer(output_spec),
+    ).eval()
+
+
+class RegressionHarnessModelFactory:
+    """Model factory with synthetic transformer coverage added in memory."""
+
+    TRANSFORMER_NET_NAME = "tiny_embedding_transformer"
+
+    def __init__(self) -> None:
+        """Load JSON-backed nets and append the transformer regression net."""
+        self._base = ModelFactory()
+        self._transformer_model = _build_tiny_transformer_regression_model()
+        self._transformer_net = TorchToACT(self._transformer_model).run()
+        self._flatten_transformer_seed()
+
+    def _flatten_transformer_seed(self) -> None:
+        """Store embedding seed boxes in verifier-native ``[B, n]`` form."""
+        for layer in self._transformer_net.layers:
+            if layer.kind != "INPUT_SPEC":
+                continue
+            for key in ("lb", "ub"):
+                value = layer.params.get(key)
+                if torch.is_tensor(value) and value.dim() > 2:
+                    layer.params[key] = value.reshape(value.shape[0], -1)
+
+    def get_act_net(self, name: str) -> Net:
+        """Return an ACT net by name."""
+        if name == self.TRANSFORMER_NET_NAME:
+            return copy.deepcopy(self._transformer_net)
+        return self._base.get_act_net(name)
+
+    def create_model(self, name: str, load_weights: bool = True) -> nn.Module:
+        """Create the PyTorch model corresponding to a registered net."""
+        if name == self.TRANSFORMER_NET_NAME:
+            if not load_weights:
+                raise ValueError("RegressionHarnessModelFactory requires weights")
+            return copy.deepcopy(self._transformer_model)
+        return self._base.create_model(name, load_weights=load_weights)
+
+    def generate_test_input(self, name: str, test_case: str = "center") -> torch.Tensor:
+        """Generate concrete inputs for JSON-backed and transformer nets."""
+        if name != self.TRANSFORMER_NET_NAME:
+            return self._base.generate_test_input(name, test_case=test_case)
+
+        spec_layers = gather_input_spec_layers(self._transformer_net)
+        if not spec_layers:
+            raise ValueError("Transformer regression net has no INPUT_SPEC layer")
+        seed = seed_from_input_specs(spec_layers)
+        lb = seed.lb.to(dtype=torch.get_default_dtype())
+        ub = seed.ub.to(dtype=torch.get_default_dtype())
+        if test_case == "center":
+            sample = lb + 0.5 * (ub - lb)
+        elif test_case == "boundary":
+            sample = ub.clone()
+        elif test_case == "random":
+            sample = lb + torch.rand_like(lb) * (ub - lb)
+        else:
+            raise ValueError(f"Unknown test_case '{test_case}'")
+
+        input_layer = next(
+            layer for layer in self._transformer_net.layers if layer.kind == "INPUT"
+        )
+        shape_param = input_layer.params.get("shape")
+        if not isinstance(shape_param, tuple):
+            raise ValueError("Transformer regression INPUT layer has no shape tuple")
+        return sample.reshape(tuple(int(dim) for dim in shape_param))
+
+    def list_networks(self) -> List[str]:
+        """List JSON-backed networks followed by the transformer net."""
+        names = self._base.list_networks()
+        if self.TRANSFORMER_NET_NAME not in names:
+            names.append(self.TRANSFORMER_NET_NAME)
+        return names
+
+    def get_network_info(self, name: str) -> Dict[str, Any]:
+        """Return metadata for JSON-backed and transformer nets."""
+        if name == self.TRANSFORMER_NET_NAME:
+            return {
+                "name": name,
+                "description": "Tiny embedding-space transformer regression net",
+                "architecture_type": "transformer",
+                "input_shape": [1, 1, 2],
+                "num_layers": len(self._transformer_net.layers),
+                "metadata": {"domain": "text"},
+            }
+        return self._base.get_network_info(name)
 
 
 class VerificationValidator:
@@ -185,7 +441,7 @@ class VerificationValidator:
             device: Device for computation ('cpu' or 'cuda')
             dtype: Data type for computation (float32 or float64)
         """
-        self.factory = ModelFactory()
+        self.factory = RegressionHarnessModelFactory()
         self.device = device
         self.dtype = dtype
         self.validation_results = []
@@ -234,10 +490,16 @@ class VerificationValidator:
                             t[:1].expand(target_B, *t.shape[1:]).contiguous()
                         )
                 if L.kind == "INPUT" and "shape" in params:
-                    shp = list(params["shape"])
+                    shape_param = params["shape"]
+                    # JSON loads INPUT shape as a list, but the original guard
+                    # only accepted tuple and silently skipped it, leaving the
+                    # batch axis unbatchified (root cause of the B>1 shape bug).
+                    if not isinstance(shape_param, (list, tuple)):
+                        continue
+                    shp = list(shape_param)
                     if shp and shp[0] != target_B:
                         shp[0] = target_B
-                        params["shape"] = shp
+                        params["shape"] = tuple(shp)
             elif L.kind in ("LSTM", "GRU", "RNN", "EMBEDDING"):
                 params = L.params or {}
                 for key in ("input_shape", "output_shape"):
@@ -245,7 +507,7 @@ class VerificationValidator:
                     if isinstance(shp, (list, tuple)) and shp and shp[0] != target_B:
                         new_shp = list(shp)
                         new_shp[0] = target_B
-                        params[key] = new_shp
+                        params[key] = tuple(new_shp)
             elif L.kind == "ASSERT":
                 self._batchify_assert_layer(L, target_B)
         return self._migrate_net_to_device(new_net)
@@ -382,7 +644,7 @@ class VerificationValidator:
     # at `verifier.py:574-580`).  See `solver_dual.py:evaluate_spec` for the
     # quantifier-swap derivation.  This frozenset is retained as a pre-filter
     # hook for any future kind that DualSolver cannot certify.
-    _DUAL_UNSUPPORTED_SPEC_KINDS: frozenset = frozenset()
+    _DUAL_UNSUPPORTED_SPEC_KINDS: frozenset[str] = frozenset()
 
     # Layer kinds where DualSolver currently has a known soundness gap — the
     # dispatch table at `dual_tf/dual_tf.py:223` aliases LRELU's backward
@@ -391,7 +653,19 @@ class VerificationValidator:
     # produces over-tight dual lower bounds, leading to false-CERTIFIED on
     # LReLU nets.  Tracked for fix in a follow-up PR.  Pre-filtered here so
     # CI reports SKIPPED instead of FAILED on the soundness bug.
-    _DUAL_KNOWN_BROKEN_LAYER_KINDS: frozenset = frozenset({"LRELU"})
+    _DUAL_KNOWN_BROKEN_LAYER_KINDS: frozenset[str] = frozenset({"LRELU"})
+
+    # Networks excluded from Level-2 per-neuron bounds validation.  The
+    # per-neuron check aligns concrete PyTorch forward-hook events 1:1 with ACT
+    # layers by hookable order, but torch2act lowers the fused Q/K/V attention
+    # projections to MHA_SPLIT (non-hookable) while PyTorch still exposes them as
+    # nn.Linear, so the event/layer counts cannot align (7 Linear events vs 4
+    # DENSE layers here).  The abstract bounds themselves are sound and finite;
+    # only the concrete-activation alignment is inapplicable, so the transformer
+    # is covered by the Level-1 two-solver verifier checks instead.
+    _BOUNDS_UNSUPPORTED_NETWORKS: frozenset[str] = frozenset(
+        {RegressionHarnessModelFactory.TRANSFORMER_NET_NAME}
+    )
 
     def _network_supported_by_mode(
         self, net: Net, tf_mode: str
@@ -699,15 +973,24 @@ class VerificationValidator:
         # `_SkipUnsupported` tagged union) so CI doesn't fail on nets containing
         # MaxPool / LSTM / etc when the selected mode lacks a handler.
         skip_reason: Optional[str] = None
+        if (
+            name == RegressionHarnessModelFactory.TRANSFORMER_NET_NAME
+            and batch_size is not None
+            and batch_size > 1
+        ):
+            skip_reason = (
+                "transformer regression net uses native embedding lanes; "
+                "rebatching beyond B=1 is not part of this harness case"
+            )
         if solver == "dual":
             from act.back_end.dual_tf.dual_tf import DualTF
 
             dual_tf = DualTF()
             layer_kinds = {L.kind for L in act_net.layers}
             assert_spec_kinds = {
-                L.params.get("kind")
+                cast(str, L.params.get("kind"))
                 for L in act_net.layers
-                if L.kind == "ASSERT"
+                if L.kind == "ASSERT" and isinstance(L.params.get("kind"), str)
             }
 
             missing = sorted({k for k in layer_kinds if not dual_tf.supports_layer(k)})
@@ -774,10 +1057,12 @@ class VerificationValidator:
                 )
                 # Reshape CE to the model's expected input shape (avoid conv2d shape errors)
                 ce_raw = verify_result.counterexample
-                input_shape = None
+                input_shape: Optional[Tuple[int, ...]] = None
                 for layer in act_net.layers:
                     if getattr(layer, "kind", None) == "INPUT":
-                        input_shape = layer.params.get("shape")
+                        shape_param = layer.params.get("shape")
+                        if isinstance(shape_param, tuple):
+                            input_shape = tuple(int(dim) for dim in shape_param)
                         break
                 try:
                     if input_shape is not None:
@@ -1021,6 +1306,23 @@ class VerificationValidator:
         logger.info(f"Validating bounds: {name} (tf_mode: {tf_mode}, B={batch_size})")
         logger.info(f"{'=' * 80}")
 
+        if name in self._BOUNDS_UNSUPPORTED_NETWORKS:
+            skip_result = {
+                "network": name,
+                "tf_mode": tf_mode,
+                "batch_size": batch_size,
+                "validation_type": "bounds",
+                "validation_status": "SKIPPED",
+                "explanation": (
+                    "⏭️  SKIPPED: transformer regression coverage is validated "
+                    "through Level 1 two-solver verifier checks"
+                ),
+                "unsupported_kinds": [],
+            }
+            logger.info(f"\n  {skip_result['explanation']}")
+            self.validation_results.append(skip_result)
+            return skip_result
+
         act_net = self.factory.get_act_net(name)
         act_net = self._batchify_net(act_net, batch_size)
 
@@ -1104,7 +1406,7 @@ class VerificationValidator:
                     f"analysis. Network must declare an input region."
                 )
             input_bounds = spec_bounds
-            entry_fact = Fact(bounds=input_bounds, cons=None)
+            entry_fact = Fact(bounds=input_bounds, cons=ConSet())
 
             # Step 5: Run abstract analysis + strict per-neuron validation
             try:

@@ -46,10 +46,14 @@
 
 from __future__ import annotations
 import logging
-from typing import Any, ClassVar, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, ClassVar, Dict, List, Optional, Set, Tuple, Union, cast
 import torch
 import torch.nn as nn
 import torch.fx as fx
+try:
+    from onnx2torch.utils.common import OnnxToTorchModule
+except Exception:  # pragma: no cover
+    OnnxToTorchModule = ()
 from torch.nn.modules.batchnorm import _BatchNorm
 
 logger = logging.getLogger(__name__)
@@ -92,6 +96,7 @@ class _LayerGraphBuilder:
     _METADATA_METHODS = frozenset({'size', 'dim', 'numel'})
     _PASSTHROUGH_METHODS = frozenset({'contiguous', 'to', 'float', 'double', 'half', 'cpu', 'cuda', 'detach'})
     _RESHAPE_METHODS = frozenset({'view', 'reshape', 'flatten'})
+    _TRANSPOSE_METHODS = frozenset({'transpose', 'permute'})
 
     # ONNX Shape spec; DeviceManager is float-only so we can't derive this from self.dtype.
     _ONNX_SHAPE_DTYPE: ClassVar[torch.dtype] = torch.int64
@@ -128,6 +133,15 @@ class _LayerGraphBuilder:
         # torch.fx specific
         self.fx_graph: Optional[fx.Graph] = None
         self.traced_model: Optional[fx.GraphModule] = None
+        self._manual_preds: Optional[Dict[int, List[int]]] = None
+        self._manual_succs: Optional[Dict[int, List[int]]] = None
+
+        # Explicit predecessor edges for FX-path layers whose true data source
+        # differs from their FX-arg node. Split decomposes into N sibling SLICEs
+        # that all read the split's input, but each getitem child's FX arg is
+        # the split node (mapped to the LAST chunk), so graph-edge resolution
+        # would mis-wire them. _build_preds_succs honours this override.
+        self._fx_pred_override: Dict[int, List[int]] = {}
 
         # Compile-time constants (e.g. OnnxShape values) that must NOT enter
         # the runtime IR. Resolved by ``_resolve_constant_tensor`` BEFORE any
@@ -149,6 +163,11 @@ class _LayerGraphBuilder:
         # Initialize input vars
         n_inputs = _prod(self.input_shape)
         self.prev_out = self._alloc_ids(n_inputs)
+
+        if self._try_build_vit_graph() or self._try_build_bert_transformer_graph():
+            if self._manual_preds is None or self._manual_succs is None:
+                raise RuntimeError("Manual transformer graph did not produce graph edges.")
+            return self.layers, self._manual_preds, self._manual_succs
 
         # Extract computation graph using torch.fx
         self._extract_graph()
@@ -190,6 +209,556 @@ class _LayerGraphBuilder:
         )
         self.layers.append(layer)
         return layer.id
+
+    def _add_manual_layer(
+        self,
+        kind: str,
+        params: Dict[str, Any],
+        in_vars: List[int],
+        out_vars: List[int],
+        pred_ids: List[int],
+    ) -> int:
+        """Add a layer and explicit predecessor edges for manual graph mapping."""
+        layer_id = self._add_layer(kind, params, in_vars, out_vars)
+        if self._manual_preds is None:
+            self._manual_preds = {}
+        if self._manual_succs is None:
+            self._manual_succs = {}
+        self._manual_preds[layer_id] = list(pred_ids)
+        self._manual_succs.setdefault(layer_id, [])
+        for pred in pred_ids:
+            self._manual_succs.setdefault(pred, [])
+            if layer_id not in self._manual_succs[pred]:
+                self._manual_succs[pred].append(layer_id)
+        return layer_id
+
+    def _try_build_vit_graph(self) -> bool:
+        """Map explicit tiny ViT modules to existing ACT transformer layers."""
+        patch_embed = getattr(self.model, "patch_embed", None)
+        patch_proj = getattr(patch_embed, "proj", None)
+        block = getattr(self.model, "block", None)
+        norm = getattr(self.model, "norm", None)
+        head = getattr(self.model, "head", None)
+        cls_token = getattr(self.model, "cls_token", None)
+        pos_embed = getattr(self.model, "pos_embed", None)
+        if not (
+            isinstance(patch_proj, nn.Conv2d)
+            and isinstance(block, nn.Module)
+            and self._is_bert_layer(block)
+            and isinstance(norm, nn.Module)
+            and isinstance(head, nn.Linear)
+            and isinstance(cls_token, torch.Tensor)
+            and isinstance(pos_embed, torch.Tensor)
+        ):
+            return False
+
+        self._manual_preds = {}
+        self._manual_succs = {}
+        current_vars = self.prev_out
+        current_shape = self.shape
+
+        patch_vars, patch_shape, patch_id = self._add_manual_conv2d(
+            patch_proj, current_vars, current_shape, []
+        )
+        flat_vars = self._alloc_ids(len(patch_vars))
+        flat_shape = (patch_shape[0], patch_shape[1], patch_shape[2] * patch_shape[3])
+        flat_id = self._add_manual_layer(
+            LayerKind.FLATTEN.value,
+            {"input_shape": patch_shape, "output_shape": flat_shape, "start_dim": 2, "end_dim": 3},
+            patch_vars, flat_vars, [patch_id],
+        )
+        patch_seq_vars = self._alloc_ids(len(flat_vars))
+        patch_seq_shape = (flat_shape[0], flat_shape[2], flat_shape[1])
+        transpose_id = self._add_manual_layer(
+            LayerKind.TRANSPOSE.value, {"perm": (0, 2, 1)}, flat_vars, patch_seq_vars, [flat_id],
+        )
+
+        cls_shape = tuple(int(d) for d in cls_token.shape)
+        cls_const_vars, cls_const_id = self._add_manual_constant(cls_token.detach(), cls_shape)
+        cls_expand_vars = self._alloc_ids(_prod(cls_shape) or 1)
+        cls_expand_id = self._add_manual_layer(
+            LayerKind.EXPAND.value,
+            {"shape": cls_shape, "input_shape": cls_shape, "output_shape": cls_shape},
+            cls_const_vars, cls_expand_vars, [cls_const_id],
+        )
+
+        seq_shape = (patch_seq_shape[0], patch_seq_shape[1] + cls_shape[1], patch_seq_shape[2])
+        concat_vars = self._alloc_ids(_prod(seq_shape) or 1)
+        concat_id = self._add_manual_layer(
+            LayerKind.CONCAT.value,
+            {"concat_dim": 1},
+            cls_expand_vars + patch_seq_vars, concat_vars, [cls_expand_id, transpose_id],
+        )
+
+        pos_shape = tuple(int(d) for d in pos_embed.shape)
+        pos_vars, pos_id = self._add_manual_constant(pos_embed.detach(), pos_shape)
+        pos_add_vars = self._alloc_ids(len(concat_vars))
+        pos_add_id = self._add_manual_layer(
+            LayerKind.ADD.value,
+            {
+                "x_vars": concat_vars, "y_vars": pos_vars,
+                "input_shape": seq_shape, "output_shape": seq_shape,
+            },
+            concat_vars + pos_vars, pos_add_vars, [concat_id, pos_id],
+        )
+
+        block_vars, block_shape, block_ids = self._build_bert_block(
+            block, pos_add_vars, seq_shape, [pos_add_id]
+        )
+        norm_vars, norm_id = self._add_manual_layernorm(norm, block_vars, block_shape, block_ids)
+
+        cls_vars = self._alloc_ids(int(block_shape[-1]))
+        gather_id = self._add_manual_layer(
+            LayerKind.GATHER.value,
+            {
+                "indices": torch.tensor([0], dtype=torch.long), "axis": 0,
+                "input_shape": (int(block_shape[-2]), int(block_shape[-1])), "output_shape": (1, int(block_shape[-1])),
+            },
+            norm_vars, cls_vars, [norm_id],
+        )
+        cls_flat_vars = self._alloc_ids(int(block_shape[-1]))
+        reshape_id = self._add_manual_layer(
+            LayerKind.RESHAPE.value,
+            {
+                "input_shape": (1, 1, int(block_shape[-1])),
+                "output_shape": (1, int(block_shape[-1])),
+                "target_shape": (1, int(block_shape[-1])),
+            },
+            cls_vars, cls_flat_vars, [gather_id],
+        )
+        head_vars, head_shape, head_id = self._add_manual_dense(
+            head, cls_flat_vars, (1, int(block_shape[-1])), [reshape_id]
+        )
+
+        self.prev_out = head_vars
+        self.shape = head_shape
+        n_layers = len(self.layers)
+        self._manual_preds = {i: self._manual_preds.get(i, []) for i in range(n_layers)}
+        self._manual_succs = {i: self._manual_succs.get(i, []) for i in range(n_layers)}
+        _assert_dag(self._manual_preds, self._manual_succs, n_layers)
+        return True
+
+    def _add_manual_constant(self, value: torch.Tensor, shape: Tuple[int, ...]) -> Tuple[List[int], int]:
+        """Add a fixed tensor source layer for parameters used as graph operands."""
+        flat = value.detach().clone().to(self.dtype).reshape(-1)
+        out_vars = self._alloc_ids(int(flat.numel()) or 1)
+        layer_id = self._add_manual_layer(
+            LayerKind.CONSTANT.value,
+            {"value": flat, "input_shape": shape, "output_shape": shape},
+            [], out_vars, [],
+        )
+        return out_vars, layer_id
+
+    def _add_manual_conv2d(
+        self,
+        mod: nn.Conv2d,
+        in_vars: List[int],
+        in_shape: Tuple[int, ...],
+        pred_ids: List[int],
+    ) -> Tuple[List[int], Tuple[int, ...], int]:
+        """Add a Conv2d layer preserving PyTorch convolution parameters."""
+        if len(in_shape) != 4:
+            raise ValueError(f"ViT patch embedding requires 4D input, got {in_shape}.")
+        _, in_c, in_h, in_w = (int(d) for d in in_shape)
+        kernel_size = tuple(int(d) for d in _normalize_tuple(mod.kernel_size))
+        stride = tuple(int(d) for d in _normalize_tuple(mod.stride))
+        padding = tuple(int(d) for d in _normalize_tuple(mod.padding, (0, 0)))
+        dilation = tuple(int(d) for d in _normalize_tuple(mod.dilation))
+        out_h = (in_h + 2 * padding[0] - dilation[0] * (kernel_size[0] - 1) - 1) // stride[0] + 1
+        out_w = (in_w + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1) // stride[1] + 1
+        out_shape = (1, int(mod.out_channels), int(out_h), int(out_w))
+        out_vars = self._alloc_ids(_prod(out_shape) or 1)
+        params: Dict[str, Any] = {
+            "weight": mod.weight.detach(),
+            "input_shape": in_shape, "output_shape": out_shape,
+            "kernel_size": kernel_size, "stride": stride,
+            "padding": padding, "dilation": dilation,
+            "groups": mod.groups, "in_channels": int(in_c),
+            "out_channels": int(mod.out_channels),
+        }
+        if mod.bias is not None:
+            params["bias"] = mod.bias.detach()
+        layer_id = self._add_manual_layer(
+            LayerKind.CONV2D.value, params, in_vars, out_vars, pred_ids
+        )
+        return out_vars, out_shape, layer_id
+
+    def _try_build_bert_transformer_graph(self) -> bool:
+        """Map explicit BERT-style BertLayer modules to transformer ACT layers."""
+        blocks = self._find_bert_encoder_blocks(self.model)
+        if not blocks:
+            return False
+
+        self._manual_preds = {}
+        self._manual_succs = {}
+        current_vars = self.prev_out
+        current_shape = self.shape
+        anchor_vars = self._alloc_ids(len(current_vars))
+        anchor_id = self._add_manual_layer(
+            LayerKind.RESHAPE.value,
+            {"input_shape": current_shape, "output_shape": current_shape, "target_shape": current_shape},
+            current_vars,
+            anchor_vars,
+            [],
+        )
+        current_vars = anchor_vars
+        current_layer_ids: List[int] = [anchor_id]
+
+        for block in blocks:
+            current_vars, current_shape, current_layer_ids = self._build_bert_block(
+                block, current_vars, current_shape, current_layer_ids
+            )
+
+        classifier = getattr(self.model, "classifier", None)
+        if isinstance(classifier, nn.Linear):
+            pooled_vars = self._alloc_ids(int(classifier.in_features))
+            if len(current_shape) >= 3:
+                pool_id = self._add_manual_layer(
+                    LayerKind.GATHER.value,
+                    {
+                        "indices": torch.tensor([0], dtype=torch.long), "axis": 0,
+                        "input_shape": (int(current_shape[-2]), int(current_shape[-1])),
+                        "output_shape": (1, int(classifier.in_features)),
+                    },
+                    current_vars, pooled_vars, current_layer_ids,
+                )
+                reshape_vars = self._alloc_ids(int(classifier.in_features))
+                pool_id = self._add_manual_layer(
+                    LayerKind.RESHAPE.value,
+                    {
+                        "input_shape": (1, 1, int(classifier.in_features)),
+                        "output_shape": (1, int(classifier.in_features)),
+                        "target_shape": (1, int(classifier.in_features)),
+                    },
+                    pooled_vars, reshape_vars, [pool_id],
+                )
+                pooled_vars = reshape_vars
+            else:
+                pool_id = self._add_manual_layer(
+                    LayerKind.RESHAPE.value,
+                    {
+                        "input_shape": current_shape,
+                        "output_shape": (1, int(classifier.in_features)),
+                        "target_shape": (1, int(classifier.in_features)),
+                    },
+                    current_vars, pooled_vars, current_layer_ids,
+                )
+            current_vars = pooled_vars
+            current_shape = (1, int(classifier.in_features))
+            current_layer_ids = [pool_id]
+            current_vars, current_shape, dense_id = self._add_manual_dense(
+                classifier, current_vars, current_shape, current_layer_ids
+            )
+            current_layer_ids = [dense_id]
+
+        self.prev_out = current_vars
+        self.shape = current_shape
+        n_layers = len(self.layers)
+        self._manual_preds = {i: self._manual_preds.get(i, []) for i in range(n_layers)}
+        self._manual_succs = {i: self._manual_succs.get(i, []) for i in range(n_layers)}
+        _assert_dag(self._manual_preds, self._manual_succs, n_layers)
+        return True
+
+    def _find_bert_encoder_blocks(self, model: nn.Module) -> List[nn.Module]:
+        """Return explicit BERT BertLayer modules when present."""
+        candidates: List[Any] = []
+        encoder = getattr(model, "encoder", None)
+        if encoder is not None:
+            candidates.append(getattr(encoder, "layer", None))
+        candidates.extend([
+            getattr(model, "layer", None),
+            getattr(model, "layers", None),
+            getattr(model, "blocks", None),
+        ])
+        for candidate in candidates:
+            if isinstance(candidate, nn.ModuleList):
+                blocks = list(candidate)
+            elif isinstance(candidate, (list, tuple)) and all(isinstance(x, nn.Module) for x in candidate):
+                blocks = list(candidate)
+            elif isinstance(candidate, nn.Module):
+                blocks = [candidate]
+            else:
+                continue
+            if blocks and all(self._is_bert_layer(block) for block in blocks):
+                return blocks
+        if self._is_bert_layer(model):
+            return [model]
+        return []
+
+    def _is_bert_layer(self, block: nn.Module) -> bool:
+        attention = getattr(block, "attention", None)
+        intermediate = getattr(block, "intermediate", None)
+        output = getattr(block, "output", None)
+        self_attn = getattr(attention, "self", None) if attention is not None else None
+        attn_output = getattr(attention, "output", None) if attention is not None else None
+        return all(
+            hasattr(self_attn, name) and isinstance(getattr(self_attn, name), nn.Linear)
+            for name in ("query", "key", "value")
+        ) and all(x is not None for x in (attn_output, intermediate, output))
+
+    def _build_bert_block(
+        self,
+        block: nn.Module,
+        input_vars: List[int],
+        input_shape: Tuple[int, ...],
+        input_layer_ids: List[int],
+    ) -> Tuple[List[int], Tuple[int, ...], List[int]]:
+        if not input_shape:
+            raise ValueError("Transformer block mapping requires a non-empty input shape.")
+        block_any = cast(Any, block)
+        attention = block_any.attention
+        self_attn = attention.self
+        attn_output = attention.output
+        intermediate = block_any.intermediate
+        block_output = block_any.output
+        seq_len = int(input_shape[1]) if len(input_shape) >= 3 else 1
+        hidden_size = int(input_shape[len(input_shape) - 1])
+        head_dim = int(getattr(self_attn, "attention_head_size", hidden_size))
+
+        score_rows: List[int] = []
+        for pos in range(seq_len):
+            q_vars = self._alloc_ids(head_dim)
+            q_id = self._add_manual_layer(
+                LayerKind.MHA_SPLIT.value,
+                self._mha_split_params("query", self_attn.query, pos, None, input_shape, (1, head_dim)),
+                input_vars,
+                q_vars,
+                input_layer_ids,
+            )
+            row_score_ids: List[int] = []
+            row_score_vars: List[int] = []
+            for key_pos in range(seq_len):
+                k_vars = self._alloc_ids(head_dim)
+                k_id = self._add_manual_layer(
+                    LayerKind.MHA_SPLIT.value,
+                    self._mha_split_params("key", self_attn.key, key_pos, None, input_shape, (1, head_dim)),
+                    input_vars,
+                    k_vars,
+                    input_layer_ids,
+                )
+                score_vars = self._alloc_ids(1)
+                score_id = self._add_manual_layer(
+                    LayerKind.ATT_SCORES.value,
+                    {
+                        "dk": float(head_dim) ** 0.5,
+                        "q_vars": q_vars,
+                        "k_vars": k_vars,
+                        "q_src": q_id,
+                        "k_src": k_id,
+                        "query_position": pos,
+                        "key_position": key_pos,
+                        "input_shape": (1, head_dim),
+                        "output_shape": (1, 1),
+                    },
+                    q_vars + k_vars,
+                    score_vars,
+                    [q_id, k_id],
+                )
+                row_score_ids.append(score_id)
+                row_score_vars.extend(score_vars)
+            if len(row_score_ids) == 1:
+                softmax_in_vars = row_score_vars
+                softmax_preds = row_score_ids
+            else:
+                softmax_in_vars = row_score_vars
+                concat_vars = self._alloc_ids(seq_len)
+                concat_id = self._add_manual_layer(
+                    LayerKind.CONCAT.value,
+                    {"concat_dim": -1},
+                    row_score_vars,
+                    concat_vars,
+                    row_score_ids,
+                )
+                softmax_in_vars = concat_vars
+                softmax_preds = [concat_id]
+            prob_vars = self._alloc_ids(seq_len)
+            prob_id = self._add_manual_layer(
+                LayerKind.SOFTMAX.value,
+                {"axis": -1},
+                softmax_in_vars,
+                prob_vars,
+                softmax_preds,
+            )
+            score_rows.append(prob_id)
+
+        context_ids: List[int] = []
+        context_vars: List[int] = []
+        for pos, prob_id in enumerate(score_rows):
+            for feature in range(hidden_size):
+                v_vars = self._alloc_ids(seq_len)
+                v_id = self._add_manual_layer(
+                    LayerKind.MHA_SPLIT.value,
+                    self._mha_split_params("value", self_attn.value, None, feature, input_shape, (1, seq_len)),
+                    input_vars,
+                    v_vars,
+                    input_layer_ids,
+                )
+                mix_vars = self._alloc_ids(1)
+                mix_id = self._add_manual_layer(
+                    LayerKind.ATT_MIX.value,
+                    {
+                        "rowsize": seq_len,
+                        "w_vars": self.layers[prob_id].out_vars,
+                        "v_vars": v_vars,
+                        "w_src": prob_id,
+                        "v_src": v_id,
+                        "query_position": pos,
+                        "feature": feature,
+                        "input_shape": (1, seq_len),
+                        "output_shape": (1, 1),
+                    },
+                    self.layers[prob_id].out_vars + v_vars,
+                    mix_vars,
+                    [prob_id, v_id],
+                )
+                context_ids.append(mix_id)
+                context_vars.extend(mix_vars)
+        joined_vars = self._alloc_ids(seq_len * hidden_size)
+        join_id = self._add_manual_layer(
+            LayerKind.MHA_JOIN.value,
+            {"seq_len": seq_len, "hidden_size": hidden_size, "output_shape": (1, seq_len, hidden_size)},
+            context_vars,
+            joined_vars,
+            context_ids,
+        )
+
+        attn_dense_vars, attn_dense_shape, attn_dense_id = self._add_manual_dense(
+            attn_output.dense, joined_vars, (1, seq_len * hidden_size), [join_id]
+        )
+        add1_vars = self._alloc_ids(len(attn_dense_vars))
+        add1_id = self._add_manual_layer(
+            LayerKind.ADD.value,
+            {
+                "x_vars": attn_dense_vars,
+                "y_vars": input_vars,
+                "input_shape": attn_dense_shape,
+                "output_shape": attn_dense_shape,
+            },
+            attn_dense_vars + input_vars,
+            add1_vars,
+            [attn_dense_id] + input_layer_ids,
+        )
+        norm1_vars, norm1_id = self._add_manual_layernorm(attn_output.LayerNorm, add1_vars, attn_dense_shape, [add1_id])
+
+        ffn_vars, ffn_shape, ffn_dense_id = self._add_manual_dense(
+            intermediate.dense, norm1_vars, attn_dense_shape, [norm1_id]
+        )
+        act_kind = LayerKind.GELU if self._uses_gelu(intermediate) else LayerKind.RELU
+        act_vars = self._alloc_ids(len(ffn_vars))
+        act_id = self._add_manual_layer(
+            act_kind.value,
+            {"input_shape": ffn_shape, "output_shape": ffn_shape},
+            ffn_vars,
+            act_vars,
+            [ffn_dense_id],
+        )
+        out_vars, out_shape, out_dense_id = self._add_manual_dense(
+            block_output.dense, act_vars, ffn_shape, [act_id]
+        )
+        add2_vars = self._alloc_ids(len(out_vars))
+        add2_id = self._add_manual_layer(
+            LayerKind.ADD.value,
+            {
+                "x_vars": out_vars,
+                "y_vars": norm1_vars,
+                "input_shape": out_shape,
+                "output_shape": out_shape,
+            },
+            out_vars + norm1_vars,
+            add2_vars,
+            [out_dense_id, norm1_id],
+        )
+        norm2_vars, norm2_id = self._add_manual_layernorm(block_output.LayerNorm, add2_vars, out_shape, [add2_id])
+        return norm2_vars, out_shape, [norm2_id]
+
+    def _mha_split_params(
+        self,
+        role: str,
+        projection: nn.Linear,
+        position: Optional[int],
+        feature: Optional[int],
+        input_shape: Tuple[int, ...],
+        output_shape: Tuple[int, ...],
+    ) -> Dict[str, Any]:
+        params: Dict[str, Any] = {
+            "role": role,
+            "weight": projection.weight.detach(),
+            "hidden_size": int(projection.in_features),
+            "input_shape": input_shape,
+            "output_shape": output_shape,
+        }
+        if projection.bias is not None:
+            params["bias"] = projection.bias.detach()
+        if position is not None:
+            params["position"] = int(position)
+        if feature is not None:
+            params["feature"] = int(feature)
+        return params
+
+    def _add_manual_dense(
+        self,
+        mod: nn.Linear,
+        in_vars: List[int],
+        in_shape: Tuple[int, ...],
+        pred_ids: List[int],
+    ) -> Tuple[List[int], Tuple[int, ...], int]:
+        in_features = int(mod.in_features)
+        out_features = int(mod.out_features)
+        if len(in_vars) == in_features:
+            weight = mod.weight.detach()
+            bias = mod.bias.detach() if mod.bias is not None else None
+            output_shape = (1, out_features)
+        elif len(in_vars) % in_features == 0:
+            token_count = len(in_vars) // in_features
+            weight = torch.block_diag(*[mod.weight.detach()] * token_count)
+            bias = mod.bias.detach().repeat(token_count) if mod.bias is not None else None
+            if len(in_shape) >= 3:
+                output_shape = (*in_shape[:-1], out_features)
+            else:
+                output_shape = (1, token_count, out_features)
+        else:
+            raise ValueError(
+                f"Dense input size {len(in_vars)} is not compatible with in_features={in_features}."
+            )
+        out_vars = self._alloc_ids(_prod(output_shape) or 1)
+        params = {
+            "weight": weight,
+            "in_features": int(weight.shape[1]),
+            "out_features": int(weight.shape[0]),
+            "input_shape": in_shape,
+            "output_shape": output_shape,
+        }
+        if bias is not None:
+            params["bias"] = bias
+        layer_id = self._add_manual_layer(LayerKind.DENSE.value, params, in_vars, out_vars, pred_ids)
+        return out_vars, output_shape, layer_id
+
+    def _add_manual_layernorm(
+        self,
+        mod: nn.Module,
+        in_vars: List[int],
+        in_shape: Tuple[int, ...],
+        pred_ids: List[int],
+    ) -> Tuple[List[int], int]:
+        gamma = getattr(mod, "weight").detach()
+        beta = getattr(mod, "bias").detach()
+        eps = float(getattr(mod, "variance_epsilon", getattr(mod, "eps", 1e-5)))
+        out_vars = self._alloc_ids(len(in_vars))
+        layer_id = self._add_manual_layer(
+            LayerKind.LAYERNORM.value,
+            {"gamma": gamma, "beta": beta, "eps": eps, "input_shape": in_shape, "output_shape": in_shape},
+            in_vars,
+            out_vars,
+            pred_ids,
+        )
+        return out_vars, layer_id
+
+    def _uses_gelu(self, module: nn.Module) -> bool:
+        act = getattr(module, "intermediate_act_fn", None)
+        if isinstance(act, nn.GELU):
+            return True
+        name = getattr(act, "__name__", "").lower()
+        return "gelu" in name
     
     def _register_node(self, name: str, layer_id: Optional[int] = None) -> None:
         """Register node's output vars, shape, and layer mapping."""
@@ -370,13 +939,23 @@ class _LayerGraphBuilder:
             raise RuntimeError(f"Failed to trace model with torch.fx: {e}")
     
     def _build_fx_graph_edges(self) -> None:
-        """Build graph edge dictionary from torch.fx graph."""
+        """Build graph edge dictionary from torch.fx graph.
+
+        Args may hold fx.Nodes directly OR inside a list/tuple (e.g. torch.cat /
+        torch.stack take a list of tensors). Both must be recorded so merge
+        layers (CONCAT/STACK) connect to ALL of their branch producers, not just
+        the sequential fallback predecessor.
+        """
         if self.fx_graph is None:
             return
         for node in self.fx_graph.nodes:
-            self.graph_edges[node.name] = [
-                arg.name for arg in node.args if isinstance(arg, fx.Node)
-            ]
+            edge_preds: List[str] = []
+            for arg in node.args:
+                if isinstance(arg, fx.Node):
+                    edge_preds.append(arg.name)
+                elif isinstance(arg, (list, tuple)):
+                    edge_preds.extend(a.name for a in arg if isinstance(a, fx.Node))
+            self.graph_edges[node.name] = edge_preds
     
     # -------------------------------------------------------------------------
     # FX Graph Processing
@@ -406,7 +985,7 @@ class _LayerGraphBuilder:
         if module is None:
             raise ValueError(f"Module '{node.target}' not found in traced model")
 
-        if 'onnx2torch' in type(module).__module__:
+        if 'onnx2torch' in type(module).__module__ or (OnnxToTorchModule and isinstance(module, OnnxToTorchModule)):
             cls_name = type(module).__name__
             handler = getattr(self, f'_convert_{cls_name}', None)
             if handler is None:
@@ -426,6 +1005,7 @@ class _LayerGraphBuilder:
         
         handlers = {
             'add': self._process_add_operation,
+            'sub': self._process_sub_operation,
             'cat': self._process_concat_operation,
             'concat': self._process_concat_operation,
             'flatten': self._process_flatten_function,
@@ -463,7 +1043,15 @@ class _LayerGraphBuilder:
         
         elif method_name in self._RESHAPE_METHODS:
             if self._get_predecessor_state(node):
-                self._create_flatten_layer(node.name)
+                self._create_reshape_method_layer(node)
+
+        elif method_name in self._TRANSPOSE_METHODS:
+            if self._get_predecessor_state(node):
+                self._create_transpose_method_layer(node)
+
+        elif method_name == 'expand':
+            if self._get_predecessor_state(node):
+                self._create_expand_method_layer(node)
         
         else:
             raise NotImplementedError(
@@ -545,7 +1133,20 @@ class _LayerGraphBuilder:
                 # -> connect to previous layer (internal layer within multi-layer conversion)
                 preds[i] = [i - 1]
             # else: Mapped layer with FX predecessors OR takes network input - keep as-is
-        
+
+        # Explicit overrides (e.g. split-chunk SLICEs) replace FX-derived edges
+        # before succs are built so both directions stay consistent.
+        for lid, override in self._fx_pred_override.items():
+            if 0 <= lid < n_layers:
+                preds[lid] = list(override)
+
+        # CONSTANT layers inject a fixed tensor (data-independent source); any
+        # FX edge to them is a shape/control artifact, so they must have no
+        # predecessors or the dual backward would route ν into a wrong-width op.
+        for i in range(n_layers):
+            if self.layers[i].kind == LayerKind.CONSTANT.value:
+                preds[i] = []
+
         # Build succs from preds
         for i in range(n_layers):
             for pred_id in preds[i]:
@@ -598,6 +1199,140 @@ class _LayerGraphBuilder:
     # Layer Conversion - Specific Converters
     # -------------------------------------------------------------------------
     
+    def _resolve_int_arg(self, value: Any) -> Optional[int]:
+        """Resolve FX literal integer arguments produced by shape metadata nodes."""
+        if isinstance(value, int):
+            return int(value)
+        if isinstance(value, fx.Node):
+            if value.op == 'call_method' and value.target == 'size':
+                if len(value.args) >= 2 and isinstance(value.args[1], int):
+                    source = value.args[0]
+                    if isinstance(source, fx.Node) and source.name in self.node_shapes:
+                        dim = int(value.args[1])
+                        shape = self.node_shapes[source.name]
+                        return int(shape[dim])
+            const = self._resolve_constant_tensor(value.name)
+            if const is not None and const.numel() == 1:
+                return int(const.reshape(-1)[0].item())
+        return None
+
+    def _normalize_target_shape(self, raw_shape: Tuple[Any, ...]) -> Tuple[int, ...]:
+        """Resolve reshape/expand dimensions against the current ACT shape."""
+        shape: List[int] = []
+        for index, dim_value in enumerate(raw_shape):
+            dim = self._resolve_int_arg(dim_value)
+            if dim is None:
+                raise ValueError(f"Cannot resolve tensor shape argument {dim_value!r}.")
+            if dim == -1:
+                shape.append(-1)
+            else:
+                shape.append(int(self.shape[index]) if dim == 0 and index < len(self.shape) else dim)
+        if -1 in shape:
+            known = _prod(tuple(d for d in shape if d != -1)) or 1
+            shape[shape.index(-1)] = _prod(self.shape) // known
+        return tuple(shape)
+
+    def _create_reshape_method_layer(self, node: fx.Node) -> List[int]:
+        """Create a RESHAPE/FLATTEN layer for tensor shape methods."""
+        method_name = str(node.target)
+        if method_name == 'flatten':
+            start_dim = int(node.args[1]) if len(node.args) > 1 and isinstance(node.args[1], int) else 0
+            end_dim = int(node.args[2]) if len(node.args) > 2 and isinstance(node.args[2], int) else -1
+            rank = len(self.shape)
+            if start_dim < 0:
+                start_dim += rank
+            if end_dim < 0:
+                end_dim += rank
+            output_shape = (
+                *self.shape[:start_dim],
+                _prod(self.shape[start_dim:end_dim + 1]),
+                *self.shape[end_dim + 1:],
+            )
+            out_vars = self._same_size_forward()
+            layer_id = self._add_layer(
+                LayerKind.FLATTEN.value,
+                {
+                    "input_shape": self.shape, "output_shape": output_shape,
+                    "start_dim": start_dim, "end_dim": end_dim,
+                },
+                self.prev_out, out_vars,
+            )
+            self.prev_out = out_vars
+            self.shape = output_shape
+            self._register_node(node.name, layer_id)
+            return out_vars
+
+        raw_shape = tuple(node.args[1:])
+        if len(raw_shape) == 1 and isinstance(raw_shape[0], (list, tuple)):
+            raw_shape = tuple(raw_shape[0])
+        output_shape = self._normalize_target_shape(raw_shape)
+        out_vars = self._alloc_ids(_prod(output_shape) or 1)
+        if len(out_vars) != len(self.prev_out):
+            raise ValueError(f"Reshape changes element count from {len(self.prev_out)} to {len(out_vars)}.")
+        layer_id = self._add_layer(
+            LayerKind.RESHAPE.value,
+            {"target_shape": output_shape, "input_shape": self.shape, "output_shape": output_shape},
+            self.prev_out, out_vars,
+        )
+        self.prev_out = out_vars
+        self.shape = output_shape
+        self._register_node(node.name, layer_id)
+        return out_vars
+
+    def _create_transpose_method_layer(self, node: fx.Node) -> List[int]:
+        """Create a TRANSPOSE layer for tensor transpose/permute methods."""
+        rank = len(self.shape)
+        if node.target == 'transpose':
+            if len(node.args) < 3:
+                raise ValueError(f"transpose at {node.name} requires two dimensions.")
+            dim0 = int(node.args[1])
+            dim1 = int(node.args[2])
+            if dim0 < 0:
+                dim0 += rank
+            if dim1 < 0:
+                dim1 += rank
+            perm = list(range(rank))
+            perm[dim0], perm[dim1] = perm[dim1], perm[dim0]
+        else:
+            perm_args = node.args[1:]
+            if len(perm_args) == 1 and isinstance(perm_args[0], (list, tuple)):
+                perm_args = tuple(perm_args[0])
+            perm = [int(p) + rank if int(p) < 0 else int(p) for p in perm_args]
+        if len(perm) != rank:
+            raise ValueError(f"transpose rank {len(perm)} does not match input rank {rank}.")
+        output_shape = tuple(self.shape[p] for p in perm)
+        out_vars = self._same_size_forward()
+        layer_id = self._add_layer(
+            LayerKind.TRANSPOSE.value,
+            {"perm": tuple(perm)},
+            self.prev_out, out_vars,
+        )
+        self.prev_out = out_vars
+        self.shape = output_shape
+        self._register_node(node.name, layer_id)
+        return out_vars
+
+    def _create_expand_method_layer(self, node: fx.Node) -> List[int]:
+        """Create an EXPAND layer for tensor broadcast expansion."""
+        raw_shape = tuple(node.args[1:])
+        if len(raw_shape) == 1 and isinstance(raw_shape[0], (list, tuple)):
+            raw_shape = tuple(raw_shape[0])
+        target_shape = self._normalize_target_shape(raw_shape)
+        try:
+            output_shape = tuple(int(d) for d in torch.broadcast_shapes(self.shape, target_shape))
+        except RuntimeError as exc:
+            raise ValueError(f"Cannot expand {self.shape} to {target_shape}.") from exc
+        out_vars = self._alloc_ids(_prod(output_shape) or 1)
+        layer_id = self._add_layer(
+            LayerKind.EXPAND.value,
+            {"shape": output_shape, "input_shape": self.shape, "output_shape": output_shape},
+            self.prev_out, out_vars,
+        )
+        self.prev_out = out_vars
+        self.shape = output_shape
+        self._register_node(node.name, layer_id)
+        return out_vars
+
     def _create_flatten_layer(self, node_name: Optional[str] = None,
                                start_dim: int = 1, end_dim: int = -1) -> List[int]:
         """Create FLATTEN layer, optionally register node."""
@@ -651,8 +1386,7 @@ class _LayerGraphBuilder:
     def _convert_conv2d(self, mod: nn.Conv2d) -> None:
         """Convert nn.Conv2d."""
         weight = mod.weight.detach()
-        has_bias = mod.bias is not None
-        bias = mod.bias.detach() if has_bias else None
+        bias = mod.bias.detach() if mod.bias is not None else None
         
         # Infer input shape if flattened
         if len(self.shape) == 2:
@@ -661,20 +1395,24 @@ class _LayerGraphBuilder:
             spatial = int((n_features / channels) ** 0.5)
             input_shape = (1, channels, spatial, spatial)
         else:
-            input_shape = self.shape
+            input_shape = tuple(int(d) for d in self.shape)
         
-        batch, in_c, in_h, in_w = input_shape
-        out_c = mod.out_channels
-        out_h = (in_h + 2 * mod.padding[0] - mod.dilation[0] * (mod.kernel_size[0] - 1) - 1) // mod.stride[0] + 1
-        out_w = (in_w + 2 * mod.padding[1] - mod.dilation[1] * (mod.kernel_size[1] - 1) - 1) // mod.stride[1] + 1
+        batch, in_c, in_h, in_w = (int(d) for d in input_shape)
+        out_c = int(mod.out_channels)
+        kernel_size = tuple(int(d) for d in _normalize_tuple(mod.kernel_size))
+        stride = tuple(int(d) for d in _normalize_tuple(mod.stride))
+        padding = tuple(int(d) for d in _normalize_tuple(mod.padding, (0, 0)))
+        dilation = tuple(int(d) for d in _normalize_tuple(mod.dilation))
+        out_h = (in_h + 2 * padding[0] - dilation[0] * (kernel_size[0] - 1) - 1) // stride[0] + 1
+        out_w = (in_w + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1) // stride[1] + 1
         output_shape = (1, out_c, out_h, out_w)
         
         
         params = {
             "weight": weight,
             "input_shape": input_shape, "output_shape": output_shape,
-            "kernel_size": mod.kernel_size, "stride": mod.stride,
-            "padding": mod.padding, "dilation": mod.dilation,
+            "kernel_size": kernel_size, "stride": stride,
+            "padding": padding, "dilation": dilation,
             "groups": mod.groups, "in_channels": in_c, "out_channels": out_c
         }
         if bias is not None:
@@ -695,10 +1433,12 @@ class _LayerGraphBuilder:
         weight = mod.weight.detach()
         bias = mod.bias.detach() if mod.bias is not None else None
 
-        _, in_c, in_h, in_w = self.shape
-        out_c = mod.out_channels
-        st, pad, dil = mod.stride, mod.padding, mod.dilation
-        op = mod.output_padding
+        _, in_c, in_h, in_w = (int(d) for d in self.shape)
+        out_c = int(mod.out_channels)
+        st = tuple(int(d) for d in _normalize_tuple(mod.stride))
+        pad = tuple(int(d) for d in _normalize_tuple(mod.padding, (0, 0)))
+        dil = tuple(int(d) for d in _normalize_tuple(mod.dilation))
+        op = tuple(int(d) for d in _normalize_tuple(mod.output_padding, (0, 0)))
         out_h = (in_h - 1) * st[0] - 2 * pad[0] + dil[0] * (mod.kernel_size[0] - 1) + op[0] + 1
         out_w = (in_w - 1) * st[1] - 2 * pad[1] + dil[1] * (mod.kernel_size[1] - 1) + op[1] + 1
         output_shape = (1, out_c, out_h, out_w)
@@ -752,9 +1492,11 @@ class _LayerGraphBuilder:
         if len(self.shape) != 4:
             raise ValueError(f"AdaptiveAvgPool2d requires 4D input, got {len(self.shape)}D")
         
-        batch, in_c, in_h, in_w = self.shape
+        batch, in_c, in_h, in_w = (int(d) for d in self.shape)
         out_size = mod.output_size
-        out_h, out_w = (out_size, out_size) if isinstance(out_size, int) else out_size
+        out_h_raw, out_w_raw = (out_size, out_size) if isinstance(out_size, int) else tuple(out_size)
+        out_h = in_h if out_h_raw is None else int(out_h_raw)
+        out_w = in_w if out_w_raw is None else int(out_w_raw)
         output_shape = (1, in_c, out_h, out_w)
         
         out_vars = self._alloc_ids(in_c * out_h * out_w)
@@ -919,7 +1661,100 @@ class _LayerGraphBuilder:
         self.prev_out = out_vars
         self.shape = x_shape
         self._register_node(node.name, layer_id)
-    
+
+    def _resolve_const_tensor(self, val: Any) -> torch.Tensor:
+        """Resolve a non-variable operand (literal / get_attr buffer) to a tensor."""
+        if isinstance(val, torch.Tensor):
+            return val
+        if isinstance(val, (int, float)):
+            return torch.tensor(float(val), dtype=torch.get_default_dtype())
+        if isinstance(val, fx.Node) and val.op == 'get_attr':
+            obj: Any = self.traced_model
+            for part in str(val.target).split('.'):
+                obj = getattr(obj, part)
+            if isinstance(obj, torch.Tensor):
+                return obj
+        raise NotImplementedError(f"Cannot resolve constant operand: {val}")
+
+    def _emit_const_bias(self, node: fx.Node, var_node: fx.Node,
+                         const: torch.Tensor, negate: bool) -> None:
+        """Emit a BIAS layer (y = x + c). For x - c pass negate=True (c -> -c)."""
+        in_vars = self.node_outputs[var_node.name]
+        shape = self.node_shapes[var_node.name]
+        c = const.flatten().to(dtype=torch.get_default_dtype())
+        if negate:
+            c = -c
+        if c.numel() == 1:
+            c = c.expand(len(in_vars)).clone()
+        if c.numel() != len(in_vars):
+            raise NotImplementedError(
+                f"sub/bias const numel {c.numel()} != vars {len(in_vars)} at {node.name}"
+            )
+        out_vars = self._alloc_ids(len(in_vars))
+        layer_id = self._add_layer(
+            LayerKind.BIAS.value,
+            {"c": c, "input_shape": shape, "output_shape": shape},
+            in_vars, out_vars,
+        )
+        self.prev_out = out_vars
+        self.shape = shape
+        self._register_node(node.name, layer_id)
+
+    def _process_sub_operation(self, node: fx.Node) -> None:
+        """SUB: var-var -> SUB layer; var-const -> BIAS(-c); const-var -> SCALE(-1)+BIAS(c)."""
+        if len(node.args) < 2:
+            raise NotImplementedError(f"sub at {node.name} expects 2 operands")
+        a, b = node.args[0], node.args[1]
+        a_node = a if isinstance(a, fx.Node) else None
+        b_node = b if isinstance(b, fx.Node) else None
+        a_var = a_node is not None and a_node.name in self.node_outputs
+        b_var = b_node is not None and b_node.name in self.node_outputs
+        if a_var and b_var and a_node is not None and b_node is not None:
+            x_vars = self.node_outputs[a_node.name]
+            y_vars = self.node_outputs[b_node.name]
+            x_shape = self.node_shapes[a_node.name]
+            if len(y_vars) != len(x_vars):
+                raise NotImplementedError(f"sub var-var size mismatch at {node.name}")
+            out_vars = self._alloc_ids(len(x_vars))
+            layer_id = self._add_layer(
+                LayerKind.SUB.value,
+                {"x_vars": x_vars, "y_vars": y_vars, "input_shape": x_shape, "output_shape": x_shape},
+                x_vars + y_vars, out_vars,
+            )
+            self.prev_out = out_vars
+            self.shape = x_shape
+            self._register_node(node.name, layer_id)
+            return
+        if a_var and not b_var and a_node is not None:
+            self._emit_const_bias(node, a_node, self._resolve_const_tensor(b), negate=True)
+            return
+        if b_var and not a_var and b_node is not None:
+            in_vars = self.node_outputs[b_node.name]
+            shape = self.node_shapes[b_node.name]
+            scale_vars = self._alloc_ids(len(in_vars))
+            neg = torch.full((len(in_vars),), -1.0, dtype=torch.get_default_dtype())
+            self._add_layer(
+                LayerKind.SCALE.value,
+                {"a": neg, "input_shape": shape, "output_shape": shape},
+                in_vars, scale_vars,
+            )
+            c = self._resolve_const_tensor(a).flatten().to(dtype=torch.get_default_dtype())
+            if c.numel() == 1:
+                c = c.expand(len(in_vars)).clone()
+            if c.numel() != len(in_vars):
+                raise NotImplementedError(f"sub const-var numel {c.numel()} != vars {len(in_vars)} at {node.name}")
+            out_vars = self._alloc_ids(len(in_vars))
+            layer_id = self._add_layer(
+                LayerKind.BIAS.value,
+                {"c": c, "input_shape": shape, "output_shape": shape},
+                scale_vars, out_vars,
+            )
+            self.prev_out = out_vars
+            self.shape = shape
+            self._register_node(node.name, layer_id)
+            return
+        raise NotImplementedError(f"sub with no variable operand at {node.name}")
+
     def _process_concat_operation(self, node: fx.Node) -> None:
         """Process CONCAT operation."""
         if node.args and isinstance(node.args[0], (list, tuple)):
@@ -945,11 +1780,7 @@ class _LayerGraphBuilder:
         dim = node.kwargs.get('dim', 1) if hasattr(node, 'kwargs') else 1
         
         
-        params = {
-            "concat_dim": dim,
-            "input_shapes": [self.node_shapes.get(n.name) for n in inputs],
-            "output_shape": (1, total_size)
-        }
+        params = {"concat_dim": dim}
         layer_id = self._add_layer(
             LayerKind.CONCAT.value, params,
             all_vars, out_vars
@@ -975,8 +1806,9 @@ class _LayerGraphBuilder:
                 x_shape = self.node_shapes[x_name]
                 
                 out_vars = self._alloc_ids(len(x_vars))
-                
-                params = {"input_shape": x_shape, "output_shape": x_shape}
+
+                params = {"x_vars": x_vars, "y_vars": y_vars,
+                          "input_shape": x_shape, "output_shape": x_shape}
                 layer_id = self._add_layer(
                     LayerKind.MUL.value, params,
                     x_vars + y_vars, out_vars
@@ -1203,6 +2035,10 @@ class TorchToACT:
         offset = len(self.layers)
         for layer in model_layers:
             layer.id += offset
+            for key in ("q_src", "k_src", "w_src", "v_src"):
+                value = layer.params.get(key)
+                if isinstance(value, int):
+                    layer.params[key] = value + offset
         
         self.layers.extend(model_layers)
         if model_layers:
@@ -1244,13 +2080,57 @@ class TorchToACT:
         if self._wrapper_offset > 0 and self._wrapper_offset < n:
             first_model = self._wrapper_offset
             last_wrapper = self._wrapper_offset - 1
-            if not preds[first_model]:
-                preds[first_model] = [last_wrapper]
-            elif last_wrapper not in preds[first_model]:
-                preds[first_model].insert(0, last_wrapper)
-            if first_model not in succs[last_wrapper]:
-                succs[last_wrapper].append(first_model)
-        
+            for model_id in range(self._wrapper_offset, n - 1):
+                if preds[model_id]:
+                    continue
+                # CONSTANT sources stay disconnected; wiring them to the wrapper
+                # input would inject a spurious data dependence (and mis-shaped
+                # ν route in the dual backward).
+                if self.layers[model_id].kind == LayerKind.CONSTANT.value:
+                    continue
+                preds[model_id] = [last_wrapper]
+                if model_id not in succs[last_wrapper]:
+                    succs[last_wrapper].append(model_id)
+
+        # Multi-operand ops need BOTH operands as ordered preds
+        # [producer(x_vars), producer(y_vars)]; an input-sourced operand's edge
+        # is dropped upstream and the loop above only fills EMPTY pred lists, so
+        # a partially-wired MUL/ADD/SUB/MATMUL is left short one operand. Rewire
+        # from a var->producer map. Soundness-critical: an input operand resolves
+        # to INPUT_SPEC (latest-id producer), never INPUT id 0 -- the dual
+        # backward harvests ν only at _find_input_layer_id==INPUT_SPEC, so
+        # routing to INPUT would silently drop the term and yield an unsound bound.
+        producer: Dict[int, int] = {}
+        for layer in self.layers:
+            for v in layer.out_vars:
+                if v not in producer or layer.id > producer[v]:
+                    producer[v] = layer.id
+        multi_operand_kinds = {
+            LayerKind.MUL.value, LayerKind.ADD.value,
+            LayerKind.SUB.value, LayerKind.MATMUL.value,
+        }
+        for layer in self.layers:
+            if layer.kind not in multi_operand_kinds:
+                continue
+            x_vars = layer.params.get("x_vars")
+            y_vars = layer.params.get("y_vars")
+            if not x_vars or not y_vars:
+                continue
+            px = producer.get(x_vars[0])
+            py = producer.get(y_vars[0])
+            if px is None or py is None:
+                continue
+            want = [px, py]
+            if preds.get(layer.id) == want:
+                continue
+            for old_pred in preds.get(layer.id, []):
+                if layer.id in succs.get(old_pred, []):
+                    succs[old_pred].remove(layer.id)
+            preds[layer.id] = want
+            for p in want:
+                if layer.id not in succs.setdefault(p, []):
+                    succs[p].append(layer.id)
+
         # Connect last model layer to ASSERT
         assert_id = n - 1
         if self._model_succs:

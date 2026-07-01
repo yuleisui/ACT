@@ -426,18 +426,50 @@ class InputLayer(nn.Module):
 class InputSpecLayer(nn.Module):
     """
     Batched input constraint checker (BOX, L∞, LIN_POLY, LP_EMBEDDING).
-    
+
+    This layer serves two perturbation regimes carried by the wrapped
+    ``InputSpec``:
+
+    * **Image/input perturbation** (``BOX``, ``LINF_BALL``): the constraint
+      acts on pixel or raw-feature space (x in R^n).
+
+      - LINF_BALL:  { x : ||x - center||_inf <= eps }
+                    <=>  x_i in [center_i - eps, center_i + eps]  for every i
+      - BOX:        { x : lb_i <= x_i <= ub_i }  (explicit per-coordinate box)
+
+      ONE ball (or box) over ALL input coordinates — perturbs pixels/features.
+      ``x`` is compared directly against ``lb``/``ub`` (BOX) or
+      ``center``/``eps`` (LINF_BALL).
+
+    * **Embedding/position perturbation** (``LP_EMBEDDING``): the constraint
+      acts in the embedding space of a transformer (BERT, ViT token
+      embeddings).  For embeddings e in R^{L x d} with ``spec.center`` c and
+      P = ``spec.perturbed_positions``, the admissible set is:
+
+          { e :  ||e_t - c_t||_{p_norm} <= eps   for t in P,
+                 e_t = c_t                         for t not in P }
+
+      A SEPARATE per-token Lp ball of radius ``eps`` in the d-dimensional
+      embedding space at each SELECTED token position t in P; all OTHER
+      positions are PINNED to ``spec.center``.  The materialized ``lb``/``ub``
+      box is pre-computed at construction time via
+      ``InputSpec.materialize_box_seed``.
+
+      Contrast: image = ONE ball over all input coordinates (perturbs pixels);
+      LP_EMBEDDING = localized per-token balls at chosen sequence positions in
+      EMBEDDING space (rest fixed) — perturbs token embeddings, not pixels.
+
     Batch Processing:
-        Input: x with shape (N, C, H, W)
-        Constraints: lb/ub/center with shape (N, C, H, W) - per-sample bounds
+        Input: x with shape (N, C, H, W) or (N, L, D) for embeddings
+        Constraints: lb/ub/center with shape (N, ...) - per-sample bounds
         Checks: Each sample x[i] verified independently against its bounds
         Output: (x, satisfied, explanation)
             - satisfied: (N,) bool tensor, one per sample
             - explanation: "✅ INPUT BOX: {n_ok}/{N} satisfied"
-    
+
     Args:
         spec: InputSpec with batched constraint tensors
-    
+
     Forward:
         x (N, ...) → (x, satisfied (N,), explanation str)
     """
