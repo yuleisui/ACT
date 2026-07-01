@@ -15,9 +15,85 @@
 
 import torch
 import itertools
+import math
 from typing import List
 from act.back_end.core import Bounds, Con, ConSet, Fact, Layer
 from act.back_end.utils import affine_bounds, pwl_meta
+
+
+def _sanitize_smooth_bounds(lb: torch.Tensor, ub: torch.Tensor) -> Bounds:
+    lb_s = torch.nan_to_num(lb, nan=-float("inf"), neginf=-float("inf"), posinf=float("inf"))
+    ub_s = torch.nan_to_num(ub, nan=float("inf"), neginf=-float("inf"), posinf=float("inf"))
+    return Bounds(torch.minimum(lb_s, ub_s), torch.maximum(lb_s, ub_s))
+
+
+def _periodic_critical_exists(lo: torch.Tensor, hi: torch.Tensor, offset: float, period: float) -> torch.Tensor:
+    eps = torch.finfo(lo.dtype).eps * 16.0
+    a = (lo - offset) / period - eps
+    b = (hi - offset) / period + eps
+    return torch.floor(b) >= torch.ceil(a)
+
+
+def _quantize_params_flat(L: Layer, n: int, device: torch.device, dtype: torch.dtype):
+    scale = L.params["scale"].to(device=device, dtype=dtype).flatten()
+    zero_point = L.params["zero_point"].to(device=device, dtype=dtype).flatten()
+    if scale.numel() == 1:
+        scale = scale.expand(n)
+    elif scale.numel() != n:
+        raise NotImplementedError(f"quantize:{L.id}: scale with {scale.numel()} entries cannot broadcast to flat size {n}")
+    if zero_point.numel() == 1:
+        zero_point = zero_point.expand(n)
+    elif zero_point.numel() != n:
+        raise NotImplementedError(f"quantize:{L.id}: zero_point with {zero_point.numel()} entries cannot broadcast to flat size {n}")
+    if torch.any(scale <= 0):
+        raise ValueError(f"quantize:{L.id}: scale must be positive")
+    qmin = torch.full((n,), float(L.params["qmin"]), device=device, dtype=dtype)
+    qmax = torch.full((n,), float(L.params["qmax"]), device=device, dtype=dtype)
+    return scale, zero_point, qmin, qmax
+
+
+def _quantize_qdq_value(x: torch.Tensor, scale: torch.Tensor, zero_point: torch.Tensor, qmin: torch.Tensor, qmax: torch.Tensor) -> torch.Tensor:
+    lo_code = qmin - zero_point
+    hi_code = qmax - zero_point
+    return scale * torch.clamp(torch.round(x / scale), min=lo_code, max=hi_code)
+
+
+def _sin_interval(lo: torch.Tensor, hi: torch.Tensor) -> Bounds:
+    two_pi = 2.0 * math.pi
+    finite = torch.isfinite(lo) & torch.isfinite(hi) & (torch.abs(lo) <= 1.0e12) & (torch.abs(hi) <= 1.0e12)
+    hi = torch.maximum(hi, lo)
+    width = hi - lo
+    endpoint_lo = torch.sin(lo)
+    endpoint_hi = torch.sin(hi)
+    base_lb = torch.minimum(endpoint_lo, endpoint_hi)
+    base_ub = torch.maximum(endpoint_lo, endpoint_hi)
+    full_period = width >= two_pi
+    has_max = _periodic_critical_exists(lo, hi, 0.5 * math.pi, two_pi)
+    has_min = _periodic_critical_exists(lo, hi, -0.5 * math.pi, two_pi)
+    lb = torch.where(has_min | full_period, torch.full_like(base_lb, -1.0), base_lb)
+    ub = torch.where(has_max | full_period, torch.full_like(base_ub, 1.0), base_ub)
+    lb = torch.where(finite, lb, torch.full_like(lb, -1.0))
+    ub = torch.where(finite, ub, torch.full_like(ub, 1.0))
+    return Bounds(lb, ub)
+
+
+def _cos_interval(lo: torch.Tensor, hi: torch.Tensor) -> Bounds:
+    two_pi = 2.0 * math.pi
+    finite = torch.isfinite(lo) & torch.isfinite(hi) & (torch.abs(lo) <= 1.0e12) & (torch.abs(hi) <= 1.0e12)
+    hi = torch.maximum(hi, lo)
+    width = hi - lo
+    endpoint_lo = torch.cos(lo)
+    endpoint_hi = torch.cos(hi)
+    base_lb = torch.minimum(endpoint_lo, endpoint_hi)
+    base_ub = torch.maximum(endpoint_lo, endpoint_hi)
+    full_period = width >= two_pi
+    has_max = _periodic_critical_exists(lo, hi, 0.0, two_pi)
+    has_min = _periodic_critical_exists(lo, hi, math.pi, two_pi)
+    lb = torch.where(has_min | full_period, torch.full_like(base_lb, -1.0), base_lb)
+    ub = torch.where(has_max | full_period, torch.full_like(base_ub, 1.0), base_ub)
+    lb = torch.where(finite, lb, torch.full_like(lb, -1.0))
+    ub = torch.where(finite, ub, torch.full_like(ub, 1.0))
+    return Bounds(lb, ub)
 
 # -------- MLP Basics --------
 def tf_dense(L: Layer, Bin: Bounds) -> Fact:
@@ -313,6 +389,40 @@ def tf_tanh(L: Layer, Bin: Bounds) -> Fact:
     B=Bounds(torch.tanh(Bin.lb), torch.tanh(Bin.ub))
     C=ConSet(); C.replace(Con("INEQ", tuple(L.out_vars+L.in_vars), {"tag":f"tanh:{L.id}","segs":pwl_meta(Bin.lb,Bin.ub,2)}))
     C.add_box(L.id,L.out_vars,B); return Fact(B,C)
+
+def tf_erf(L: Layer, Bin: Bounds) -> Fact:
+    B=Bounds(torch.erf(Bin.lb), torch.erf(Bin.ub))
+    C=ConSet(); C.replace(Con("INEQ", tuple(L.out_vars+L.in_vars), {"tag":f"erf:{L.id}","segs":pwl_meta(Bin.lb,Bin.ub,2)}))
+    C.add_box(L.id,L.out_vars,B); return Fact(B,C)
+
+def tf_sqrt(L: Layer, Bin: Bounds) -> Fact:
+    lo_e = torch.clamp(Bin.lb, min=0.0)
+    hi_e = torch.clamp(Bin.ub, min=0.0)
+    B=_sanitize_smooth_bounds(torch.sqrt(lo_e), torch.sqrt(hi_e))
+    C=ConSet(); C.replace(Con("INEQ", tuple(L.out_vars+L.in_vars), {"tag":f"sqrt:{L.id}"}))
+    C.add_box(L.id,L.out_vars,B); return Fact(B,C)
+
+def tf_sin(L: Layer, Bin: Bounds) -> Fact:
+    B=_sin_interval(Bin.lb, Bin.ub)
+    C=ConSet(); C.replace(Con("INEQ", tuple(L.out_vars+L.in_vars), {"tag":f"sin:{L.id}"}))
+    C.add_box(L.id,L.out_vars,B); return Fact(B,C)
+
+def tf_cos(L: Layer, Bin: Bounds) -> Fact:
+    B=_cos_interval(Bin.lb, Bin.ub)
+    C=ConSet(); C.replace(Con("INEQ", tuple(L.out_vars+L.in_vars), {"tag":f"cos:{L.id}"}))
+    C.add_box(L.id,L.out_vars,B); return Fact(B,C)
+
+def tf_quantize(L: Layer, Bin: Bounds) -> Fact:
+    n = Bin.lb.numel()
+    lo = Bin.lb.reshape(-1)
+    hi = torch.maximum(Bin.ub.reshape(-1), lo)
+    scale, zero_point, qmin, qmax = _quantize_params_flat(L, n, lo.device, lo.dtype)
+    z_lo = _quantize_qdq_value(lo, scale, zero_point, qmin, qmax)
+    z_hi = _quantize_qdq_value(hi, scale, zero_point, qmin, qmax)
+    B=_sanitize_smooth_bounds(torch.minimum(z_lo, z_hi).reshape_as(Bin.lb), torch.maximum(z_lo, z_hi).reshape_as(Bin.ub))
+    C=ConSet(); C.replace(Con("INEQ", tuple(L.out_vars+L.in_vars), {"tag":f"quantize:{L.id}", "scale": L.params["scale"], "zero_point": L.params["zero_point"], "qmin": L.params["qmin"], "qmax": L.params["qmax"]}))
+    C.add_box(L.id,L.out_vars,B); return Fact(B,C)
+
 
 def tf_softplus(L: Layer, Bin: Bounds) -> Fact:
     f=lambda x: torch.log1p(torch.exp(x)); B=Bounds(f(Bin.lb), f(Bin.ub))

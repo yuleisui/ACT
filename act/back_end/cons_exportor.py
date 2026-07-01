@@ -1221,6 +1221,35 @@ def _emit_layernorm_box(
         le.add([z[i]], vals_ub, hi[:, i])
 
 
+def _emit_attn_dual_planar(
+    con: Any,
+    le: _RowAcc,
+    lb_global: torch.Tensor,
+    ub_global: torch.Tensor,
+    N: int,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> None:
+    """Export ReLU-catalyzed dual-planar attention scores as their output box.
+
+    The fused bound is affine in the perturbed embeddings, not in the per-layer
+    score variables, so the LP path uses the propagated output interval rows
+    (mirrors the layernorm export) to stay sound without introducing nonlinear
+    terms. The score variables are the only ids on this constraint.
+    """
+    z = list(con.var_ids)
+    z_idx = torch.tensor(z, device=device, dtype=torch.long)
+    lo = lb_global[:, z_idx]
+    hi = ub_global[:, z_idx]
+    if not torch.all(torch.isfinite(lo) & torch.isfinite(hi)):
+        raise ValueError("att_dual_planar: finite output bounds are required")
+    for i in range(len(z)):
+        vals_lb = torch.full((N, 1), -1.0, device=device, dtype=dtype)
+        le.add([z[i]], vals_lb, -lo[:, i])
+        vals_ub = torch.full((N, 1), 1.0, device=device, dtype=dtype)
+        le.add([z[i]], vals_ub, hi[:, i])
+
+
 def _emit_mcc(
     con: Any,
     le: _RowAcc,
@@ -1820,6 +1849,8 @@ def export_to_batch_problem(
             _emit_relu_power_canonical(con, le, lb_global, ub_global, N, device, dtype)
         elif tag.startswith("layernorm:"):
             _emit_layernorm_box(con, le, lb_global, ub_global, N, device, dtype)
+        elif tag.startswith("att_dual_planar:"):
+            _emit_attn_dual_planar(con, le, lb_global, ub_global, N, device, dtype)
         elif tag.startswith("mask:"):
             _emit_mask_add(con, eq, lb_global, ub_global, N, device, dtype)
         elif tag.startswith("mcc:"):

@@ -112,6 +112,11 @@ class LayerKind(str, enum.Enum):
     PRELU = "PRELU"
     SIGMOID = "SIGMOID"
     TANH = "TANH"
+    ERF = "ERF"
+    SQRT = "SQRT"
+    SIN = "SIN"
+    COS = "COS"
+    QUANTIZE = "QUANTIZE"
     SOFTPLUS = "SOFTPLUS"
     SILU = "SILU"
     GELU = "GELU"
@@ -436,6 +441,26 @@ REGISTRY: Dict[str, Dict[str, Any]] = {
         "params_required": [],
         "params_optional": ["input_shape", "output_shape"],
     },
+    LayerKind.ERF.value: {
+        "params_required": [],
+        "params_optional": ["input_shape", "output_shape"],
+    },
+    LayerKind.SQRT.value: {
+        "params_required": [],
+        "params_optional": ["input_shape", "output_shape"],
+    },
+    LayerKind.SIN.value: {
+        "params_required": [],
+        "params_optional": ["input_shape", "output_shape"],
+    },
+    LayerKind.COS.value: {
+        "params_required": [],
+        "params_optional": ["input_shape", "output_shape"],
+    },
+    LayerKind.QUANTIZE.value: {
+        "params_required": ["scale", "zero_point", "qmin", "qmax"],
+        "params_optional": ["axis", "input_shape", "output_shape", "dtype"],
+    },
     LayerKind.SOFTPLUS.value: {
         "params_required": [],
         "params_optional": ["input_shape", "output_shape"],
@@ -446,7 +471,7 @@ REGISTRY: Dict[str, Dict[str, Any]] = {
     },
     LayerKind.GELU.value: {
         "params_required": [],
-        "params_optional": ["approximate"],
+        "params_optional": ["approximate", "input_shape", "output_shape"],
     },
     LayerKind.RELU6.value: {
         "params_required": [],
@@ -638,7 +663,7 @@ REGISTRY: Dict[str, Dict[str, Any]] = {
     },
     LayerKind.RESHAPE.value: {
         "params_required": [],
-        "params_optional": ["target_shape"],
+        "params_optional": ["target_shape", "input_shape", "output_shape"],
     },
     LayerKind.FLATTEN.value: {
         "params_required": [],
@@ -765,6 +790,67 @@ REGISTRY: Dict[str, Dict[str, Any]] = {
             "rope_theta",
         ],
     },
+    LayerKind.MHA_SPLIT.value: {
+        "params_required": [],
+        "params_optional": [
+            "role",
+            "position",
+            "feature",
+            "weight",
+            "bias",
+            "num_heads",
+            "head_dim",
+            "seq_len",
+            "hidden_size",
+            "input_shape",
+            "output_shape",
+        ],
+    },
+    LayerKind.ATT_SCORES.value: {
+        "params_required": ["dk"],
+        "params_optional": [
+            "q_vars",
+            "k_vars",
+            "q_src",
+            "k_src",
+            "mask",
+            "query_position",
+            "key_position",
+            "input_shape",
+            "output_shape",
+            # Interval-domain dual-planar relaxation (interval_tf/tf_attention.py):
+            # bypasses the McCormick box path below when attn_mode=="dual_planar".
+            "attn_mode",
+            "q_lb",
+            "k_lb",
+            "head_size",
+            "k_thresh",
+            "clamp_alpha",
+        ],
+    },
+    LayerKind.ATT_MIX.value: {
+        "params_required": ["rowsize"],
+        "params_optional": [
+            "w_vars",
+            "v_vars",
+            "w_src",
+            "v_src",
+            "query_position",
+            "feature",
+            "input_shape",
+            "output_shape",
+        ],
+    },
+    LayerKind.MHA_JOIN.value: {
+        "params_required": [],
+        "params_optional": [
+            "seq_len",
+            "hidden_size",
+            "concat_dim",
+            "input_shapes",
+            "output_shape",
+        ],
+    },
     LayerKind.POSENC.value: {
         "params_required": [],
         "params_optional": [
@@ -793,7 +879,12 @@ REGISTRY: Dict[str, Dict[str, Any]] = {
     },
     LayerKind.LAYERNORM.value: {
         "params_required": ["gamma", "beta"],
-        "params_optional": ["eps", "input_shape", "output_shape"],
+        "params_optional": [
+            "eps", "input_shape", "output_shape",
+            # "no_var" skips the variance/std division (tighter, no relaxation);
+            # "variant" is the canonical key, "layer_norm" an accepted alias.
+            "variant", "layer_norm",
+        ],
     },
     LayerKind.MASK_ADD.value: {
         "params_required": ["M"],
@@ -815,6 +906,7 @@ SUPPORTED_EXPORT_OPS = {
     "adaptiveavgpool2d",
     "add",
     "arg_extremum",
+    "att_dual_planar",
     "att_mix",
     "att_scores",
     "avgpool1d",
@@ -835,6 +927,11 @@ SUPPORTED_EXPORT_OPS = {
     "div",
     "embedding",
     "embedding_tf",
+    "erf",
+    "sqrt",
+    "sin",
+    "cos",
+    "quantize",
     "expand",
     "flatten",
     "gather",
