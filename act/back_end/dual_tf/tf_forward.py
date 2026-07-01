@@ -360,6 +360,18 @@ def compute_forward_bounds(net: Net, input_lb: torch.Tensor, input_ub: torch.Ten
         preds = list(net.preds.get(lid, []) or [])
 
         if not preds:
+            if kind == LayerKind.CONSTANT.value:
+                # CONSTANT is a data-independent source; materialize its value
+                # broadcast to batch B (taken from entry_box), no input frame.
+                handler = DualTF._FORWARD_REGISTRY[kind]
+                stored, out, lin, frame = handler(
+                    layer, [entry_box], [], [], [], post_activation, device, dtype,
+                )
+                _store_forward_state(
+                    bounds_dict, box_state, lin_state, frame_dict,
+                    lid, stored, out, lin, frame,
+                )
+                continue
             if kind not in (LayerKind.INPUT.value, LayerKind.INPUT_SPEC.value):
                 raise ValueError(f"compute_forward_bounds: layer {lid} kind '{kind}' has no predecessors and is not INPUT / INPUT_SPEC")
             _store_forward_state(

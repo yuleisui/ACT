@@ -12,27 +12,30 @@
 
 
 import torch
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple, cast
 from act.back_end.core import Bounds, Layer, Net
 from act.back_end.layer_schema import LayerKind
 from .tf_mlp import (
     backward_dense, backward_relu, backward_bias, backward_scale,
-    backward_bn, backward_identity,
+    backward_bn, backward_identity, backward_mean,
     forward_dense, forward_relu, forward_bias, forward_scale,
-    forward_bn, forward_lrelu, forward_identity, forward_reshape,
+    forward_bn, forward_lrelu, forward_identity, forward_reshape, forward_mean,
 )
 from .tf_cnn import (
     backward_conv2d, backward_maxpool2d, backward_avgpool2d,
     forward_conv2d, forward_maxpool2d, forward_avgpool2d,
 )
 from .tf_smooth import (
-    backward_sigmoid, backward_tanh,
-    forward_sigmoid, forward_tanh,
+    backward_sigmoid, backward_tanh, backward_erf, backward_sqrt, backward_sin, backward_cos, backward_quantize,
+    forward_sigmoid, forward_tanh, forward_erf, forward_sqrt, forward_sin, forward_cos, forward_quantize,
 )
 from .tf_rnn import forward_lstm, backward_lstm, forward_gru, backward_gru
 from .tf_transformer import (
     forward_attention, backward_attention,
+    forward_matmul, backward_matmul,
+    forward_mha, backward_mha,
     forward_layernorm, backward_layernorm,
+    forward_softmax, backward_softmax,
     forward_gelu, backward_gelu,
 )
 from .tf_forward import (
@@ -40,6 +43,140 @@ from .tf_forward import (
     _sum_linear_bounds, _sum_interval_bounds, _concretize,
     _reset_forward_box, _align, _int_param,
 )
+
+
+def forward_constant(
+    L: Layer, parent_boxes: List[Bounds], parent_lins: List[LinearBound],
+    parent_frames: List[Frame], preds: List[int], post_activation: bool,
+    device: torch.device, dtype: torch.dtype,
+) -> Tuple[Bounds, Bounds, LinearBound, Frame]:
+    """Materialize a fixed tensor as a point-valued dual forward box."""
+    batch_size = parent_boxes[0].lb.shape[0] if parent_boxes else 1
+    value = L.params["value"].reshape(1, -1).to(device=device, dtype=dtype)
+    lb = value.expand(batch_size, -1).contiguous()
+    ub = lb.clone()
+    lin, frame = _reset_forward_box(lb, ub, device, dtype)
+    out = Bounds(lb, ub)
+    return out, out, lin, frame
+
+
+def backward_constant(L: Layer, nu: torch.Tensor, bounds_dict: Dict[int, Bounds],
+                      preds: List[int], M: int = 1, alpha=None
+                      ) -> Tuple[List[torch.Tensor], torch.Tensor]:
+    """Backward for a fixed-tensor source: absorb ν·value, route nothing.
+
+    A CONSTANT is data-independent (it has no predecessors after graph build),
+    so its only effect on the certified bound is the constant term ν·value —
+    exactly a bias on a zero input. Returns ``[]`` (no upstream routes) and that
+    once-counted contribution.
+    """
+    value = L.params["value"].flatten().to(device=nu.device, dtype=nu.dtype)
+    v = nu.flatten(start_dim=1)
+    n = min(v.shape[-1], value.numel())
+    contrib = (v[..., :n] * value[:n]).sum(dim=-1)
+    return [torch.zeros_like(nu) for _ in preds], contrib
+
+
+def forward_expand(
+    L: Layer, parent_boxes: List[Bounds], parent_lins: List[LinearBound],
+    parent_frames: List[Frame], preds: List[int], post_activation: bool,
+    device: torch.device, dtype: torch.dtype,
+) -> Tuple[Bounds, Bounds, LinearBound, Frame]:
+    """Broadcast a predecessor box and reset the dual frame over the result."""
+    parent = parent_boxes[0]
+    batch_size = parent.lb.shape[0]
+    input_shape_value = L.params.get("input_shape", (parent.lb.shape[1],))
+    output_shape_value = L.params.get("output_shape", L.params.get("shape", input_shape_value))
+    in_shape = tuple(int(d) for d in cast(Tuple[int, ...], input_shape_value))
+    out_shape = tuple(int(d) for d in cast(Tuple[int, ...], output_shape_value))
+    lb = parent.lb.reshape(batch_size, *in_shape).broadcast_to(batch_size, *out_shape).reshape(batch_size, -1).clone()
+    ub = parent.ub.reshape(batch_size, *in_shape).broadcast_to(batch_size, *out_shape).reshape(batch_size, -1).clone()
+    lin, frame = _reset_forward_box(lb, ub, device, dtype)
+    out = Bounds(lb, ub)
+    return out, out, lin, frame
+
+
+def forward_gather(
+    L: Layer, parent_boxes: List[Bounds], parent_lins: List[LinearBound],
+    parent_frames: List[Frame], preds: List[int], post_activation: bool,
+    device: torch.device, dtype: torch.dtype,
+) -> Tuple[Bounds, Bounds, LinearBound, Frame]:
+    """Select indices from a predecessor box and reset the dual frame."""
+    parent = parent_boxes[0]
+    batch_size = parent.lb.shape[0]
+    input_shape = tuple(int(d) for d in cast(Tuple[int, ...], L.params["input_shape"]))
+    axis = int(L.params.get("axis", 0))
+    raw_idx = L.params["indices"]
+    indices = raw_idx.to(device=device, dtype=torch.long) if isinstance(raw_idx, torch.Tensor) else torch.as_tensor(raw_idx, device=device, dtype=torch.long)
+    x_lb = parent.lb.reshape(batch_size, *input_shape)
+    x_ub = parent.ub.reshape(batch_size, *input_shape)
+    lb = torch.index_select(x_lb, dim=axis + 1, index=indices).reshape(batch_size, -1)
+    ub = torch.index_select(x_ub, dim=axis + 1, index=indices).reshape(batch_size, -1)
+    lin, frame = _reset_forward_box(lb, ub, device, dtype)
+    out = Bounds(lb, ub)
+    return out, out, lin, frame
+
+
+def _slice_tuple(input_shape: Tuple[int, ...], L: Layer, batch_offset: int) -> Tuple[slice, ...]:
+    """Build the per-axis slice tuple shared by SLICE forward/backward.
+
+    ``batch_offset`` is 1 when indexing a [B, *input_shape] tensor, 0 for a
+    per-sample index template. Mirrors interval tf_slice: ends are clamped to
+    the axis length so the forward selection and the backward scatter index the
+    identical positions.
+    """
+    starts = cast(Sequence[int], L.params["starts"])
+    ends = cast(Sequence[int], L.params["ends"])
+    axes = cast(Sequence[int], L.params.get("axes", list(range(len(input_shape)))))
+    steps = cast(Sequence[int], L.params.get("steps", [1] * len(axes)))
+    slices: List[slice] = [slice(None)] * (len(input_shape) + batch_offset)
+    for i, axis in enumerate(axes):
+        axis = int(axis)
+        end = min(int(ends[i]), input_shape[axis])
+        slices[axis + batch_offset] = slice(int(starts[i]), end, int(steps[i]))
+    return tuple(slices)
+
+
+def forward_slice(
+    L: Layer, parent_boxes: List[Bounds], parent_lins: List[LinearBound],
+    parent_frames: List[Frame], preds: List[int], post_activation: bool,
+    device: torch.device, dtype: torch.dtype,
+) -> Tuple[Bounds, Bounds, LinearBound, Frame]:
+    """Select a sub-tensor from a predecessor box and reset the dual frame."""
+    parent = parent_boxes[0]
+    batch_size = parent.lb.shape[0]
+    input_shape = tuple(int(d) for d in cast(Tuple[int, ...], L.params["input_shape"]))
+    slc = _slice_tuple(input_shape, L, batch_offset=1)
+    x_lb = parent.lb.reshape(batch_size, *input_shape)
+    x_ub = parent.ub.reshape(batch_size, *input_shape)
+    lb = x_lb[slc].reshape(batch_size, -1).contiguous()
+    ub = x_ub[slc].reshape(batch_size, -1).contiguous()
+    lin, frame = _reset_forward_box(lb, ub, device, dtype)
+    out = Bounds(lb, ub)
+    return out, out, lin, frame
+
+
+def backward_slice(L: Layer, nu: torch.Tensor, bounds_dict: Dict[int, Bounds],
+                   preds: List[int], M: int = 1, alpha=None
+                   ) -> Tuple[List[torch.Tensor], torch.Tensor]:
+    """Scatter ν from sliced output positions to the full pre-slice space.
+
+    SLICE is the 0/1 selection matrix S; its backward is S^T, which places each
+    output row's ν at its source input position and zeros elsewhere. Exact (not
+    a relaxation): an arange template sliced identically to the forward gives
+    the source-position map.
+    """
+    assert len(preds) == 1, f"SLICE expects 1 predecessor, got {len(preds)}"
+    input_shape = tuple(int(d) for d in cast(Tuple[int, ...], L.params["input_shape"]))
+    in_dim = 1
+    for d in input_shape:
+        in_dim *= d
+    template = torch.arange(in_dim, device=nu.device).reshape(input_shape)
+    sel = template[_slice_tuple(input_shape, L, batch_offset=0)].reshape(-1)
+    pred_nu = torch.zeros(nu.shape[0], in_dim, dtype=nu.dtype, device=nu.device)
+    pred_nu[:, sel] = nu
+    contrib = torch.zeros(nu.shape[0], dtype=nu.dtype, device=nu.device)
+    return [pred_nu], contrib
 
 
 # ---- ADD ----
@@ -58,10 +195,14 @@ def forward_add(
     paths via _align. Returns (stored, out, lin, frame) where stored == out.
     """
     assert len(parent_boxes) >= 2, "forward_add: requires >=2 predecessors"
+    # Compare b_lb widths (always present), not A_lb: A_lb is None for the lazy
+    # identity frame, which _sum_linear_bounds materializes from b_lb. With a
+    # shared frame (same input dim) matching output widths is the sound dual-sum
+    # precondition; .A_lb.shape would crash on the identity branch.
     can_dual = all(
         parent_frames[i] is parent_frames[0] for i in range(1, len(parent_frames))
     ) and all(
-        parent_lins[i].A_lb.shape == parent_lins[0].A_lb.shape
+        parent_lins[i].b_lb.shape == parent_lins[0].b_lb.shape
         for i in range(1, len(parent_lins))
     )
     if can_dual:
@@ -150,10 +291,29 @@ def forward_concat(
 
 
 def backward_concat(L, nu, bounds_dict, preds, M: int = 1, alpha=None):
-    """CONCAT backward. (Pending)
-    Will require: concat_dim parameter to split nu into per-predecessor slices.
+    """CONCAT backward: split ν into per-predecessor slices along the feature axis.
+
+    The forward concatenates predecessor outputs along ``concat_dim`` (feature
+    axis, the only non-batch axis for the flattened dual tensors), so backward
+    routes each predecessor the contiguous ν slice it produced. Slice widths come
+    from the predecessor output boxes in ``bounds_dict``; ``contrib`` is zero
+    because concatenation adds no constant. ``alpha`` is unused (no relaxation).
     """
-    raise NotImplementedError("backward for CONCAT not implemented in dual_tf")
+    nu_flat = nu.flatten(start_dim=1)
+    widths = [bounds_dict[pid].lb.flatten(start_dim=1).shape[-1] for pid in preds]
+    total = sum(widths)
+    if total != nu_flat.shape[-1]:
+        raise ValueError(
+            f"backward_concat: pred widths {widths} sum to {total}, "
+            f"expected ν width {nu_flat.shape[-1]}"
+        )
+    pred_nus: List[torch.Tensor] = []
+    offset = 0
+    for width in widths:
+        pred_nus.append(nu_flat[:, offset:offset + width].clone())
+        offset += width
+    contrib = torch.zeros(nu.shape[0], dtype=nu.dtype, device=nu.device)
+    return pred_nus, contrib
 
 
 class DualTF:
@@ -169,7 +329,7 @@ class DualTF:
         the analyze()/TF pipeline).
       * ``_BACKWARD_REGISTRY`` — per-kind backward dispatch consumed by
         ``DualSolver.compute_certified_bound``. Each entry has signature
-        ``(L, nu, bounds_dict, preds) -> (pred_nus, contrib)``.
+        ``(L, nu, bounds_dict, preds, M=1, alpha=None) -> (pred_nus, contrib)``.
       * ``_UNIMPLEMENTED_KINDS`` — kinds whose backward is a stub
         (raises ``NotImplementedError``); ``supports_layer`` filters them
         so dual-incompatible nets get cleanly SKIPPED.
@@ -182,6 +342,7 @@ class DualTF:
         LayerKind.INPUT.value:      forward_identity,
         LayerKind.INPUT_SPEC.value: forward_identity,
         LayerKind.ASSERT.value:     forward_identity,
+        LayerKind.CONSTANT.value:   forward_constant,
         LayerKind.DENSE.value:      forward_dense,
         LayerKind.BIAS.value:       forward_bias,
         LayerKind.SCALE.value:      forward_scale,
@@ -191,6 +352,11 @@ class DualTF:
         "LEAKY_RELU":               forward_lrelu,   # alias (not a LayerKind member)
         LayerKind.SIGMOID.value:    forward_sigmoid,
         LayerKind.TANH.value:       forward_tanh,
+        LayerKind.ERF.value:        forward_erf,
+        LayerKind.SQRT.value:       forward_sqrt,
+        LayerKind.SIN.value:        forward_sin,
+        LayerKind.COS.value:        forward_cos,
+        LayerKind.QUANTIZE.value:   forward_quantize,
         LayerKind.CONV2D.value:     forward_conv2d,
         LayerKind.MAXPOOL2D.value:  forward_maxpool2d,
         LayerKind.AVGPOOL2D.value:  forward_avgpool2d,
@@ -199,16 +365,22 @@ class DualTF:
         LayerKind.TRANSPOSE.value:  forward_identity,
         LayerKind.SQUEEZE.value:    forward_identity,
         LayerKind.UNSQUEEZE.value:  forward_identity,
+        LayerKind.EXPAND.value:     forward_expand,
+        LayerKind.GATHER.value:     forward_gather,
+        LayerKind.SLICE.value:      forward_slice,
+        LayerKind.MEAN.value:       forward_mean,
         LayerKind.ADD.value:        forward_add,
         LayerKind.CONCAT.value:     forward_concat,
         LayerKind.LSTM.value:       forward_lstm,
         LayerKind.GRU.value:        forward_gru,
         LayerKind.ATT_SCORES.value: forward_attention,
         LayerKind.ATT_MIX.value:    forward_attention,
-        LayerKind.MHA_SPLIT.value:  forward_attention,
-        LayerKind.MHA_JOIN.value:   forward_attention,
-        LayerKind.MASK_ADD.value:   forward_attention,
+        LayerKind.MATMUL.value:     forward_matmul,
+        LayerKind.MHA_SPLIT.value:  forward_mha,
+        LayerKind.MHA_JOIN.value:   forward_mha,
+        LayerKind.MASK_ADD.value:   forward_mha,
         LayerKind.LAYERNORM.value:  forward_layernorm,
+        LayerKind.SOFTMAX.value:    forward_softmax,
         LayerKind.GELU.value:       forward_gelu,
     }
 
@@ -233,6 +405,7 @@ class DualTF:
         LayerKind.INPUT.value:      backward_identity,
         LayerKind.INPUT_SPEC.value: backward_identity,
         LayerKind.ASSERT.value:     backward_identity,
+        LayerKind.CONSTANT.value:   backward_constant,
         LayerKind.DENSE.value:      backward_dense,
         LayerKind.BIAS.value:       backward_bias,
         LayerKind.SCALE.value:      backward_scale,
@@ -242,6 +415,11 @@ class DualTF:
         "LEAKY_RELU":               backward_relu,   # alias (not a LayerKind member)
         LayerKind.SIGMOID.value:    backward_sigmoid,
         LayerKind.TANH.value:       backward_tanh,
+        LayerKind.ERF.value:        backward_erf,
+        LayerKind.SQRT.value:       backward_sqrt,
+        LayerKind.SIN.value:        backward_sin,
+        LayerKind.COS.value:        backward_cos,
+        LayerKind.QUANTIZE.value:   backward_quantize,
         LayerKind.CONV2D.value:     backward_conv2d,
         LayerKind.MAXPOOL2D.value:  backward_maxpool2d,
         LayerKind.AVGPOOL2D.value:  backward_avgpool2d,
@@ -250,34 +428,36 @@ class DualTF:
         LayerKind.TRANSPOSE.value:  backward_identity,
         LayerKind.SQUEEZE.value:    backward_identity,
         LayerKind.UNSQUEEZE.value:  backward_identity,
+        LayerKind.EXPAND.value:     backward_identity,
+        LayerKind.GATHER.value:     backward_identity,
+        LayerKind.SLICE.value:      backward_slice,
+        LayerKind.MEAN.value:       backward_mean,
         LayerKind.ADD.value:        backward_add,
         LayerKind.CONCAT.value:     backward_concat,
         LayerKind.LSTM.value:       backward_lstm,
         LayerKind.GRU.value:        backward_gru,
         LayerKind.ATT_SCORES.value: backward_attention,
         LayerKind.ATT_MIX.value:    backward_attention,
-        LayerKind.MHA_SPLIT.value:  backward_attention,
-        LayerKind.MHA_JOIN.value:   backward_attention,
-        LayerKind.MASK_ADD.value:   backward_attention,
+        LayerKind.MATMUL.value:     backward_matmul,
+        LayerKind.MHA_SPLIT.value:  backward_mha,
+        LayerKind.MHA_JOIN.value:   backward_mha,
+        LayerKind.MASK_ADD.value:   backward_mha,
         LayerKind.LAYERNORM.value:  backward_layernorm,
+        LayerKind.SOFTMAX.value:    backward_softmax,
         LayerKind.GELU.value:       backward_gelu,
     }
 
     _UNIMPLEMENTED_KINDS = frozenset({
         LayerKind.LSTM.value,
         LayerKind.GRU.value,
-        LayerKind.GELU.value,
-        LayerKind.LAYERNORM.value,
-        LayerKind.ATT_SCORES.value,
-        LayerKind.ATT_MIX.value,
         LayerKind.MHA_SPLIT.value,
         LayerKind.MHA_JOIN.value,
         LayerKind.MASK_ADD.value,
         # Backward kernels for these are stubs that raise NotImplementedError
         # at runtime. Listing them here makes supports_layer return False so
         # upstream callers (validate_verifier) cleanly SKIP affected nets
-        # instead of surfacing runtime ERROR.
-        LayerKind.CONCAT.value,
+        # instead of surfacing runtime ERROR. ATT_SCORES / ATT_MIX / CONCAT now
+        # have real backward kernels and are intentionally absent.
     })
 
     def supports_layer(self, layer_kind: str) -> bool:
@@ -290,13 +470,10 @@ class DualTF:
 # by identity against these sets.
 # To implement a stub: fill its body AND remove it from this set in the same commit.
 _FORWARD_STUBS = frozenset({
-    forward_lstm, forward_gru, forward_attention,
-    forward_layernorm, forward_gelu,
+    forward_lstm, forward_gru, forward_mha,
 })
 _BACKWARD_STUBS = frozenset({
-    backward_concat,
-    backward_lstm, backward_gru, backward_attention,
-    backward_layernorm, backward_gelu,
+    backward_lstm, backward_gru, backward_mha,
 })
 
 # --- registry invariants (fire once at module import) ---
