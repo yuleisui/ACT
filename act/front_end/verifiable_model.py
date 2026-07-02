@@ -164,11 +164,16 @@ class VerifiableModel(nn.Module):
         else:
             x = result
         
-        # Spec layers always return tensors; collapse them to a single
-        # bool for the dict-shaped output expected by callers.
+        # Spec layers always return tensors; keep the per-sample masks (needed
+        # for lane-accurate counterexample attribution in batched validation)
+        # and collapse to a single bool for the dict-shaped output.
+        input_satisfied_per_sample = None
+        output_satisfied_per_sample = None
         if isinstance(input_satisfied, torch.Tensor):
+            input_satisfied_per_sample = input_satisfied.detach().reshape(-1).bool()
             input_satisfied = bool(input_satisfied.all().item())
         if isinstance(output_satisfied, torch.Tensor):
+            output_satisfied_per_sample = output_satisfied.detach().reshape(-1).bool()
             output_satisfied = bool(output_satisfied.all().item())
         
         # Strict mode: raise on constraint violations
@@ -189,8 +194,10 @@ class VerifiableModel(nn.Module):
             'output': x,
             'input_satisfied': input_satisfied,
             'input_explanation': input_explanation,
+            'input_satisfied_per_sample': input_satisfied_per_sample,
             'output_satisfied': output_satisfied,
-            'output_explanation': output_explanation
+            'output_explanation': output_explanation,
+            'output_satisfied_per_sample': output_satisfied_per_sample,
         }
 
 
@@ -426,18 +433,37 @@ class InputLayer(nn.Module):
 class InputSpecLayer(nn.Module):
     """
     Batched input constraint checker (BOX, L∞, LIN_POLY, LP_EMBEDDING).
-    
+
+    This layer serves two perturbation regimes carried by the wrapped
+    ``InputSpec``:
+
+    * **Image/input perturbation** (``BOX``, ``LINF_BALL``): the constraint
+      acts on pixel or raw-feature space (x in R^n).
+
+      - LINF_BALL:  { x : ||x - center||_inf <= eps }
+                    <=>  x_i in [center_i - eps, center_i + eps]  for every i
+      - BOX:        { x : lb_i <= x_i <= ub_i }  (explicit per-coordinate box)
+
+      ONE ball (or box) over ALL input coordinates — perturbs pixels/features.
+      ``x`` is compared directly against ``lb``/``ub`` (BOX) or
+      ``center``/``eps`` (LINF_BALL).
+
+    * **Embedding/position perturbation** (``LP_EMBEDDING``): selected token/patch
+      positions i satisfy ``||x_i - center_i||_p <= eps`` in embedding space (p = ``p_norm``).
+      ``perturbed_positions`` is a boolean position mask or integer index list; ``None`` selects all positions.
+      Unselected positions are pinned to ``center``. Analysis seeds the enclosing box; finite-p tightness is recovered by dual per-position input contributions.
+
     Batch Processing:
-        Input: x with shape (N, C, H, W)
-        Constraints: lb/ub/center with shape (N, C, H, W) - per-sample bounds
+        Input: x with shape (N, C, H, W) or (N, L, D) for embeddings
+        Constraints: lb/ub/center with shape (N, ...) - per-sample bounds
         Checks: Each sample x[i] verified independently against its bounds
         Output: (x, satisfied, explanation)
             - satisfied: (N,) bool tensor, one per sample
             - explanation: "✅ INPUT BOX: {n_ok}/{N} satisfied"
-    
+
     Args:
         spec: InputSpec with batched constraint tensors
-    
+
     Forward:
         x (N, ...) → (x, satisfied (N,), explanation str)
     """

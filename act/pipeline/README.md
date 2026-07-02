@@ -70,12 +70,15 @@ python -m act.pipeline --fuzz --creator torchvision --dataset MNIST
 Ensure verifier soundness and numerical precision:
 
 ```bash
-# Run comprehensive validation (Level 1 + Level 2)
-python -m act.pipeline --validate-verifier --device cpu --dtype float64
+# Run unified two-level validation on NetFactory nets (Level 1 + Level 2)
+python -m act.pipeline --verify netfactory --validate-soundness --device cpu --dtype float64
 
-# Run specific validation modes
-python -m act.pipeline --validate-verifier --mode counterexample
-python -m act.pipeline --validate-verifier --mode bounds --input-samples 20
+# Run with specific solver and TF mode
+python -m act.pipeline --verify netfactory --validate-soundness --tf-modes interval --solvers torchlp
+python -m act.pipeline --verify netfactory --validate-soundness --solvers dual
+
+# Run on a VNNLIB benchmark with validation enabled
+python -m act.pipeline --verify vnnlib --category acasxu_2023 --validate-soundness
 ```
 
 ### Conversion Tests

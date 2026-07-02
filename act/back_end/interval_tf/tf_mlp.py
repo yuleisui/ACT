@@ -373,6 +373,22 @@ def tf_reduce_sum(L: Layer, Bin: Bounds) -> Fact:
     C = ConSet(); C.add_box(L.id, L.out_vars, Bout)
     return Fact(Bout, C)
 
+def tf_mean(L: Layer, Bin: Bounds) -> Fact:
+    batch_size = Bin.lb.shape[0]
+    dims = L.params.get("dim")
+    keepdim = bool(L.params.get("keepdim", 0))
+    in_shape = L.params.get("input_shape")
+    lb_in, ub_in = Bin.lb, Bin.ub
+    if in_shape is not None and len(in_shape) > 0:
+        lb_in = lb_in.view(batch_size, *in_shape)
+        ub_in = ub_in.view(batch_size, *in_shape)
+    dim = tuple(int(a) + 1 for a in dims) if dims else tuple(range(1, lb_in.dim()))
+    lb_out = lb_in.mean(dim=dim, keepdim=keepdim)
+    ub_out = ub_in.mean(dim=dim, keepdim=keepdim)
+    Bout = Bounds(lb_out.reshape(batch_size, -1), ub_out.reshape(batch_size, -1))
+    C = ConSet(); C.add_box(L.id, L.out_vars, Bout)
+    return Fact(Bout, C)
+
 def tf_bn(L: Layer, Bin: Bounds) -> Fact:
     A,c=L.params["A"],L.params["c"]
     lb=torch.where(A>=0, A*Bin.lb+c, A*Bin.ub+c); ub=torch.where(A>=0, A*Bin.ub+c, A*Bin.lb+c)

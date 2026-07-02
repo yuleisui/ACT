@@ -49,7 +49,7 @@ conda activate act-py312
 
 ### Testing
 - **Pipeline tests**: `python -m act.pipeline --verify vnnlib` for comprehensive validation
-- **Verifier validation**: `python -m act.pipeline --validate-verifier` for end-to-end correctness
+- **Verifier validation**: `python -m act.pipeline --verify netfactory --validate-soundness` for end-to-end correctness
 
 ## Configuration System
 

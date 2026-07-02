@@ -397,7 +397,7 @@ python -m act.front_end --synthesis --creator vnnlib --device cuda
 python -m act.pipeline --verify vnnlib --device cpu --dtype float32
 
 # Run validation
-python -m act.pipeline --validate-verifier --device cuda
+python -m act.pipeline --verify netfactory --validate-soundness --device cuda
 ```
 
 ### Back-End CLI Examples

@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from copy import deepcopy
 import logging
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, cast
 import sys
 import torch
 
@@ -24,7 +24,6 @@ from act.back_end.config import VALID_SOLVER_TIERS
 
 logger = logging.getLogger(__name__)
 from act.front_end.specs import OutputSpec
-from act.front_end.spec_creator_base import LabeledInputTensor
 from act.front_end.vnnlib_loader.create_specs import VNNLibSpecCreator
 from act.front_end.vnnlib_loader import data_model_loader as vnnlib_loader
 from act.front_end.vnnlib_loader import category_mapping as vnnlib_mapping
@@ -32,16 +31,9 @@ from act.front_end.torchvision_loader.create_specs import TorchVisionSpecCreator
 from act.front_end.torchvision_loader import data_model_loader as tv_loader
 from act.front_end.torchvision_loader import data_model_mapping as tv_mapping
 from act.front_end.model_synthesis import synthesize_models_from_specs
-from act.pipeline.fuzzing.actfuzzer import ACTFuzzer, FuzzingConfig, FuzzingReport
+from act.pipeline.fuzzing.actfuzzer import ACTFuzzer, FuzzingConfig
 from act.pipeline.verification.per_neuron_bounds import PerNeuronCheckConfig
 
-
-# -----------------------------------------------------------------------------
-# Per-neuron bounds validation settings (Level 2)
-#
-# Zero-tolerance check: any concrete activation outside [lb, ub] is reported as
-# unsoundness. 
-# -----------------------------------------------------------------------------
 
 
 def print_header():
@@ -446,7 +438,7 @@ def cmd_fuzz(args):
     VerifiableModel.set_strict_mode(args.strict_mode)
 
     try:
-        wrapped_models = synthesize_models_from_specs(spec_results)
+        wrapped_models = synthesize_models_from_specs(cast(Any, spec_results))
     except Exception as e:
         print(f"❌ Model synthesis failed: {e}")
         import traceback
@@ -516,47 +508,77 @@ def cmd_fuzz(args):
 # ============================================================================
 
 
-def cmd_list_verifications():
-    """List available verification tests."""
-    print(f"\n{'=' * 80}")
-    print(f"AVAILABLE VERIFICATION TESTS")
-    print(f"{'=' * 80}\n")
+def _build_validator(args):
+    from act.pipeline.verification.validate_verifier import VerificationValidator
 
-    tests = [
-        ("act2torch", "ACT→PyTorch conversion validation (model_factory)"),
-        ("torch2act", "PyTorch→ACT conversion validation (torch2act)"),
-        ("validate_verifier", "Verifier correctness validation with concrete tests"),
-        ("all", "Run all verification tests"),
-    ]
-
-    for name, description in tests:
-        print(f"  {name:25s} - {description}")
-
-    print(f"\n{'=' * 80}\n")
+    dtype = torch.float64 if args.dtype == "float64" else torch.float32
+    return VerificationValidator(device=args.device, dtype=dtype)
 
 
-def _run_soundness_check(tag: str, vm, net, results, validator, solver: str):
-    vm = vm.to(validator.device, validator.dtype).eval()
-    summary = validator.validate_results_soundness(
-        tag, vm, results, solver=solver, act_net=net
+def _per_neuron_config(args) -> PerNeuronCheckConfig:
+    """Resolve the per-neuron check config; 'auto' tolerance = 100 ulp of --dtype.
+
+    100 ulp is the arithmetic noise floor between the abstract and concrete
+    computation paths (pairwise-reduction drift of the largest layers is
+    ~log2(n)*eps ≈ 18 ulp; float32 auto ≈ 1.2e-5 reproduces the historically
+    validated value from commit 0af6397). Pass '0,0' for strict zero.
+    """
+    if args.bounds_tolerance.strip().lower() == "auto":
+        dtype = torch.float64 if args.dtype == "float64" else torch.float32
+        floor = 100.0 * torch.finfo(dtype).eps
+        tol_abs = tol_rel = floor
+    else:
+        parts = [float(x) for x in args.bounds_tolerance.split(",")]
+        tol_abs = parts[0]
+        tol_rel = parts[1] if len(parts) > 1 else 0.0
+    return PerNeuronCheckConfig(
+        topk=int(args.per_neuron_topk),
+        tol_abs=tol_abs,
+        tol_rel=tol_rel,
     )
-    for result in summary["results"]:
-        status = result["validation_status"]
-        ce_label = "FOUND" if result["concrete_counterexample"] else "NOT_FOUND"
-        verifier = result["verifier_result"].name
-        print(
-            f"  [soundness] {result['network']}: {status} "
-            f"(concrete_ce={ce_label}, verifier={verifier})"
+
+
+def _verify_and_validate_cell(
+    *,
+    tag: str,
+    model,
+    net,
+    args,
+    validator,
+    solver: str,
+    tf_mode: str,
+    per_neuron_config,
+    batch_size=None,
+    cell_label=None,
+) -> None:
+    """Shared verify_once + optional soundness-validation tail for the drivers.
+
+    ``cell_label`` overrides the printed status line (netfactory sweep cells);
+    ``tag`` is always the identity passed to ``validator.validate``.
+    """
+    from act.back_end.verifier import verify_once
+
+    if args.validate_soundness:
+        results, facts = verify_once(net, collect_facts=True)
+    else:
+        results = verify_once(net)
+        facts = None
+    statuses = [r.status.name for r in results]
+    print(f"  {cell_label if cell_label is not None else tag}: {statuses}")
+    if args.validate_soundness:
+        assert validator is not None
+        validator.validate(
+            tag,
+            model,
+            net,
+            results,
+            solver=solver,
+            tf_mode=tf_mode,
+            facts=facts,
+            num_samples=args.samples,
+            per_neuron_config=per_neuron_config,
+            batch_size=batch_size,
         )
-    return summary
-
-
-def _print_soundness_summary(summary: dict[str, Any]) -> None:
-    print(
-        f"SOUNDNESS SUMMARY: total={summary['total']} passed={summary['passed']} "
-        f"acceptable={summary['acceptable']} inconclusive={summary['inconclusive']} "
-        f"failed={summary['failed']} unknown={summary['unknown']}"
-    )
 
 
 def _run_vnnlib_verify(args) -> bool:
@@ -575,12 +597,10 @@ def _run_vnnlib_verify(args) -> bool:
     from act.front_end.vnnlib_loader.create_specs import VNNLibSpecCreator
     from act.front_end.model_synthesis import synthesize_models_from_specs
     from act.pipeline.verification.torch2act import TorchToACT
-    from act.back_end.verifier import verify_once
     from act.back_end.transfer_functions import (
         set_solver_mode,
         set_transfer_function_mode,
     )
-    from act.pipeline.verification.validate_verifier import VerificationValidator
 
     if not args.category:
         raise ValueError("--verify vnnlib requires --category (e.g. --category acasxu_2023)")
@@ -604,33 +624,32 @@ def _run_vnnlib_verify(args) -> bool:
     if not wrapped:
         raise RuntimeError("synthesize_models_from_specs produced no VerifiableModels")
 
-    validator = None
-    soundness_summary = None
-    if args.validate_soundness:
-        dtype = torch.float64 if args.dtype == "float64" else torch.float32
-        validator = VerificationValidator(device=args.device, dtype=dtype)
+    per_neuron_config = _per_neuron_config(args)
+    validator = _build_validator(args) if args.validate_soundness else None
     for mid, vm in wrapped.items():
         tag = "/".join(str(p) for p in mid)
         net = TorchToACT(vm).run()
         if getattr(args, "bab", False):
+            if args.validate_soundness:
+                print("⚠️  --validate-soundness is not yet supported with --bab; skipping validation")
             status = _run_bab_on_net(net, args)
             label = f"BaB[{args.bab_solver_tier}]"
             print(f"  {tag}: {label} → {status}")
         else:
-            results = verify_once(net)
-            statuses = [r.status.name for r in results]
-            print(f"  {tag}: {statuses}")
-            if args.validate_soundness:
-                assert validator is not None
-                soundness_summary = _run_soundness_check(
-                    tag, vm, net, results, validator, solver
-                )
+            _verify_and_validate_cell(
+                tag=tag,
+                model=vm,
+                net=net,
+                args=args,
+                validator=validator,
+                solver=solver,
+                tf_mode=tf_mode,
+                per_neuron_config=per_neuron_config,
+            )
 
     if args.validate_soundness:
-        assert validator is not None and soundness_summary is not None
-        soundness_summary = validator._compute_summary(validation_type="counterexample")
-        _print_soundness_summary(soundness_summary)
-        return soundness_summary["failed"] > 0
+        assert validator is not None
+        return validator.overall_failed(args.ignore_errors)
     return False
 
 
@@ -776,12 +795,10 @@ def _run_torchvision_verify(args) -> bool:
     from act.front_end.torchvision_loader.create_specs import TorchVisionSpecCreator
     from act.front_end.model_synthesis import synthesize_models_from_specs
     from act.pipeline.verification.torch2act import TorchToACT
-    from act.back_end.verifier import verify_once
     from act.back_end.transfer_functions import (
         set_solver_mode,
         set_transfer_function_mode,
     )
-    from act.pipeline.verification.validate_verifier import VerificationValidator
 
     if not args.dataset:
         raise ValueError("--verify torchvision requires --dataset (e.g. --dataset MNIST)")
@@ -815,6 +832,8 @@ def _run_torchvision_verify(args) -> bool:
         raise RuntimeError("synthesize_models_from_specs produced no VerifiableModels")
 
     if getattr(args, "bab", False):
+        if args.validate_soundness:
+            print("⚠️  --validate-soundness is not yet supported with --bab; skipping validation")
         local_robust = [
             (mid, vm) for mid, vm in wrapped.items() if "LINF_BALL" in tuple(str(p) for p in mid)
         ]
@@ -828,29 +847,95 @@ def _run_torchvision_verify(args) -> bool:
         print(f"  {tag} (sample 0 / local-robustness): {label} → {status}")
         return False
 
-    validator = None
-    soundness_summary = None
-    if args.validate_soundness:
-        dtype = torch.float64 if args.dtype == "float64" else torch.float32
-        validator = VerificationValidator(device=args.device, dtype=dtype)
+    per_neuron_config = _per_neuron_config(args)
+    validator = _build_validator(args) if args.validate_soundness else None
     for mid, vm in wrapped.items():
         tag = "/".join(str(p) for p in mid)
         net = TorchToACT(vm).run()
-        results = verify_once(net)
-        statuses = [r.status.name for r in results]
-        print(f"  {tag}: {statuses}")
-        if args.validate_soundness:
-            assert validator is not None
-            soundness_summary = _run_soundness_check(
-                tag, vm, net, results, validator, solver
-            )
+        _verify_and_validate_cell(
+            tag=tag,
+            model=vm,
+            net=net,
+            args=args,
+            validator=validator,
+            solver=solver,
+            tf_mode=tf_mode,
+            per_neuron_config=per_neuron_config,
+        )
 
     if args.validate_soundness:
-        assert validator is not None and soundness_summary is not None
-        soundness_summary = validator._compute_summary(validation_type="counterexample")
-        _print_soundness_summary(soundness_summary)
-        return soundness_summary["failed"] > 0
+        assert validator is not None
+        return validator.overall_failed(args.ignore_errors)
     return False
+
+
+def _run_netfactory_verify(args) -> bool:
+    """Run verify_once over ModelFactory networks, optionally with validation."""
+    from act.back_end.solver.solver_gurobi import is_gurobi_available
+    from act.back_end.transfer_functions import set_solver_mode, set_transfer_function_mode
+
+    validator = _build_validator(args)
+    networks = args.networks.split(",") if args.networks else validator.factory.list_networks()
+    solvers = list(args.solvers or ["torchlp"])
+    if "gurobi" in solvers and not is_gurobi_available():
+        logger.warning("Skipping gurobi solver: gurobipy is not available.")
+        solvers = [s for s in solvers if s != "gurobi"]
+    tf_modes = args.tf_modes or ["interval"]
+    batch_sizes = _resolve_batch_sizes(getattr(args, "batch_sizes", None))
+    per_neuron_config = _per_neuron_config(args)
+    errors_seen = False
+
+    for name in networks:
+        for solver in solvers:
+            for tf_mode in tf_modes:
+                for batch_size in batch_sizes:
+                    try:
+                        set_solver_mode(solver)
+                        if solver != "dual":
+                            set_transfer_function_mode(tf_mode)
+                        act_net = validator.factory.get_act_net(name)
+                        act_net = validator._batchify_net(act_net, batch_size)
+                        reason = validator.skip_reason(act_net, solver, tf_mode)
+                        if reason:
+                            validator.record_skip(name, solver, tf_mode, batch_size, reason)
+                            continue
+
+                        model = validator.factory.create_model(name, load_weights=True)
+                        label = solver if solver == "dual" else f"{tf_mode}/{solver}"
+                        _verify_and_validate_cell(
+                            tag=name,
+                            model=model,
+                            net=act_net,
+                            args=args,
+                            validator=validator,
+                            solver=solver,
+                            tf_mode=tf_mode,
+                            per_neuron_config=per_neuron_config,
+                            batch_size=batch_size,
+                            cell_label=f"{name} B={batch_size} mode={label}",
+                        )
+                    except Exception as e:
+                        errors_seen = True
+                        logger.error(
+                            "Validation failed for %s/%s/%s/B=%s: %s",
+                            name,
+                            solver,
+                            tf_mode,
+                            batch_size,
+                            e,
+                        )
+                        import traceback
+
+                        traceback.print_exc()
+                        validator.record_error(
+                            name, solver, tf_mode, batch_size, f"Outer exception: {str(e)}"
+                        )
+
+    return (
+        validator.overall_failed(args.ignore_errors)
+        if args.validate_soundness
+        else (False if args.ignore_errors else errors_seen)
+    )
 
 
 def cmd_verify(target: str, args):
@@ -861,7 +946,7 @@ def cmd_verify(target: str, args):
 
     tests_to_run = []
     if target == "all":
-        tests_to_run = ["act2torch", "torch2act"]
+        tests_to_run = ["act2torch", "torch2act", "netfactory"]
     else:
         tests_to_run = [target]
 
@@ -888,6 +973,19 @@ def cmd_verify(target: str, args):
             try:
                 torch2act.main()
                 results[test_name] = "PASSED"
+            except Exception as e:
+                print(f"\n❌ Test failed: {e}")
+                import traceback
+
+                traceback.print_exc()
+                results[test_name] = "FAILED"
+
+        elif test_name == "netfactory":
+            print(f"VERIFICATION TEST: ModelFactory → verify_once")
+            print(f"{'=' * 80}\n")
+            try:
+                validation_failed = _run_netfactory_verify(args)
+                results[test_name] = "FAILED" if validation_failed else "PASSED"
             except Exception as e:
                 print(f"\n❌ Test failed: {e}")
                 import traceback
@@ -961,88 +1059,6 @@ def _resolve_batch_sizes(cli_value):
     return [None]
 
 
-def cmd_validate_verifier(args):
-    """Run verifier validation with specified mode.
-
-    Args:
-        mode: validation mode (counterexample, bounds, comprehensive)
-        networks: list of networks to validate (default: all)
-        solvers: list of solvers to use (default: gurobi torchlp)
-        tf_modes: list of transfer function modes to use (default: interval)
-        samples: number of samples to use (default: 10)
-        per_neuron_topk: number of worst per-neuron violations to report
-    """
-    import torch
-    from act.pipeline.verification.validate_verifier import VerificationValidator
-
-    print_header()
-
-    # Convert dtype string to torch dtype
-    dtype = torch.float64 if args.dtype == "float64" else torch.float32
-
-    # Create validator
-    validator = VerificationValidator(device=args.device, dtype=dtype)
-
-    # Parse networks if specified
-    networks = args.networks.split(",") if args.networks else None
-
-    try:
-        per_neuron_config = PerNeuronCheckConfig(topk=int(args.per_neuron_topk))
-        batch_sizes = _resolve_batch_sizes(getattr(args, "batch_sizes", None))
-        if args.mode == "counterexample":
-            summary = validator.validate_counterexamples(
-                networks=networks,
-                solvers=args.solvers,
-                tf_modes=args.tf_modes,
-                batch_sizes=batch_sizes,
-            )
-            exit_code = (
-                0
-                if args.ignore_errors
-                else (
-                    1 if (summary["failed"] > 0 or summary.get("errors", 0) > 0) else 0
-                )
-            )
-        elif args.mode == "bounds":
-            summary = validator.validate_bounds(
-                networks=networks,
-                tf_modes=args.tf_modes,
-                num_samples=args.samples,
-                per_neuron_config=per_neuron_config,
-                batch_sizes=batch_sizes,
-            )
-            exit_code = (
-                0
-                if args.ignore_errors
-                else (
-                    1 if (summary["failed"] > 0 or summary.get("errors", 0) > 0) else 0
-                )
-            )
-        else:
-            combined = validator.validate_comprehensive(
-                networks=networks,
-                solvers=args.solvers,
-                tf_modes=args.tf_modes,
-                num_samples=args.samples,
-                per_neuron_config=per_neuron_config,
-                batch_sizes=batch_sizes,
-            )
-            exit_code = (
-                0
-                if args.ignore_errors
-                else (1 if combined["overall_status"] in ("FAILED", "ERROR") else 0)
-            )
-
-        sys.exit(exit_code)
-
-    except Exception as e:
-        print(f"\n❌ Validation failed: {e}")
-        import traceback
-
-        traceback.print_exc()
-        sys.exit(1)
-
-
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -1075,6 +1091,7 @@ Examples:
   # Run verification tests
   python -m act.pipeline --verify act2torch --device cpu
   python -m act.pipeline --verify torch2act --device cpu
+  python -m act.pipeline --verify netfactory --device cpu
   python -m act.pipeline --verify all --device cpu
 
   # Run verifier on a VNNLIB benchmark end-to-end (load → ACT → verify_once).
@@ -1087,12 +1104,11 @@ Examples:
   python -m act.pipeline --verify torchvision --dataset MNIST --model simple_cnn --num-samples 2 --tf-modes interval --solvers torchlp
   python -m act.pipeline --verify torchvision --dataset MNIST --model simple_cnn --num-samples 2 --tf-modes hybridz  --solvers torchlp
   python -m act.pipeline --verify torchvision --dataset MNIST --model simple_cnn --num-samples 2                     --solvers dual
-  
-  # Run verifier validation (comprehensive by default)
-  python -m act.pipeline --validate-verifier --device cpu --dtype float64
-  python -m act.pipeline --validate-verifier --mode counterexample
-  python -m act.pipeline --validate-verifier --mode bounds --input-samples 20
-  python -m act.pipeline --validate-verifier --mode bounds --per-neuron-topk 20
+
+  # Run unified two-level verifier validation after verification.
+  python -m act.pipeline --verify netfactory --solvers torchlp --tf-modes interval --validate-soundness
+  python -m act.pipeline --verify vnnlib --category acasxu_2023 --max-instances 3 --validate-soundness
+  python -m act.pipeline --verify torchvision --dataset MNIST --model simple_cnn --num-samples 2 --validate-soundness
         """,
     )
 
@@ -1124,24 +1140,16 @@ Examples:
         "--verify",
         type=str,
         metavar="TARGET",
-        choices=["act2torch", "torch2act", "vnnlib", "torchvision", "all"],
-        help="Run verification tests: act2torch, torch2act, vnnlib, torchvision, "
-        "or all. The 'vnnlib' target runs the verifier on a VNNLIB benchmark "
+        choices=["act2torch", "torch2act", "netfactory", "vnnlib", "torchvision", "all"],
+        help="Run verification tests: act2torch, torch2act, netfactory, vnnlib, torchvision, "
+        "or all. The 'netfactory' target runs generated ACT example nets; "
+        "the 'vnnlib' target runs the verifier on a VNNLIB benchmark "
         "end-to-end (requires --category); 'torchvision' does the same for a "
         "TorchVision dataset-model pair (requires --dataset, optionally --model). "
         "Both read the FIRST element of --tf-modes / --solvers (single mode per "
         "invocation; matrix sweeps by repeated calls).",
     )
-    cmd_group.add_argument(
-        "--validate-verifier",
-        action="store_true",
-        help="Run verifier validation (counterexample and bounds checking)",
-    )
-    cmd_group.add_argument(
-        "--list-verifications",
-        action="store_true",
-        help="List available verification tests",
-    )
+
 
     # Creator selection
     parser.add_argument(
@@ -1343,11 +1351,9 @@ Examples:
     # Validation options
     validation_group = parser.add_argument_group("Validation Options")
     validation_group.add_argument(
-        "--mode",
-        type=str,
-        choices=["counterexample", "bounds", "comprehensive"],
-        default="comprehensive",
-        help="Validation mode (default: comprehensive)",
+        "--validate-soundness",
+        action="store_true",
+        help="After --verify {netfactory,vnnlib,torchvision}, run unified two-level soundness validation: Level 1 counterexample cross-check (all solvers) + Level 2 per-neuron bounds check (analyze facts for interval/hybridz; dual forward bounds for --solvers dual)",
     )
     validation_group.add_argument(
         "--networks",
@@ -1379,8 +1385,19 @@ Examples:
         default=10,
         metavar="K",
         help="Number of worst per-neuron violations to report (default: 10). "
-        "The bounds check itself is zero-tolerance — any deviation outside "
-        "[lb, ub] is flagged as unsound.",
+        "The bounds check itself is zero-tolerance by default — any deviation "
+        "outside [lb, ub] is flagged as unsound (see --bounds-tolerance).",
+    )
+    validation_group.add_argument(
+        "--bounds-tolerance",
+        type=str,
+        default="auto",
+        metavar="ABS[,REL]|auto",
+        help="FP-noise floor for the per-neuron bounds check: violation iff "
+        "gap > ABS + REL*max(|lb|,|ub|). Default 'auto' = 100 ulp of --dtype "
+        "(~1.2e-5 float32, ~2.2e-14 float64) — the arithmetic noise floor "
+        "between abstract and concrete kernels, far below any genuine "
+        "unsoundness. Pass '0,0' for strict zero tolerance.",
     )
     validation_group.add_argument(
         "--batch-sizes",
@@ -1399,13 +1416,6 @@ Examples:
         "--ignore-errors",
         action="store_true",
         help="Always exit 0 (ignore failures and errors for CI)",
-    )
-
-    verify_group = parser.add_argument_group("Verify Options")
-    verify_group.add_argument(
-        "--validate-soundness",
-        action="store_true",
-        help="After --verify vnnlib/torchvision, run concrete-counterexample soundness validation on the same instances",
     )
 
     # Add standard device/dtype arguments (shared across all ACT CLIs)
@@ -1437,10 +1447,6 @@ Examples:
             cmd_fuzz(args)
         elif args.verify:
             cmd_verify(args.verify, args)
-        elif args.validate_verifier:
-            cmd_validate_verifier(args)
-        elif args.list_verifications:
-            cmd_list_verifications()
     except KeyboardInterrupt:
         print("\n\n⚠️  Interrupted by user")
         sys.exit(1)

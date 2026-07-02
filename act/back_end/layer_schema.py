@@ -181,6 +181,36 @@ class LayerKind(str, enum.Enum):
     PAD = "PAD"
 
 
+# Canonical kind groupings (single source; consumers must not redefine these).
+TRANSFORMER_KINDS: frozenset[str] = frozenset(
+    {
+        LayerKind.ATT_SCORES.value,
+        LayerKind.ATT_MIX.value,
+        LayerKind.MHA_SPLIT.value,
+        LayerKind.MHA_JOIN.value,
+        LayerKind.MHA.value,
+        LayerKind.SOFTMAX.value,
+        LayerKind.LAYERNORM.value,
+        LayerKind.GELU.value,
+        LayerKind.POSENC.value,
+        LayerKind.EMBEDDING.value,
+        LayerKind.EMBEDDING_TF.value,
+        LayerKind.MASK_ADD.value,
+    }
+)
+
+# Activations with a 1:1 standard torch module surface (hook-traceable).
+HOOKABLE_ACTIVATION_KINDS: frozenset[str] = frozenset(
+    {
+        LayerKind.RELU.value,
+        LayerKind.SIGMOID.value,
+        LayerKind.TANH.value,
+        LayerKind.SILU.value,
+        LayerKind.LRELU.value,
+    }
+)
+
+
 # -------------------------------------------
 # Strict schema: flat registry (easy to edit)
 # -------------------------------------------

@@ -53,8 +53,39 @@ def affine_bounds(W_pos, W_neg, b, Bin: Bounds) -> Bounds:
         Bounds with lb/ub shape [B, out_features].
     """
     assert Bin.lb.dim() == 2, f"affine_bounds expects 2D [B, n_in] bounds, got shape {tuple(Bin.lb.shape)}"
-    lb = Bin.lb @ W_pos.T + Bin.ub @ W_neg.T + b
-    ub = Bin.ub @ W_pos.T + Bin.lb @ W_neg.T + b
+    lo, hi = Bin.lb, Bin.ub
+    if not (torch.isinf(lo).any() or torch.isinf(hi).any()):
+        lb = lo @ W_pos.T + hi @ W_neg.T + b
+        ub = hi @ W_pos.T + lo @ W_neg.T + b
+        return Bounds(lb, ub)
+    return _affine_bounds_inf_safe(W_pos, W_neg, b, lo, hi)
+
+
+def _affine_bounds_inf_safe(W_pos, W_neg, b, lo, hi) -> Bounds:
+    # Interval-arithmetic convention 0 * (±inf) = 0: a zero weight drops its
+    # input coordinate from the affine map, so an unbounded input range times a
+    # zero weight must contribute 0. IEEE evaluates 0*inf as NaN, which the fused
+    # matmul then spreads across the whole output row (an unsound NaN "bound").
+    # Compute the finite contribution with infinities zeroed, then re-inject the
+    # true infinities from the sign pattern of the already-split nonnegative
+    # (W_pos) / nonpositive (W_neg) weights, which never multiplies a zero weight
+    # by an infinity. NaN inputs are left intact so genuine upstream NaN surfaces.
+    dt = lo.dtype
+    lo0 = torch.where(torch.isinf(lo), torch.zeros_like(lo), lo)
+    hi0 = torch.where(torch.isinf(hi), torch.zeros_like(hi), hi)
+    lb = lo0 @ W_pos.T + hi0 @ W_neg.T + b
+    ub = hi0 @ W_pos.T + lo0 @ W_neg.T + b
+
+    wp = (W_pos > 0).to(dt)   # strictly positive weights (W > 0)
+    wn = (W_neg < 0).to(dt)   # strictly negative weights (W < 0)
+    lo_neg = (lo == float("-inf")).to(dt)
+    hi_pos = (hi == float("inf")).to(dt)
+    # min_x (Wx+b) is -inf iff some coord has (lo=-inf & W>0) or (hi=+inf & W<0)
+    lb_neg = (lo_neg @ wp.T + hi_pos @ wn.T) > 0
+    # max_x (Wx+b) is +inf iff some coord has (hi=+inf & W>0) or (lo=-inf & W<0)
+    ub_pos = (hi_pos @ wp.T + lo_neg @ wn.T) > 0
+    lb = torch.where(lb_neg, torch.full_like(lb, float("-inf")), lb)
+    ub = torch.where(ub_pos, torch.full_like(ub, float("inf")), ub)
     return Bounds(lb, ub)
 
 def pwl_meta(l: torch.Tensor, u: torch.Tensor, K: int) -> Dict[str, Any]:
@@ -156,3 +187,68 @@ def validate_constraints(globalC, after: Dict, net) -> bool:
             f.write("\n")
     
     return all_valid
+
+
+def _test_affine_bounds_inf_safe_soundness() -> None:  # pragma: no cover
+    torch.manual_seed(0)
+    n_in, n_out = 6, 5
+    W = torch.randn(n_out, n_in, dtype=torch.float64)
+    W[0, :] = 0.0            # all-zero row: pure 0*inf annihilation
+    b = torch.randn(n_out, dtype=torch.float64)
+    W_pos, W_neg = torch.clamp(W, min=0), torch.clamp(W, max=0)
+
+    lo = torch.tensor([[-1., -2., -0.5, 0., -3., 1.]], dtype=torch.float64)
+    hi = torch.tensor([[1., 0., 0.5, 2., 1., 2.]], dtype=torch.float64)
+    Bf = affine_bounds(W_pos, W_neg, b, Bounds(lo, hi))
+    assert not torch.isnan(Bf.lb).any() and not torch.isnan(Bf.ub).any()
+    assert torch.all(Bf.lb <= Bf.ub)
+    for _ in range(300):
+        x = lo + (hi - lo) * torch.rand_like(lo)
+        y = x @ W.T + b
+        assert torch.all(y >= Bf.lb - 1e-9), "finite-box lb not sound"
+        assert torch.all(y <= Bf.ub + 1e-9), "finite-box ub not sound"
+
+    inf = float("inf")
+    lo_i = torch.tensor([[-inf, -inf, -1., -inf, -inf, -inf]], dtype=torch.float64)
+    hi_i = torch.tensor([[inf, inf, 1., inf, inf, inf]], dtype=torch.float64)
+    Bi = affine_bounds(W_pos, W_neg, b, Bounds(lo_i, hi_i))
+    assert not torch.isnan(Bi.lb).any(), "affine_bounds produced NaN lb on +/-inf input"
+    assert not torch.isnan(Bi.ub).any(), "affine_bounds produced NaN ub on +/-inf input"
+    assert torch.all(Bi.lb <= Bi.ub)
+    assert torch.isfinite(Bi.lb[0, 0]) and torch.isfinite(Bi.ub[0, 0])
+    assert torch.allclose(Bi.lb[0, 0], b[0]) and torch.allclose(Bi.ub[0, 0], b[0])
+    for j in range(1, n_out):
+        assert torch.isneginf(Bi.lb[0, j]) or torch.isposinf(Bi.ub[0, j]), (
+            f"row {j} has a nonzero weight onto an unbounded coord but was finitised"
+        )
+    for _ in range(300):
+        x = torch.randn(1, n_in, dtype=torch.float64) * 1e3
+        y = x @ W.T + b
+        assert torch.all(y >= Bi.lb - 1e-6), "inf-box lb not sound"
+        assert torch.all(y <= Bi.ub + 1e-6), "inf-box ub not sound"
+
+
+_TESTS = [_test_affine_bounds_inf_safe_soundness]  # pragma: no cover
+
+
+def main() -> int:  # pragma: no cover
+    from act.util.device_manager import initialize_device
+
+    initialize_device("cpu", "float64")
+    passed = failed = 0
+    for fn in _TESTS:
+        try:
+            fn()
+            passed += 1
+            print(f"  PASS  {fn.__name__}")
+        except Exception as e:
+            failed += 1
+            print(f"  FAIL  {fn.__name__}: {type(e).__name__}: {e}")
+    print(f"\n{passed} passed, {failed} failed")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    import sys
+
+    sys.exit(main())

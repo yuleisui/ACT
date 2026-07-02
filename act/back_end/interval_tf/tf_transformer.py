@@ -25,6 +25,23 @@ from act.back_end.interval_tf.tf_attention import LinearBounds, att_scores_dual_
 # in interval_tf.py — both EMBEDDING and EMBEDDING_TF would have raised
 # TypeError at runtime. Single source of truth lives in tf_rnn.
 
+def _round_nan_outward(lb: torch.Tensor, ub: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Round 0*inf / inf-inf NaNs outward to a sound extended-real interval.
+
+    Interval TFs are seeded with +/-inf placeholders on the first worklist
+    visit, before a predecessor has converged. The LayerNorm std-normalisation
+    product cx*inv and the GELU polynomial x*(1+tanh(...)) then evaluate the
+    indeterminate 0*inf at an unbounded endpoint, which IEEE returns as NaN.
+    NaN is unsound as a bound and, worse, invisible to the fixpoint change test
+    (every NaN comparison is false), so it would stick forever and never refine.
+    Widening NaN to -inf (lb) / +inf (ub) keeps the interval a sound
+    over-approximation and lets a later visit with finite predecessor bounds
+    recompute a finite result.
+    """
+    lb = torch.where(torch.isnan(lb), lb.new_full((), float("-inf")), lb)
+    ub = torch.where(torch.isnan(ub), ub.new_full((), float("inf")), ub)
+    return lb, ub
+
 def tf_posenc(L: Layer, Bin: Bounds) -> Fact:
     P = cast(torch.Tensor, L.params["pos_vec"]); B=Bounds(Bin.lb+P, Bin.ub+P); C=ConSet()
     C.replace(Con("EQ", tuple(L.out_vars+L.in_vars), {"tag":f"posenc:{L.id}"})); C.add_box(L.id,L.out_vars,B); return Fact(B,C)
@@ -58,6 +75,7 @@ def tf_layernorm(L: Layer, Bin: Bounds) -> Fact:
         beta = beta.repeat(repeat)
     lb=torch.where(gamma>=0, gamma*sh_lb+beta, gamma*sh_ub+beta)
     ub=torch.where(gamma>=0, gamma*sh_ub+beta, gamma*sh_lb+beta)
+    lb, ub = _round_nan_outward(lb, ub)
     B=Bounds(lb,ub); C=ConSet(); C.replace(Con("INEQ", tuple(L.out_vars+L.in_vars), {"tag":f"layernorm:{L.id}"}))
     C.add_box(L.id,L.out_vars,B); return Fact(B,C)
 
@@ -69,6 +87,7 @@ def tf_gelu(L: Layer, Bin: Bounds) -> Fact:
     contains_min = (Bin.lb <= GELU_MIN_X) & (Bin.ub >= GELU_MIN_X)
     lb = torch.where(contains_min, torch.full_like(f_lb, GELU_MIN_Y), torch.minimum(f_lb, f_ub))
     ub = torch.maximum(f_lb, f_ub)
+    lb, ub = _round_nan_outward(lb, ub)
     B = Bounds(lb, ub); C = ConSet()
     C.replace(Con("INEQ", tuple(L.out_vars+L.in_vars), {"tag":f"gelu:{L.id}","segs":pwl_meta(Bin.lb,Bin.ub,3)}))
     C.add_box(L.id, L.out_vars, B); return Fact(B, C)

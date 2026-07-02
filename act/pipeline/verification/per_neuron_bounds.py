@@ -13,37 +13,37 @@
 #   by a reference PyTorch forward pass, neuron-by-neuron, for a single input.
 #
 # Key Features:
-#   - Abstract bounds extraction:
-#       Runs ACT analyze() to obtain per-layer Bounds(lb, ub) for all layers.
+#   - Bounds extraction:
+#       Reuses verifier-produced per-layer Bounds(lb, ub): analyze() facts for
+#       interval/hybridz, and dual pre-activation forward bounds for dual.
 #   - Concrete activation tracing (hook-based):
-#       Captures intermediate module outputs via forward hooks on “hookable”
-#       PyTorch modules (Linear/Conv/ReLU/Pool/Flatten/...).
+#       Captures hookable PyTorch module outputs, or activation inputs when
+#       comparing against dual pre-activation bounds.
 #   - Built-in alignment to ACT layer IDs:
 #       Aligns hook events to ACT layers using a strict hookable-order strategy
 #       (with optional shape sanity checks from ACT layer params).
-#   - Per-neuron violation detection (zero tolerance):
-#       A neuron is flagged whenever the concrete activation falls strictly
-#       outside [lb, ub]. There is no tolerance band — any deviation is
-#       reported as unsound. Compensating for floating-point noise is the
-#       responsibility of the abstract transfer functions (outward rounding),
-#       NOT this check.
+#   - Per-neuron violation detection:
+#       A neuron is flagged when the concrete activation falls outside [lb, ub]
+#       beyond the small floating-point noise tolerance used by the checker.
 #   - Debug-oriented reporting:
 #       Computes per-layer statistics and returns the top-K worst violations
 #       (largest gaps) for fast bug localization.
 #
-# Pipeline (single sample):
-#   (input_tensor, entry_fact)
-#     → compute_abstract_bounds()              : ACT analysis → bounds_by_layer
-#     → collect_concrete_activations()         : hooks → concrete_by_layer + meta
-#     → compare_bounds_per_neuron()            : gaps/violations/topk report
-#     → run_per_neuron_bounds_check()          : single entry point
+# Pipeline:
+#   once per net    : validate() → bounds_from_facts(verifier facts)
+#                       → precomputed_bounds (shared by all samples)
+#   once per sample : run_per_neuron_bounds_check(input_tensor, precomputed_bounds)
+#     → collect_concrete_activations()          : hooks → concrete_by_layer + meta
+#     → compare_bounds_per_neuron()             : gaps/violations/topk report
 #
 # Numerical Policy:
-#   - Zero tolerance:
-#       gap = max(lb - a, a - ub); any gap > 0 is a violation. No atol/rtol.
-#       A reversed interval (lb > ub) is automatically surfaced by the same
-#       gap test: there is no value of ``a`` for which both diffs are <= 0,
-#       so at least one neuron will be flagged as violating.
+#   - Zero tolerance by default:
+#       gap = max(lb - a, a - ub); violation iff gap > tol_abs + tol_rel * max(|lb|, |ub|)
+#       with PerNeuronCheckConfig defaults tol_abs = tol_rel = 0 (any deviation is
+#       unsound; FP noise is the transfer functions' outward-rounding job). The
+#       CLI resolves --bounds-tolerance 'auto' to the 100-ulp dtype noise floor;
+#       pass '0,0' there for strict zero.
+#       Reversed intervals (lb > ub) are still surfaced by the same gap test.
 #   - nan_policy="error":
 #       Any NaN/Inf encountered in concrete or bounds yields ERROR status.
 #   - topk:
@@ -64,9 +64,8 @@
 #       act_net=act_net,
 #       model=torch_model,
 #       input_tensor=x,
-#       entry_fact=entry_fact,
-#       tf_mode="interval",
 #       config=PerNeuronCheckConfig(topk=10),
+#       precomputed_bounds=bounds_by_layer,
 #   )
 #
 # Design Notes:
@@ -81,127 +80,107 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 
-from act.back_end.analyze import analyze
 from act.back_end.core import Bounds, Layer
-from act.back_end.verifier import find_entry_layer_id
-from act.back_end.transfer_functions import set_transfer_function_mode
+from act.back_end.layer_schema import (
+    HOOKABLE_ACTIVATION_KINDS,
+    TRANSFORMER_KINDS,
+    LayerKind,
+)
 
 
 _ACT_KIND_TO_MODULE = {
-    "DENSE": "Linear",
-    "CONV1D": "Conv1d",
-    "CONV2D": "Conv2d",
-    "CONV3D": "Conv3d",
-    "RELU": "ReLU",
-    "SIGMOID": "Sigmoid",
-    "TANH": "Tanh",
-    "SILU": "SiLU",
-    "LRELU": "LeakyReLU",
-    "FLATTEN": "Flatten",
-    "MAXPOOL1D": "MaxPool1d",
-    "MAXPOOL2D": "MaxPool2d",
-    "MAXPOOL3D": "MaxPool3d",
-    "AVGPOOL1D": "AvgPool1d",
-    "AVGPOOL2D": "AvgPool2d",
-    "AVGPOOL3D": "AvgPool3d",
-    "ADAPTIVEAVGPOOL1D": "AdaptiveAvgPool1d",
-    "ADAPTIVEAVGPOOL2D": "AdaptiveAvgPool2d",
-    "ADAPTIVEAVGPOOL3D": "AdaptiveAvgPool3d",
+    LayerKind.DENSE.value: "Linear",
+    LayerKind.CONV1D.value: "Conv1d",
+    LayerKind.CONV2D.value: "Conv2d",
+    LayerKind.CONV3D.value: "Conv3d",
+    LayerKind.RELU.value: "ReLU",
+    LayerKind.SIGMOID.value: "Sigmoid",
+    LayerKind.TANH.value: "Tanh",
+    LayerKind.SILU.value: "SiLU",
+    LayerKind.LRELU.value: "LeakyReLU",
+    LayerKind.FLATTEN.value: "Flatten",
+    LayerKind.MAXPOOL1D.value: "MaxPool1d",
+    LayerKind.MAXPOOL2D.value: "MaxPool2d",
+    LayerKind.MAXPOOL3D.value: "MaxPool3d",
+    LayerKind.AVGPOOL1D.value: "AvgPool1d",
+    LayerKind.AVGPOOL2D.value: "AvgPool2d",
+    LayerKind.AVGPOOL3D.value: "AvgPool3d",
+    LayerKind.ADAPTIVEAVGPOOL2D.value: "AdaptiveAvgPool2d",
 }
 
+_PRE_ACTIVATION_MODULES = frozenset(
+    _ACT_KIND_TO_MODULE[k] for k in HOOKABLE_ACTIVATION_KINDS
+)
 
-def compute_abstract_bounds(
-    act_net,
-    entry_fact,
-    *,
-    tf_mode: str = "interval",
-) -> Tuple[Dict[int, Bounds], List[str]]:
-    """Compute abstract bounds for all layers in the ACT net.
 
-    ``interval`` and ``hybridz`` are both batch-native and run a single
-    batched analyze pass directly on ``[B, *shape]`` bounds. ``dual`` is
-    still single-instance, so for B>1 it runs the analysis once per
-    sample and stacks the per-layer bounds along a new batch axis.
+def check_hookable_alignment(act_net, model: torch.nn.Module) -> Optional[str]:
+    """Return a Level-2 skip reason for structurally un-alignable models.
+
+    Ordinary mismatches intentionally return ``None`` so the strict hookable-order
+    path continues to surface them as hard errors.
     """
-    from act.back_end.core import Fact
+    hookable_kinds = set(_ACT_KIND_TO_MODULE.values())
+    hookable_modules = sum(
+        1
+        for module in model.modules()
+        if module is not model and module.__class__.__name__ in hookable_kinds
+    )
+    layers = getattr(act_net, "layers", [])
+    hookable_layers = sum(
+        1 for layer in layers if _ACT_KIND_TO_MODULE.get(layer.kind) in hookable_kinds
+    )
 
+    if hookable_modules == hookable_layers:
+        return None
+
+    layer_kinds = {getattr(layer, "kind", None) for layer in layers}
+    if layer_kinds & TRANSFORMER_KINDS:
+        return (
+            "transformer lowering is not 1:1 with torch modules "
+            f"(hookable events={hookable_modules} vs layers={hookable_layers}); "
+            "Level-2 alignment pending — Level 1 still enforced"
+        )
+
+    if hookable_modules == 0 and hookable_layers > 0:
+        return (
+            "reference model exposes no hookable torch modules "
+            "(ONNX-converted graph?); per-neuron alignment not applicable"
+        )
+
+    return None
+
+
+def bounds_from_facts(act_net, after) -> Tuple[Dict[int, Bounds], List[str]]:
+    raw_bounds: Dict[int, Bounds] = {}
+    for lid, fact_or_bounds in after.items():
+        raw_bounds[int(lid)] = (
+            fact_or_bounds
+            if isinstance(fact_or_bounds, Bounds)
+            else fact_or_bounds.bounds
+        )
+    return _validate_bounds_by_layer(act_net, raw_bounds)
+
+
+def _validate_bounds_by_layer(
+    act_net,
+    raw_bounds: Dict[int, Bounds],
+) -> Tuple[Dict[int, Bounds], List[str]]:
+    """Apply the common layer-presence, shape, and finite checks to bounds."""
     errors: List[str] = []
     bounds_by_layer: Dict[int, Bounds] = {}
-    set_transfer_function_mode(tf_mode)
-    entry_id = find_entry_layer_id(act_net)
-
-    seed_lb = entry_fact.bounds.lb
-    seed_ub = entry_fact.bounds.ub
-    is_batched_input = seed_lb.dim() >= 2 and seed_lb.shape[0] > 1
-    needs_per_sample = is_batched_input and tf_mode == "dual"
-
-    if needs_per_sample:
-        B = seed_lb.shape[0]
-        per_sample_after: List[Dict[int, Any]] = []
-        for b_idx in range(B):
-            # Preserve the leading B=1 axis (batch-native TFs require >=2D).
-            single_fact = Fact(
-                bounds=Bounds(
-                    lb=seed_lb[b_idx:b_idx + 1],
-                    ub=seed_ub[b_idx:b_idx + 1],
-                ),
-                cons=entry_fact.cons,
-            )
-            _before, after_b, _globalC = analyze(
-                act_net, entry_id, single_fact
-            )
-            per_sample_after.append(after_b)
-
-        for layer in getattr(act_net, "layers", []):
-            lid = layer.id
-            if not all(lid in a for a in per_sample_after):
-                errors.append(
-                    f"Missing bounds for layer_id={lid} (kind={layer.kind}) "
-                    f"in at least one sample under per-sample {tf_mode} analysis"
-                )
-                continue
-            lbs = [a[lid].bounds.lb for a in per_sample_after]
-            ubs = [a[lid].bounds.ub for a in per_sample_after]
-            # Per-sample TF backends differ: batched ones (interval) leave the
-            # B=1 axis intact (shape (1, *)); single-instance ones (dual)
-            # return 1-D (numel,). Normalize to at-least-2D then cat on dim 0
-            # so the result is always (B, *).
-            lbs = [t.unsqueeze(0) if t.dim() < 2 else t for t in lbs]
-            ubs = [t.unsqueeze(0) if t.dim() < 2 else t for t in ubs]
-            try:
-                stacked_lb = torch.cat(lbs, dim=0)
-                stacked_ub = torch.cat(ubs, dim=0)
-            except RuntimeError as e:
-                errors.append(
-                    f"Failed to stack per-sample bounds at layer_id={lid}: {e}"
-                )
-                continue
-            if stacked_lb.shape != stacked_ub.shape:
-                errors.append(
-                    f"Bounds shape mismatch at layer_id={lid}: "
-                    f"lb={tuple(stacked_lb.shape)} ub={tuple(stacked_ub.shape)}"
-                )
-                continue
-            if not torch.isfinite(stacked_lb).all() or not torch.isfinite(stacked_ub).all():
-                errors.append(f"Non-finite bounds at layer_id={lid}")
-                continue
-            bounds_by_layer[lid] = Bounds(lb=stacked_lb, ub=stacked_ub)
-        return bounds_by_layer, errors
-
-    _before, after, _globalC = analyze(act_net, entry_id, entry_fact)
 
     for layer in getattr(act_net, "layers", []):
         lid = layer.id
-        if lid not in after:
+        if lid not in raw_bounds:
             errors.append(f"Missing bounds for layer_id={lid} (kind={layer.kind})")
             continue
-        fact = after[lid]
-        lb = fact.bounds.lb
-        ub = fact.bounds.ub
+        bounds = raw_bounds[lid]
+        lb = bounds.lb
+        ub = bounds.ub
         if lb.shape != ub.shape:
             errors.append(
                 f"Bounds shape mismatch at layer_id={lid}: lb={tuple(lb.shape)} ub={tuple(ub.shape)}"
@@ -215,12 +194,46 @@ def compute_abstract_bounds(
     return bounds_by_layer, errors
 
 
+def sample_inputs_from_spec(
+    act_net,
+    num_samples: int,
+    *,
+    device,
+    dtype,
+    seed: int = 42,
+) -> List[torch.Tensor]:
+    """Sample deterministic concrete inputs from ACT INPUT_SPEC layers."""
+    from act.back_end.verifier import gather_input_spec_layers, seed_from_input_specs
+
+    spec_layers = gather_input_spec_layers(act_net)
+    seed_bounds = seed_from_input_specs(spec_layers)
+    lb = seed_bounds.lb.to(device=device, dtype=dtype)
+    ub = seed_bounds.ub.to(device=device, dtype=dtype)
+    if lb.dim() < 2:
+        lb = lb.unsqueeze(0)
+        ub = ub.unsqueeze(0)
+
+    samples: List[torch.Tensor] = []
+    if num_samples <= 0:
+        return samples
+
+    center = lb + 0.5 * (ub - lb)
+    samples.append(center)
+    generator = torch.Generator(device=lb.device)
+    generator.manual_seed(seed)
+    for _ in range(1, num_samples):
+        rand = torch.rand(lb.shape, device=lb.device, dtype=lb.dtype, generator=generator)
+        samples.append(lb + rand * (ub - lb))
+    return samples
+
+
 def collect_concrete_activations(
     act_net,
     model: torch.nn.Module,
     input_tensor: torch.Tensor,
     *,
     strict_single_call_per_module: bool = False,
+    pre_activation: bool = False,
 ) -> Tuple[Dict[int, torch.Tensor], List[str], List[str], Dict[str, Any]]:
     """
     Collect concrete activations and align them to ACT layer IDs.
@@ -236,11 +249,12 @@ def collect_concrete_activations(
         call_counts[module_id] = call_counts.get(module_id, 0) + 1
         if strict_single_call_per_module and call_counts[module_id] > 1:
             errors.append(f"Module called multiple times: {module.__class__.__name__}")
-        if not torch.is_tensor(output):
-            warnings.append(f"Non-tensor output from {module.__class__.__name__}")
+        module_type = module.__class__.__name__
+        tensor_source = inputs[0] if pre_activation and module_type in _PRE_ACTIVATION_MODULES else output
+        if not torch.is_tensor(tensor_source):
+            warnings.append(f"Non-tensor activation from {module_type}")
             return
-        tensor = output.detach()
-        hookable_events.append((module.__class__.__name__, tensor))
+        hookable_events.append((module_type, tensor_source.detach()))
 
     hookable_kinds = set(_ACT_KIND_TO_MODULE.values())
 
@@ -337,7 +351,7 @@ def collect_concrete_activations(
         mapping[layer.id] = tensor
 
     info = {
-        "mode": "hookable_order_strict",
+        "mode": "hookable_order_strict_pre_activation" if pre_activation else "hookable_order_strict",
         "hookable_events": len(hookable_events),
         "hookable_layers": len(hookable_layers),
     }
@@ -356,10 +370,12 @@ def compare_bounds_per_neuron(
     layer_by_id: Dict[int, Layer],
     topk: int = 10,
     nan_policy: str = "error",
+    tol_abs: float = 0.0,
+    tol_rel: float = 0.0,
 ) -> Dict[str, Any]:
     """
-    Compare per-neuron concrete activations against abstract bounds with
-    zero tolerance: any concrete value outside [lb, ub] is a violation.
+    Compare per-neuron concrete activations against abstract bounds. Zero
+    tolerance by default; a nonzero tol_abs/tol_rel must be passed explicitly.
     """
     errors: List[str] = []
     warnings: List[str] = []
@@ -411,7 +427,7 @@ def compare_bounds_per_neuron(
         gap = torch.maximum(diff_low, diff_high)
         gap = torch.clamp(gap, min=0.0)
 
-        tol = 1e-5 + 1e-5 * torch.maximum(lb_flat.abs(), ub_flat.abs())
+        tol = tol_abs + tol_rel * torch.maximum(lb_flat.abs(), ub_flat.abs())
         violations_mask = gap > tol
         num_violations = int(violations_mask.sum().item())
         violations_total += num_violations
@@ -486,23 +502,22 @@ def compare_bounds_per_neuron(
         "warnings": warnings,
     }
 
-"""
-Zero-tolerance per-neuron config.
-
-There is no atol/rtol: any concrete activation outside [lb, ub] is treated as
-unsoundness. Floating-point noise must be absorbed by the abstract transfer
-functions themselves (outward rounding), not by relaxing the check.
-
-topk:
-    When violations occur, topk returns the K most severe violation cases,
-    ranked by gap, to simplify debugging.
-nan_policy:
-    "error" => NaN/Inf in concrete or bounds yields ERROR status.
-"""
 @dataclass(frozen=True)
 class PerNeuronCheckConfig:
+    """Per-neuron check knobs.
+
+    topk: number of most-severe violating neurons to report per check.
+    nan_policy: "error" => NaN/Inf in concrete or bounds yields ERROR status.
+    tol_abs / tol_rel: violation threshold ``tol_abs + tol_rel * max(|lb|, |ub|)``.
+    Defaults are ZERO (any deviation outside [lb, ub] is unsound). The CLI's
+    ``--bounds-tolerance`` defaults to 'auto' (100 ulp of the run dtype) and
+    accepts '0,0' for strict zero.
+    """
+
     topk: int = 10
     nan_policy: str = "error"
+    tol_abs: float = 0.0
+    tol_rel: float = 0.0
 
 
 def run_per_neuron_bounds_check(
@@ -510,9 +525,9 @@ def run_per_neuron_bounds_check(
     act_net,
     model: torch.nn.Module,
     input_tensor: torch.Tensor,
-    entry_fact,
-    tf_mode: str,
-    config: PerNeuronCheckConfig,
+    config: PerNeuronCheckConfig = PerNeuronCheckConfig(),
+    precomputed_bounds: Dict[int, Bounds],
+    pre_activation: bool = False,
 ) -> Dict[str, Any]:
     """
     Full per-neuron bounds validation pipeline for a single input sample.
@@ -520,18 +535,13 @@ def run_per_neuron_bounds_check(
     errors: List[str] = []
     warnings: List[str] = []
 
-    bounds_by_layer, bounds_errors = compute_abstract_bounds(
-        act_net,
-        entry_fact,
-        tf_mode=tf_mode,
-    )
-    if bounds_errors:
-        errors.extend(bounds_errors)
+    bounds_by_layer = precomputed_bounds
 
     concrete_by_layer, event_errors, event_warnings, alignment_meta = collect_concrete_activations(
         act_net,
         model,
         input_tensor,
+        pre_activation=pre_activation,
     )
     if event_errors:
         errors.extend(event_errors)
@@ -572,6 +582,8 @@ def run_per_neuron_bounds_check(
         layer_by_id=getattr(act_net, "by_id", {}),
         topk=config.topk,
         nan_policy=config.nan_policy,
+        tol_abs=config.tol_abs,
+        tol_rel=config.tol_rel,
     )
 
     if compare.get("status") == "ERROR":

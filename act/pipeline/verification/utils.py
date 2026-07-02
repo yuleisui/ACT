@@ -832,10 +832,22 @@ def _convert_OnnxMatMul(self, mod: nn.Module, node: fx.Node) -> None:
         )
     output_shape = tuple(self.shape[:-1]) + (out_features,)
     out_vars = self._alloc_ids(_prod(output_shape) or out_features)
+    # DENSE concretizes against the FLAT var vector, so a batched
+    # (..., M, K) @ (K, N) that shares W across M tokens must become a
+    # block-diagonal weight (token_count copies of W.T) — exact, not relaxed.
+    weight_t = W.t().contiguous().detach().clone().to(self.dtype)
+    n_in_vars = len(self.prev_out)
+    if n_in_vars % in_features != 0:
+        raise ValueError(
+            f"OnnxMatMul at {node.name}: flat input var count {n_in_vars} "
+            f"is not a multiple of weight in_features {in_features}"
+        )
+    token_count = n_in_vars // in_features
+    weight_mat = torch.block_diag(*([weight_t] * token_count)) if token_count > 1 else weight_t
     layer_id = self._add_layer(
         LayerKind.DENSE.value,
-        {"weight": W.t().contiguous().detach().clone().to(self.dtype),
-         "in_features": in_features, "out_features": out_features,
+        {"weight": weight_mat,
+         "in_features": int(weight_mat.shape[1]), "out_features": int(weight_mat.shape[0]),
          "input_shape": self.shape, "output_shape": output_shape},
         self.prev_out, out_vars,
     )
@@ -984,6 +996,10 @@ def _convert_OnnxSplit13(self, mod: nn.Module, node: fx.Node) -> None:
 
     var_vars = list(self.prev_out)
     var_shape = self.shape
+    # All chunk SLICEs read the split's data input; pin their predecessor to
+    # that producing layer so graph-edge resolution can't mis-wire siblings to
+    # the split node (which maps only to the last chunk).
+    input_layer_id = self.node_to_layer_id.get(args[0].name)
     last_chunk_vars: List[int] = var_vars
     last_chunk_shape: Tuple[int, ...] = var_shape
     last_layer_id = -1
@@ -999,6 +1015,8 @@ def _convert_OnnxSplit13(self, mod: nn.Module, node: fx.Node) -> None:
              "input_shape": var_shape, "output_shape": chunk_shape_t},
             var_vars, chunk_vars,
         )
+        if input_layer_id is not None and input_layer_id >= 0:
+            self._fx_pred_override[layer_id] = [input_layer_id]
         if i in getitem_children:
             git_node = getitem_children[i]
             self.node_outputs[git_node.name] = chunk_vars
@@ -1334,11 +1352,128 @@ def _convert_OnnxWhere(self, mod: nn.Module, node: fx.Node) -> None:
     self.shape = output_shape
     self._register_node(node.name, layer_id)
 
+def _convert_unary_same_shape(self, node: fx.Node, kind: LayerKind, op_name: str) -> None:
+    if not self._get_predecessor_state(node):
+        raise ValueError(f"{op_name}: missing predecessor for {node.name}")
+    out_vars = self._same_size_forward()
+    layer_id = self._add_layer(
+        kind.value,
+        {"input_shape": self.shape, "output_shape": self.shape},
+        self.prev_out, out_vars,
+    )
+    self.prev_out = out_vars
+    self._register_node(node.name, layer_id)
+
+def _same_tensor_value(a: torch.Tensor, b: torch.Tensor) -> bool:
+    return tuple(a.shape) == tuple(b.shape) and torch.equal(a.detach().cpu(), b.detach().cpu())
+
+
+def _flat_broadcast_param(param: torch.Tensor, shape: Tuple[int, ...], axis: Optional[int], dtype: torch.dtype) -> torch.Tensor:
+    param = param.detach().clone().to(dtype=dtype)
+    n = _prod(shape) or 1
+    if param.numel() == 1:
+        return param.reshape(1).expand(n).contiguous()
+    if param.numel() == n:
+        return param.reshape(-1).contiguous()
+    if axis is not None and param.dim() == 1 and shape:
+        ax = axis + len(shape) if axis < 0 else axis
+        view_shape = [1] * len(shape)
+        view_shape[ax] = int(param.numel())
+        return param.reshape(view_shape).expand(shape).contiguous().reshape(-1)
+    raise NotImplementedError(f"quant param with shape {tuple(param.shape)} cannot broadcast to {shape}")
+
+
+def _convert_OnnxQuantizeLinear(self, mod: nn.Module, node: fx.Node) -> None:
+    """OnnxQuantizeLinear as real-valued QDQ map with guarded LP envelope."""
+    if not self._get_predecessor_state(node):
+        raise ValueError(f"OnnxQuantizeLinear: missing predecessor for {node.name}")
+    out_vars = self._same_size_forward()
+    scale = _flat_broadcast_param(getattr(mod, "scale"), self.shape, getattr(mod, "axis", None), self.dtype)
+    zero_point = _flat_broadcast_param(getattr(mod, "zero_point"), self.shape, getattr(mod, "axis", None), self.dtype)
+    layer_id = self._add_layer(
+        LayerKind.QUANTIZE.value,
+        {"scale": scale, "zero_point": zero_point,
+         "qmin": int(getattr(mod, "qmin")), "qmax": int(getattr(mod, "qmax")),
+         "axis": getattr(mod, "axis", None), "dtype": getattr(mod, "dtype_name", ""),
+         "input_shape": self.shape, "output_shape": self.shape},
+        self.prev_out, out_vars,
+    )
+    self.prev_out = out_vars
+    self._register_node(node.name, layer_id)
+
+
+def _convert_OnnxDequantizeLinear(self, mod: nn.Module, node: fx.Node) -> None:
+    """OnnxDequantizeLinear: constant-fold, QDQ passthrough, or exact SCALE+BIAS."""
+    args = [a for a in node.args if isinstance(a, fx.Node)]
+    if not args:
+        raise ValueError(f"OnnxDequantizeLinear at {node.name}: no data input")
+    q_node = args[0]
+    q_const = self._resolve_constant_tensor(q_node.name)
+    if q_const is not None:
+        with torch.no_grad():
+            value = mod(q_const).detach().clone().to(dtype=self.dtype)
+        flat = value.reshape(-1)
+        out_vars = self._alloc_ids(int(flat.numel()) or 1)
+        shape = tuple(int(d) for d in value.shape) or (1,)
+        layer_id = self._add_layer(
+            LayerKind.CONSTANT.value,
+            {"value": flat, "input_shape": shape, "output_shape": shape},
+            [], out_vars,
+        )
+        self.prev_out = out_vars
+        self.shape = shape
+        self._register_node(node.name, layer_id)
+        return
+
+    pred_mod = self.modules.get(str(q_node.target)) if q_node.op == "call_module" else None
+    if pred_mod is not None and type(pred_mod).__name__ == "OnnxQuantizeLinear":
+        if _same_tensor_value(getattr(pred_mod, "scale"), getattr(mod, "scale")) and _same_tensor_value(getattr(pred_mod, "zero_point"), getattr(mod, "zero_point")):
+            if not self._propagate_node_state(node.name, q_node.name):
+                raise ValueError(f"OnnxDequantizeLinear: missing Q predecessor state for {node.name}")
+            return
+
+    if not self._get_predecessor_state(node):
+        raise ValueError(f"OnnxDequantizeLinear: missing predecessor for {node.name}")
+    scale = _flat_broadcast_param(getattr(mod, "scale"), self.shape, getattr(mod, "axis", None), self.dtype)
+    zp = _flat_broadcast_param(getattr(mod, "zero_point"), self.shape, getattr(mod, "axis", None), self.dtype)
+    scaled_vars = self._same_size_forward()
+    self._add_layer(
+        LayerKind.SCALE.value,
+        {"a": scale, "input_shape": self.shape, "output_shape": self.shape},
+        self.prev_out, scaled_vars,
+    )
+    bias_vars = self._alloc_ids(len(scaled_vars))
+    layer_id = self._add_layer(
+        LayerKind.BIAS.value,
+        {"c": -scale * zp, "input_shape": self.shape, "output_shape": self.shape},
+        scaled_vars, bias_vars,
+    )
+    self.prev_out = bias_vars
+    self._register_node(node.name, layer_id)
+
+def _convert_OnnxErf(self, mod: nn.Module, node: fx.Node) -> None:
+    """OnnxErf: y = erf(x), dedicated onnx2torch module route."""
+    _convert_unary_same_shape(self, node, LayerKind.ERF, "OnnxErf")
+
+def _convert_OnnxSqrt(self, mod: nn.Module, node: fx.Node) -> None:
+    """OnnxSqrt: y = sqrt(x), dedicated onnx2torch module route."""
+    _convert_unary_same_shape(self, node, LayerKind.SQRT, "OnnxSqrt")
+
+def _convert_OnnxSin(self, mod: nn.Module, node: fx.Node) -> None:
+    """OnnxSin: y = sin(x), dedicated onnx2torch module route."""
+    _convert_unary_same_shape(self, node, LayerKind.SIN, "OnnxSin")
+
+def _convert_OnnxCos(self, mod: nn.Module, node: fx.Node) -> None:
+    """OnnxCos: y = cos(x), dedicated onnx2torch module route."""
+    _convert_unary_same_shape(self, node, LayerKind.COS, "OnnxCos")
+
 def _convert_OnnxFunction(self, mod: nn.Module, node: fx.Node) -> None:
-    """OnnxFunction: dispatch by inner-function name (sign / abs / tanh)."""
+    """OnnxFunction: dispatch by inner-function name for supported unary ops."""
     func_name = getattr(getattr(mod, 'function', None), '__name__', '').lower()
     kind = {'sign': LayerKind.SIGN, 'abs': LayerKind.ABS,
-            'tanh': LayerKind.TANH}.get(func_name)
+            'tanh': LayerKind.TANH, 'sigmoid': LayerKind.SIGMOID,
+            'erf': LayerKind.ERF, 'sqrt': LayerKind.SQRT,
+            'sin': LayerKind.SIN, 'cos': LayerKind.COS}.get(func_name)
     if kind is None:
         raise NotImplementedError(f"OnnxFunction({func_name}) at {node.name} (future enhancement)")
     if not self._get_predecessor_state(node):
@@ -1457,6 +1592,12 @@ ONNX_HANDLERS = {
     'OnnxDropoutDynamic': _convert_OnnxDropoutDynamic,
     'OnnxExpand': _convert_OnnxExpand,
     'OnnxFlatten': _convert_OnnxFlatten,
+    'OnnxQuantizeLinear': _convert_OnnxQuantizeLinear,
+    'OnnxDequantizeLinear': _convert_OnnxDequantizeLinear,
+    'OnnxErf': _convert_OnnxErf,
+    'OnnxSqrt': _convert_OnnxSqrt,
+    'OnnxSin': _convert_OnnxSin,
+    'OnnxCos': _convert_OnnxCos,
     'OnnxFunction': _convert_OnnxFunction,
     'OnnxGather': _convert_OnnxGather,
     'OnnxMatMul': _convert_OnnxMatMul,

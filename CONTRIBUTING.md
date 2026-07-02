@@ -86,9 +86,9 @@ ACT is a verifier — **soundness is non-negotiable**. A change is unsound if th
 If you touch transfer functions, solvers, or BaB, validate before and after:
 
 ```bash
-# Level 1 — counterexample/soundness; Level 2 — bounds over-approximation
-python -m act.pipeline --validate-verifier --device cpu --dtype float64
-python -m act.pipeline --validate-verifier --mode bounds --tf-modes interval hybridz dual
+# Unified two-level validation (Level 1 counterexample + Level 2 per-neuron bounds)
+python -m act.pipeline --verify netfactory --validate-soundness --device cpu --dtype float64
+python -m act.pipeline --verify netfactory --validate-soundness --tf-modes interval hybridz dual
 ```
 
 When a layer/solver can't yet handle an input soundly, **fail loud** (raise) rather than returning a possibly-unsound result.
@@ -110,7 +110,7 @@ Reproduce the relevant ones locally (the `python -m act.*` commands above) befor
 - **Branch and target `main`.** ACT integrates into a single branch — there's no separate `dev` branch. Work on a short-lived topic branch (e.g. `fix/...`, `feat/...`) and open your PR against `main`.
 - **Keep PRs small and focused.** One concern per PR.
 - **Explain the problem and your fix** in your own words — what changed and why.
-- **Show how you verified it.** For logic changes: what you ran and how a reviewer can reproduce it. For numerical/soundness changes: include the `--validate-verifier` outcome.
+- **Show how you verified it.** For logic changes: what you ran and how a reviewer can reproduce it. For numerical/soundness changes: include the `--validate-soundness` outcome.
 - **No AI-generated walls of text.** Short, specific descriptions. If you can't explain it briefly, the PR is probably too large.
 - **Don't suppress problems.** No bare `except:`, no silently swallowing errors, no deleting failing checks to go green.
 

@@ -30,13 +30,56 @@ class InKind:
         LP_EMBEDDING: Lp-norm ball ``||x - center||_p <= eps`` on the selected
             embedding-space token positions (``perturbed_positions``).
     """
-    BOX = "BOX"
-    LINF_BALL = "LINF_BALL"
+    # Image/input perturbation regime: perturbation is applied directly in
+    # pixel/feature space (the raw model input x in R^n), not in embedding space.
+    #
+    #   LINF_BALL:  { x : ||x - c||_inf <= eps }
+    #               <=>  x_i in [c_i - eps, c_i + eps]  for every input coordinate i
+    #   BOX:        { x : lb_i <= x_i <= ub_i }  (explicit per-coordinate box)
+    #
+    # Every pixel/feature moves freely within eps of the center c (LINF_BALL),
+    # or within its explicit per-coordinate interval (BOX).
+    # ONE ball (or box) over ALL input coordinates — perturbs pixels/features.
+    BOX = "BOX"          # Axis-aligned box lb <= x <= ub on the input features.
+    LINF_BALL = "LINF_BALL"  # L-infinity ball |x - center|_inf <= eps on the input features.
     LIN_POLY = "LIN_POLY"
+    # Per-position embedding perturbation: selected token/patch i satisfy ||x_i - center_i||_p <= eps (p = p_norm).
+    # perturbed_positions is a boolean position mask or integer index list; None selects all positions.
+    # Unselected positions are pinned to center.
+    # Analysis seeds the enclosing box; finite-p tightness is recovered by dual per-position input terms.
     LP_EMBEDDING = "LP_EMBEDDING"
 
 @dataclass
 class InputSpec:
+    """Input perturbation specification for a single verification instance.
+
+    Supports two perturbation regimes:
+
+    * **Image/input perturbation** (``BOX``, ``LINF_BALL``): perturbation is
+      applied directly in pixel or raw-feature space (x in R^n).
+
+      - LINF_BALL:  { x : ||x - center||_inf <= eps }
+                    <=>  x_i in [center_i - eps, center_i + eps]  for every i
+      - BOX:        { x : lb_i <= x_i <= ub_i }  (explicit per-coordinate box)
+
+      ONE ball (or box) over ALL input coordinates — perturbs pixels/features.
+
+    * **Embedding/position perturbation** (``LP_EMBEDDING``): perturbation is
+      applied in the embedding space of a transformer model (BERT, ViT).
+      For embeddings e in R^{L x d} with ``center`` c and
+      P = ``perturbed_positions``, the admissible set is:
+
+          { e :  ||e_t - c_t||_{p_norm} <= eps   for t in P,
+                 e_t = c_t                         for t not in P }
+
+      A SEPARATE per-token Lp ball of radius ``eps`` in the d-dimensional
+      embedding space at each SELECTED token position t in P; all OTHER
+      positions are PINNED to ``center``.
+
+      Contrast: image = ONE ball over all input coordinates (perturbs pixels);
+      LP_EMBEDDING = localized per-token balls at chosen sequence positions in
+      EMBEDDING space (rest fixed) — perturbs token embeddings, not pixels.
+    """
     kind: str
     lb: Optional[torch.Tensor] = None
     ub: Optional[torch.Tensor] = None

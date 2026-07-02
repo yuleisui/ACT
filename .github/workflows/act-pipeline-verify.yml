@@ -4,7 +4,8 @@ name: ACT Pipeline Verify Tests
 # One step per benchmark; each step iterates the (TF, Solver) combos it
 # supports. VNNLIB benchmarks (vnncomp2024 subset): acasxu_2023, dist_shift_2023,
 # safenlp_2024 run all three combos (interval/hybridz/dual); collins_rul_cnn_2022
-# runs dual only (forward TFs hit an unrelated shape bug). TorchVision MNIST +
+# runs dual only; vit_2023 (ViT) runs interval + dual.
+# TorchVision MNIST +
 # simple_cnn runs all three combos, exercising TOP1_ROBUST + MARGIN_ROBUST spec
 # kinds. Factory-network verification lives in the backend CIs.
 
@@ -52,7 +53,7 @@ jobs:
       - name: Download VNNLIB benchmarks
         run: |
           cd ${{ github.workspace }}
-          for cat in acasxu_2023 dist_shift_2023 safenlp_2024 collins_rul_cnn_2022; do
+          for cat in acasxu_2023 dist_shift_2023 safenlp_2024 collins_rul_cnn_2022 vit_2023; do
             coverage run -p -m act.front_end --download $cat
           done
 
@@ -66,31 +67,38 @@ jobs:
           cd ${{ github.workspace }}
           coverage run -p -m act.pipeline --verify torchvision --dataset MNIST --model simple_cnn --num-samples 1 --tf-modes interval --solvers torchlp --validate-soundness --device cpu --dtype float64
 
-      - name: Verify acasxu_2023 (interval / hybridz / dual)
+      - name: Verify acasxu_2023 (interval / hybridz / dual) with two-level soundness validation
         run: |
           cd ${{ github.workspace }}
           for combo in "--tf-modes interval --solvers torchlp" "--tf-modes hybridz --solvers torchlp" "--solvers dual"; do
-            coverage run -p -m act.pipeline --verify vnnlib --category acasxu_2023 --max-instances 5 $combo --device cpu --dtype float64
+            coverage run -p -m act.pipeline --verify vnnlib --category acasxu_2023 --max-instances 5 $combo --validate-soundness --device cpu --dtype float64
           done
 
-      - name: Verify dist_shift_2023 (interval / hybridz / dual)
+      - name: Verify dist_shift_2023 (interval / hybridz / dual) with two-level soundness validation
         run: |
           cd ${{ github.workspace }}
           for combo in "--tf-modes interval --solvers torchlp" "--tf-modes hybridz --solvers torchlp" "--solvers dual"; do
-            coverage run -p -m act.pipeline --verify vnnlib --category dist_shift_2023 --max-instances 5 $combo --device cpu --dtype float64
+            coverage run -p -m act.pipeline --verify vnnlib --category dist_shift_2023 --max-instances 5 $combo --validate-soundness --device cpu --dtype float64
           done
 
-      - name: Verify safenlp_2024 (interval / hybridz / dual)
+      - name: Verify safenlp_2024 (interval / hybridz / dual) with two-level soundness validation
         run: |
           cd ${{ github.workspace }}
           for combo in "--tf-modes interval --solvers torchlp" "--tf-modes hybridz --solvers torchlp" "--solvers dual"; do
-            coverage run -p -m act.pipeline --verify vnnlib --category safenlp_2024 --max-instances 5 $combo --device cpu --dtype float64
+            coverage run -p -m act.pipeline --verify vnnlib --category safenlp_2024 --max-instances 5 $combo --validate-soundness --device cpu --dtype float64
           done
 
-      - name: Verify collins_rul_cnn_2022 (dual only — exercises backward_conv2d)
+      - name: Verify collins_rul_cnn_2022 (dual only — exercises backward_conv2d) with two-level soundness validation
         run: |
           cd ${{ github.workspace }}
-          coverage run -p -m act.pipeline --verify vnnlib --category collins_rul_cnn_2022 --max-instances 5 --solvers dual --device cpu --dtype float64
+          coverage run -p -m act.pipeline --verify vnnlib --category collins_rul_cnn_2022 --max-instances 5 --solvers dual --validate-soundness --device cpu --dtype float64
+
+      - name: Verify vit_2023 (interval / dual) with two-level soundness validation
+        run: |
+          cd ${{ github.workspace }}
+          for combo in "--tf-modes interval --solvers torchlp" "--solvers dual"; do
+            coverage run -p -m act.pipeline --verify vnnlib --category vit_2023 --max-instances 1 $combo --validate-soundness --device cpu --dtype float64
+          done
 
       - name: Verify TorchVision MNIST + simple_cnn (interval / hybridz / dual — TOP1_ROBUST + MARGIN_ROBUST spec coverage)
         run: |
