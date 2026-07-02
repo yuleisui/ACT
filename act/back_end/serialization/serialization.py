@@ -20,13 +20,7 @@ import io
 from typing import Dict, List, Any, Optional, Union, Tuple
 from datetime import datetime
 import numpy as np
-
-try:
-    import torch
-    HAS_TORCH = True
-except ImportError:
-    HAS_TORCH = False
-    torch = None
+import torch
 
 from act.back_end.core import Layer, Net
 from act.back_end.layer_schema import REGISTRY, LayerKind
@@ -44,9 +38,6 @@ class TensorEncoder:
     @staticmethod
     def encode_tensor(tensor: torch.Tensor) -> Dict[str, Any]:
         """Convert PyTorch tensor to JSON-serializable dictionary."""
-        if not HAS_TORCH:
-            raise ACTSerializationError("PyTorch not available for tensor encoding")
-            
         # Convert to numpy and encode as base64
         np_array = tensor.detach().cpu().numpy()
         buffer = io.BytesIO()
@@ -73,9 +64,6 @@ class TensorEncoder:
         ``y[arange(B), y_true]`` advanced indexing in
         ``OutputSpecLayer.forward``).
         """
-        if not HAS_TORCH:
-            raise ACTSerializationError("PyTorch not available for tensor decoding")
-
         encoded_data = tensor_dict["data"]
         buffer = io.BytesIO(base64.b64decode(encoded_data.encode('utf-8')))
         np_array = np.load(buffer)
@@ -85,9 +73,12 @@ class TensorEncoder:
             from act.util.device_manager import get_default_dtype
             tensor = tensor.to(dtype=get_default_dtype())
 
-        device = target_device or tensor_dict.get("device", "cpu")
-        if device != "cpu":
-            tensor = tensor.to(device)
+        if target_device is None:
+            from act.util.device_manager import get_default_device
+            device = get_default_device()
+        else:
+            device = torch.device(target_device)
+        tensor = tensor.to(device=device)
 
         if tensor_dict.get("requires_grad", False):
             tensor.requires_grad_(True)
@@ -103,7 +94,7 @@ class LayerSerializer:
         # Encode tensor parameters
         params_encoded = {}
         for name, value in layer.params.items():
-            if HAS_TORCH and isinstance(value, torch.Tensor):
+            if isinstance(value, torch.Tensor):
                 params_encoded[name] = TensorEncoder.encode_tensor(value)
             else:
                 # Handle non-tensor parameters (floats, ints, strings, etc.)
@@ -113,7 +104,7 @@ class LayerSerializer:
         cache_encoded = {}
         if hasattr(layer, 'cache'):
             for name, value in layer.cache.items():
-                if HAS_TORCH and isinstance(value, torch.Tensor):
+                if isinstance(value, torch.Tensor):
                     cache_encoded[name] = TensorEncoder.encode_tensor(value)
                 else:
                     # Handle non-tensor cache values
@@ -242,10 +233,10 @@ class NetSerializer:
 class ACTJSONEncoder(json.JSONEncoder):
     """Custom JSON encoder for ACT objects."""
     
-    def default(self, obj):
-        if isinstance(obj, (Layer, Net)):
+    def default(self, o):
+        if isinstance(o, (Layer, Net)):
             raise ACTSerializationError("Use NetSerializer.serialize_net() instead of json.dumps() directly")
-        return super().default(obj)
+        return super().default(o)
 
 # High-level API functions
 def save_net_to_file(net: Net, filepath: str, indent: int = 2) -> None:

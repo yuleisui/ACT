@@ -43,24 +43,10 @@ class InKind:
     BOX = "BOX"          # Axis-aligned box lb <= x <= ub on the input features.
     LINF_BALL = "LINF_BALL"  # L-infinity ball |x - center|_inf <= eps on the input features.
     LIN_POLY = "LIN_POLY"
-    # Embedding/position perturbation regime: perturbation is applied in the
-    # EMBEDDING space of a transformer model (BERT, ViT token embeddings), NOT
-    # in pixel or raw-input space.
-    #
-    # For token embeddings e in R^{L x d} with center c and a set
-    # P = perturbed_positions of token indices, the admissible set is:
-    #
-    #   { e :  ||e_t - c_t||_{p_norm} <= eps   for t in P,
-    #          e_t = c_t                         for t not in P }
-    #
-    # i.e. a SEPARATE per-token Lp ball of radius eps in the d-dimensional
-    # embedding space at each SELECTED token position t in P, with all OTHER
-    # token positions PINNED to the center c_t.
-    #
-    # Contrast: image = ONE ball over all input coordinates (perturbs pixels);
-    #           LP_EMBEDDING = localized per-token balls at chosen sequence
-    #           positions in EMBEDDING space (rest fixed) — perturbs token
-    #           embeddings, not pixels.
+    # Per-position embedding perturbation: selected token/patch i satisfy ||x_i - center_i||_p <= eps (p = p_norm).
+    # perturbed_positions is a boolean position mask or integer index list; None selects all positions.
+    # Unselected positions are pinned to center.
+    # Analysis seeds the enclosing box; finite-p tightness is recovered by dual per-position input terms.
     LP_EMBEDDING = "LP_EMBEDDING"
 
 @dataclass

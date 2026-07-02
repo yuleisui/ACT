@@ -27,8 +27,9 @@
 #===---------------------------------------------------------------------===#
 
 # Public API:
-#   - verify_once(net, *, model_fn=None) -> List[VerifyResult]
-#       Pure-tensor batched single-shot verifier.
+#   - verify_once(net, *, model_fn=None, collect_facts=False)
+#       Pure-tensor batched single-shot verifier. Returns List[VerifyResult]
+#       by default, or (results, facts_or_none) when collect_facts=True.
 #   - setup_and_solve_batch(net, input_bounds_per_b, solver, timelimit=None)
 #       Batch-native CSP setup helper used by LP and BaB refinement.
 #   - find_entry_layer_id / get_input_ids / get_output_ids /
@@ -44,7 +45,7 @@
 #     certification; they are preserved for the batch-native solver path.
 
 from __future__ import annotations
-from typing import Optional, List, Callable, Dict, Any, TYPE_CHECKING
+from typing import Optional, List, Callable, Dict, Any, TYPE_CHECKING, Tuple, Literal, overload
 
 import torch
 import copy
@@ -468,12 +469,42 @@ def _get_output_layer_bounds(net, after: Dict[int, Fact]) -> Bounds:
     return after[pred_ids[0]].bounds
 
 
-@torch.no_grad()
+@overload
 def verify_once(
     net,
     *,
     model_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
 ) -> List[VerifyResult]:
+    ...
+
+
+@overload
+def verify_once(
+    net,
+    *,
+    model_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
+    collect_facts: Literal[False],
+) -> List[VerifyResult]:
+    ...
+
+
+@overload
+def verify_once(
+    net,
+    *,
+    model_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
+    collect_facts: Literal[True],
+) -> Tuple[List[VerifyResult], Optional[Dict[int, Any]]]:
+    ...
+
+
+@torch.no_grad()
+def verify_once(
+    net,
+    *,
+    model_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
+    collect_facts: bool = False,
+) -> List[VerifyResult] | Tuple[List[VerifyResult], Optional[Dict[int, Any]]]:
     """Single-shot, pure-tensor batched verifier.
 
     Pipeline:
@@ -499,9 +530,14 @@ def verify_once(
         model_fn: optional callable mapping ``x: [B, *input_shape] ->
             [B, n_out]`` for concrete falsification. If omitted, the
             FALSIFIED status is never produced (FALSIFIED requires evidence).
+        collect_facts: when true, return the verifier results together with
+            the fact map used by validation: analyze() ``after`` facts for the
+            interval/hybridz path, or dual pre-activation forward bounds for the
+            dual path.
 
     Returns:
-        ``List[VerifyResult]`` of length ``B`` (one per input lane). Each
+        ``List[VerifyResult]`` of length ``B`` (one per input lane), or
+        ``(results, facts_or_none)`` when ``collect_facts`` is true. Each
         result carries ``status`` plus a ``metadata['lane'] = i`` and any
         ``counterexample`` (a ``torch.Tensor`` of shape ``[*input_shape]``)
         for FALSIFIED lanes.
@@ -559,9 +595,18 @@ def verify_once(
         )
         num_classes = len(output_ids)
         # DualSolver is now self-contained: no tf parameter, evaluate_spec
-        # computes its own forward bounds internally from the net.
-        result = DualSolver().evaluate_spec(net, out_spec, num_classes=num_classes)
-        return result.to_verify_results()
+        # computes its own pre-activation forward bounds internally from the net.
+        solver = DualSolver()
+        result = solver.evaluate_spec(
+            net,
+            out_spec,
+            num_classes=num_classes,
+            collect_bounds=collect_facts,
+        )
+        results = result.to_verify_results()
+        if collect_facts:
+            return results, solver.last_forward_bounds
+        return results
 
     # 2. Build entry_fact (with all INPUT_SPEC constraints) and analyze.
     entry_fact = Fact(bounds=seed_bounds, cons=ConSet())
@@ -678,7 +723,7 @@ def verify_once(
             results.append(
                 VerifyResult(VerifyStatus.UNKNOWN, metadata=meta)
             )
-    return results
+    return (results, after) if collect_facts else results
 
 
 #===---------------------------------------------------------------------===#
@@ -1726,10 +1771,104 @@ def _test_torch2act_minimal_vit_fixture_soundness() -> None:  # pragma: no cover
     from act.front_end.specs import InputSpec, OutputSpec, OutKind
     from act.front_end.verifiable_model import InputLayer, InputSpecLayer, OutputSpecLayer, VerifiableModel
     from act.pipeline.verification.torch2act import TorchToACT
-    from act.pipeline.verification.validate_verifier import TinyRegressionBertLayer, TinyRegressionBertLayerNorm
     from act.util.device_manager import get_default_dtype
 
     dtype = get_default_dtype()
+
+    class TinyRegressionBertLayerNorm(nn.LayerNorm):
+
+        def __init__(self, hidden_size: int) -> None:
+            super().__init__(hidden_size, eps=1e-5)
+            self.variance_epsilon = self.eps
+
+
+    class TinyRegressionBertSelfAttention(nn.Module):
+
+        def __init__(self, hidden_size: int) -> None:
+            super().__init__()
+            self.num_attention_heads = 1
+            self.attention_head_size = hidden_size
+            self.query = nn.Linear(hidden_size, hidden_size)
+            self.key = nn.Linear(hidden_size, hidden_size)
+            self.value = nn.Linear(hidden_size, hidden_size)
+
+        def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+            query_layer = self.query(hidden_states)
+            key_layer = self.key(hidden_states)
+            value_layer = self.value(hidden_states)
+            attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+            attention_scores = attention_scores / (self.attention_head_size ** 0.5)
+            attention_probs = torch.softmax(attention_scores, dim=-1)
+            return torch.matmul(attention_probs, value_layer)
+
+
+    class TinyRegressionBertSelfOutput(nn.Module):
+
+        def __init__(self, hidden_size: int) -> None:
+            super().__init__()
+            self.dense = nn.Linear(hidden_size, hidden_size)
+            self.LayerNorm = TinyRegressionBertLayerNorm(hidden_size)
+
+        def forward(
+            self,
+            hidden_states: torch.Tensor,
+            input_tensor: torch.Tensor,
+        ) -> torch.Tensor:
+            return self.LayerNorm(self.dense(hidden_states) + input_tensor)
+
+
+    class TinyRegressionBertAttention(nn.Module):
+
+        def __init__(self, hidden_size: int) -> None:
+            super().__init__()
+            self.self = TinyRegressionBertSelfAttention(hidden_size)
+            self.output = TinyRegressionBertSelfOutput(hidden_size)
+
+        def forward(self, input_tensor: torch.Tensor) -> torch.Tensor:
+            return self.output(self.self(input_tensor), input_tensor)
+
+
+    class TinyRegressionBertIntermediate(nn.Module):
+
+        def __init__(self, hidden_size: int, intermediate_size: int) -> None:
+            super().__init__()
+            self.dense = nn.Linear(hidden_size, intermediate_size)
+            self.intermediate_act_fn = nn.GELU()
+
+        def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+            return self.intermediate_act_fn(self.dense(hidden_states))
+
+
+    class TinyRegressionBertOutput(nn.Module):
+
+        def __init__(self, hidden_size: int, intermediate_size: int) -> None:
+            super().__init__()
+            self.dense = nn.Linear(intermediate_size, hidden_size)
+            self.LayerNorm = TinyRegressionBertLayerNorm(hidden_size)
+
+        def forward(
+            self,
+            hidden_states: torch.Tensor,
+            input_tensor: torch.Tensor,
+        ) -> torch.Tensor:
+            return self.LayerNorm(self.dense(hidden_states) + input_tensor)
+
+
+    class TinyRegressionBertLayer(nn.Module):
+
+        def __init__(self, hidden_size: int, intermediate_size: int) -> None:
+            super().__init__()
+            self.attention = TinyRegressionBertAttention(hidden_size)
+            self.intermediate = TinyRegressionBertIntermediate(
+                hidden_size,
+                intermediate_size,
+            )
+            self.output = TinyRegressionBertOutput(hidden_size, intermediate_size)
+
+        def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+            attention_output = self.attention(hidden_states)
+            intermediate_output = self.intermediate(attention_output)
+            return self.output(intermediate_output, attention_output)
 
     class PatchEmbed(nn.Module):
         def __init__(self) -> None:

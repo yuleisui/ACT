@@ -1634,7 +1634,7 @@ class NetFactory:
 # coverage (CONSTANT, SIGN, REDUCE_SUM, COMPARE, WHERE, MATMUL,
 # ARG_EXTREMUM, UPSAMPLE, EXPAND, SCATTER_ND). NetFactory.generate() emits
 # them alongside the random benchmarks, so the existing CI steps
-# (--validate-verifier, --verify act2torch) iterate them with no extra
+# (--validate-soundness, --verify act2torch) iterate them with no extra
 # wiring.
 
 
@@ -2153,7 +2153,7 @@ def _lt_spec_conv_transpose_2d() -> Dict[str, Any]:
 # tf_maxpool2d, ~42 lines), tf_sub/tf_div binary ops, tf_bn affine, tf_abs
 # pos/neg/amb partition, and tf_bias element-wise add. Together they lift
 # interval_tf/tf_mlp.py and hybridz_tf/tf_cnn.py coverage from ~71%/57% to
-# ~85%+ via the --validate-verifier path alone (no pytest involvement).
+# ~85%+ via the --validate-soundness path alone (no pytest involvement).
 def _lt_spec_cnn_pool() -> Dict[str, Any]:
     # Conv2D → MaxPool2D → AvgPool2D chain. The MaxPool2D HZ branch in
     # hybridz_tf/tf_cnn.py:44-86 is unreachable via the random CNN generator
@@ -2429,7 +2429,7 @@ LAYER_TESTING_SPECS: Dict[str, Any] = {
     # reach.
     f"{LAYER_TESTING_NAME_PREFIX}bab_deep":       _lt_spec_bab_deep,
     # InKind / OutKind coverage examples: deterministic 1-net-per-kind so
-    # CI's --generate + --validate-verifier + --verify --bab exercise every
+    # CI's --generate + --validate-soundness + --verify --bab exercise every
     # branch in the verifier's seed / ASSERT-encoding / MILP-negation paths.
     f"{LAYER_TESTING_NAME_PREFIX}lin_poly":      _lt_spec_lin_poly,
     f"{LAYER_TESTING_NAME_PREFIX}margin_robust": _lt_spec_margin_robust,

@@ -89,7 +89,7 @@ jobs:
       - name: Soundness — concrete counterexample cross-check (all ACT nets)
         run: |
           cd ${{ github.workspace }}
-          coverage run -p -m act.pipeline --validate-verifier --mode counterexample --device cpu --dtype float64 --solvers torchlp
+          coverage run -p -m act.pipeline --verify netfactory --validate-soundness --device cpu --dtype float64 --solvers torchlp
 
       - name: BaB random branching + split (ACT nets)
         run: |

@@ -164,11 +164,16 @@ class VerifiableModel(nn.Module):
         else:
             x = result
         
-        # Spec layers always return tensors; collapse them to a single
-        # bool for the dict-shaped output expected by callers.
+        # Spec layers always return tensors; keep the per-sample masks (needed
+        # for lane-accurate counterexample attribution in batched validation)
+        # and collapse to a single bool for the dict-shaped output.
+        input_satisfied_per_sample = None
+        output_satisfied_per_sample = None
         if isinstance(input_satisfied, torch.Tensor):
+            input_satisfied_per_sample = input_satisfied.detach().reshape(-1).bool()
             input_satisfied = bool(input_satisfied.all().item())
         if isinstance(output_satisfied, torch.Tensor):
+            output_satisfied_per_sample = output_satisfied.detach().reshape(-1).bool()
             output_satisfied = bool(output_satisfied.all().item())
         
         # Strict mode: raise on constraint violations
@@ -189,8 +194,10 @@ class VerifiableModel(nn.Module):
             'output': x,
             'input_satisfied': input_satisfied,
             'input_explanation': input_explanation,
+            'input_satisfied_per_sample': input_satisfied_per_sample,
             'output_satisfied': output_satisfied,
-            'output_explanation': output_explanation
+            'output_explanation': output_explanation,
+            'output_satisfied_per_sample': output_satisfied_per_sample,
         }
 
 
@@ -441,23 +448,10 @@ class InputSpecLayer(nn.Module):
       ``x`` is compared directly against ``lb``/``ub`` (BOX) or
       ``center``/``eps`` (LINF_BALL).
 
-    * **Embedding/position perturbation** (``LP_EMBEDDING``): the constraint
-      acts in the embedding space of a transformer (BERT, ViT token
-      embeddings).  For embeddings e in R^{L x d} with ``spec.center`` c and
-      P = ``spec.perturbed_positions``, the admissible set is:
-
-          { e :  ||e_t - c_t||_{p_norm} <= eps   for t in P,
-                 e_t = c_t                         for t not in P }
-
-      A SEPARATE per-token Lp ball of radius ``eps`` in the d-dimensional
-      embedding space at each SELECTED token position t in P; all OTHER
-      positions are PINNED to ``spec.center``.  The materialized ``lb``/``ub``
-      box is pre-computed at construction time via
-      ``InputSpec.materialize_box_seed``.
-
-      Contrast: image = ONE ball over all input coordinates (perturbs pixels);
-      LP_EMBEDDING = localized per-token balls at chosen sequence positions in
-      EMBEDDING space (rest fixed) — perturbs token embeddings, not pixels.
+    * **Embedding/position perturbation** (``LP_EMBEDDING``): selected token/patch
+      positions i satisfy ``||x_i - center_i||_p <= eps`` in embedding space (p = ``p_norm``).
+      ``perturbed_positions`` is a boolean position mask or integer index list; ``None`` selects all positions.
+      Unselected positions are pinned to ``center``. Analysis seeds the enclosing box; finite-p tightness is recovered by dual per-position input contributions.
 
     Batch Processing:
         Input: x with shape (N, C, H, W) or (N, L, D) for embeddings

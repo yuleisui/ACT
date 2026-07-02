@@ -268,8 +268,8 @@ families:
 
     # --- Activation ---
     # Restricted to kinds that have both a dual_tf forward handler AND
-    # a PyTorch builder in ActGraphModule (required by validate-verifier
-    # bounds checks against concrete model output).
+    # a PyTorch builder in ActGraphModule (required by --verify netfactory
+    # --validate-soundness Level 2 bounds checks against concrete model output).
     activation:
       choice: [relu, tanh, sigmoid, lrelu]
 
@@ -412,7 +412,7 @@ output_spec:
 # ============================================================================
 # 6. VALIDATE-VERIFIER DEFAULTS
 # ============================================================================
-# Defaults consumed by `python -m act.pipeline --validate-verifier ...`
+# Defaults consumed by `python -m act.pipeline --verify netfactory --validate-soundness ...`
 # when the corresponding CLI flag is NOT explicitly passed. Any CLI flag
 # that IS passed overrides the value here.
 

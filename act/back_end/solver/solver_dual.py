@@ -191,6 +191,7 @@ class DualSolver(Solver):
         self.tf = DualTF()
         self.n_iters = n_iters
         self._last_bounds: Optional[Bounds] = None
+        self.last_forward_bounds: Optional[Dict[int, Bounds]] = None
 
     def capabilities(self) -> SolverCaps:
         return SolverCaps(supports_gpu=True, supports_csp=False, supports_dual=True)
@@ -1178,14 +1179,18 @@ class DualSolver(Solver):
         num_classes: Optional[int] = None,
         chunk_size: Optional[int] = None,
         enable_grad: bool = False,
+        collect_bounds: bool = False,
     ) -> SpecBatchResult:
         """Dual bound evaluation for any OutputSpec — self-contained entry point.
 
         Refactor note: ``bounds_dict`` is optional. When omitted (the typical
         case), the solver gathers the net's INPUT_SPEC seed bounds and computes
-        per-layer forward bounds internally via ``compute_forward_bounds``.
-        Callers who already have a bounds_dict (e.g. BaB refinement loops) may
-        pass it explicitly to skip the recomputation.
+        per-layer pre-activation forward bounds internally via
+        ``compute_forward_bounds(post_activation=False)``. Callers who already
+        have a bounds_dict (e.g. BaB refinement loops) may pass it explicitly to
+        skip the recomputation. When ``collect_bounds`` is true, the solver
+        stores the same dict on ``last_forward_bounds`` so post-verification
+        soundness checks validate exactly the bounds used by the dual certificate.
 
         Strategy: dispatch on ``out_spec.kind`` into two branches that share
         ``compute_certified_bound`` but use opposite sign conventions and
@@ -1221,6 +1226,9 @@ class DualSolver(Solver):
             bounds_dict = compute_forward_bounds(
                 net, seed_bounds.lb, seed_bounds.ub, post_activation=False,
             )
+
+        if collect_bounds:
+            self.last_forward_bounds = bounds_dict
 
         sample = next(iter(bounds_dict.values()))
         device = sample.lb.device
