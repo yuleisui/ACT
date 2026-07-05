@@ -118,7 +118,7 @@ def _reverse_topological_sort(net: Net) -> List[int]:
     while queue:
         lid = queue.pop(0)
         order.append(lid)
-        for pred in net.preds.get(lid, []):
+        for pred in set(net.preds.get(lid, [])):
             in_deg[pred] -= 1
             if in_deg[pred] == 0:
                 queue.append(pred)
@@ -1233,6 +1233,22 @@ class DualSolver(Solver):
         sample = next(iter(bounds_dict.values()))
         device = sample.lb.device
         dtype = sample.lb.dtype
+        # Soundness tolerance for the certify comparison: a dual bound whose
+        # slack is within float rounding of the threshold must yield UNKNOWN,
+        # not CERTIFIED (a tolerance-free `slack < 0` lets a boundary-case
+        # margin that rounds slightly positive falsely certify — observed as
+        # concrete_ce=FOUND + verifier=CERTIFIED on netfactory CNNs).
+        # 100 ulp = the same arithmetic-noise-floor convention as the
+        # per-neuron 'auto' bounds tolerance (act/pipeline/cli.py
+        # _per_neuron_config): pairwise-reduction drift of the largest
+        # layers is ~log2(n)*eps. The 1e-11 floor additionally covers the
+        # ACCUMULATED rounding of the dual bound computation itself over
+        # deep conv chains in float64 (~1e-12): netfactory random draws can
+        # land a true margin within that band of zero, and a 100-ulp-only
+        # f64 tolerance (2.2e-14) was observed to false-CERTIFY such a draw
+        # in CI while a concrete counterexample existed. float32 is
+        # unaffected (100 ulp = 1.2e-5 > 1e-11).
+        cert_eps = max(100.0 * torch.finfo(dtype).eps, 1e-11)
         if sample.lb.dim() < 2:
             raise ValueError(
                 "DualSolver.evaluate_spec: bounds_dict entries must be batched "
@@ -1292,7 +1308,8 @@ class DualSolver(Solver):
                     )
                 margins = margins_flat.view(B, N)
                 slack = margins - thresholds
-                certified = ((slack > 0) & active_mask).any(dim=-1)
+                cert_tol = cert_eps * margins.abs().clamp(min=1.0)
+                certified = ((slack > cert_tol) & active_mask).any(dim=-1)
 
             return SpecBatchResult(
                 margins=margins,
@@ -1320,6 +1337,10 @@ class DualSolver(Solver):
 
             margins = margins_flat.view(B, M)
             slack = margins - thresholds_neg
+            # margins is a SOUND LOWER bound on the true margin: certify iff
+            # every active row has slack >= 0. A positive tolerance band flags
+            # safe near-boundary rows (false UNKNOWN); slack < -cert_tol would be
+            # unsound. Hard zero boundary, matching bab.py.
             violations = (slack < 0) & active_mask
             certified = ~violations.any(dim=-1)
 

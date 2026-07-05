@@ -76,15 +76,21 @@ def parse_vnnlib_to_tensors(
         # them to flat X_n/Y_n so the shared bound-extraction logic below applies.
         if "(vnnlib-version" in content or "(declare-network" in content:
             if len(re.findall(r"\(\s*declare-network\b", content)) >= 2:
-                raise UnsupportedSpecError("multi-network (f/g) not yet supported")
-            in_name, in_shape = _extract_vnnlib_2_decl(content, "input")
-            out_name, out_shape = _extract_vnnlib_2_decl(content, "output")
-            num_inputs = _numel(in_shape)
-            num_outputs = _numel(out_shape)
-            content = _rewrite_vnnlib_2_bracket_vars(content, in_name, in_shape, out_name, out_shape)
+                if "isomorphic-to" not in content:
+                    raise UnsupportedSpecError("multi-network (equal-to/monotonic) not yet supported")
+                content, num_inputs, num_outputs, _f_in_shape = _isomorphic_multinet_rewrite(content)
+            else:
+                in_name, _in_dtype, in_shape = _extract_vnnlib_2_decl(content, "input")
+                out_name, _out_dtype, out_shape = _extract_vnnlib_2_decl(content, "output")
+                num_inputs = _numel(in_shape)
+                num_outputs = _numel(out_shape)
+                content = _rewrite_vnnlib_2_bracket_vars(content, in_name, in_shape, out_name, out_shape)
         else:
-            num_inputs = _extract_num_inputs(content)
-            num_outputs = _extract_num_outputs(content)
+            raise UnsupportedSpecError(
+                f"{vnnlib_path.name}: VNNLIB 1.0 flat format is no longer supported "
+                f"(ACT is VNNLIB 2.0-only); provide a 2.0 file declaring "
+                f"(vnnlib-version)/(declare-network)."
+            )
 
         # Extract input bounds from top-level simple X-bound asserts only.
         # Constraints inside (or ...) branches must not be intersected here —
@@ -156,7 +162,13 @@ def parse_vnnlib_queries(
     labeled_tensor: Optional['LabeledInputTensor'] = None
 ) -> List[Tuple[InputSpec, OutputSpec]]:
     """
-    Parse a VNNLIB file into a list of verification queries.
+    Parse a VNNLIB 2.0 file into a list of verification queries.
+
+    ACT is VNNLIB 2.0-only: the file must declare ``(vnnlib-version ...)`` /
+    ``(declare-network ...)``. Legacy flat 1.0 files (bare ``declare-const X_0``)
+    are rejected. Parsing is delegated to :func:`parse_vnnlib_2_0`, which
+    ravel-rewrites bracket vars ``X[i,..]``/``Y[j,..]`` to flat ``X_n``/``Y_n``
+    before the shared query-assembly core.
 
     Semantics:
       - Multiple top-level ``(assert ...)`` forms are conjunctive (implicit AND).
@@ -169,6 +181,7 @@ def parse_vnnlib_queries(
         result collapses to a single TOP1_ROBUST OutputSpec.
 
     Raises:
+        UnsupportedSpecError: If the file is legacy VNNLIB 1.0 flat format.
         VNNLibParseError: If the file is missing or unparseable.
     """
     if not vnnlib_path.exists():
@@ -182,82 +195,11 @@ def parse_vnnlib_queries(
     if "(vnnlib-version" in content or "(declare-network" in content:
         return parse_vnnlib_2_0(vnnlib_path, labeled_tensor=labeled_tensor)
 
-    num_inputs = _extract_num_inputs(content)
-    num_outputs = _extract_num_outputs(content)
-    input_shape = labeled_tensor.tensor.shape if labeled_tensor is not None else None
-    true_label = labeled_tensor.label if labeled_tensor is not None else None
-
-    # Pre-filter: simple single-variable X-bound asserts (the overwhelming majority
-    # in CIFAR-100-style files) are absorbed via the fast regex _extract_input_bounds
-    # and need NOT enter the Cartesian product. Only complex asserts (multi-variable,
-    # Y-involving, or (or/and) composition) are routed through the S-expr pipeline.
-    try:
-        forms = _parse_all_forms(content)
-    except VNNLibParseError:
-        raise
-    except Exception as e:
-        raise VNNLibParseError(f"S-expression parse failed: {e}") from e
-    asserts = [f for f in forms if isinstance(f, list) and len(f) >= 2 and f[0] == "assert"]
-    simple_assert_bodies = [f[1] for f in asserts if _is_simple_x_bound(f[1])]
-    complex_assert_bodies = [f[1] for f in asserts if not _is_simple_x_bound(f[1])]
-
-    # Base BOX uses top-level simple asserts only; X-bounds inside (or ...)
-    # must not be intersected or ACAS Xu prop_5..10 collapse to empty boxes.
-    bounds_dict = _extract_input_bounds(simple_assert_bodies, num_inputs)
-    base_in_spec = _build_input_spec(num_inputs, input_shape, bounds_dict, [])
-
-    if not complex_assert_bodies:
-        out_spec = _build_output_spec([], num_outputs, true_label)
-        logger.info(f"Parsed {vnnlib_path.name}: 1 query(ies) [input-only]")
-        return [(base_in_spec, out_spec)]
-
-    # S-expr parse only the complex asserts
-    per_assert: List[List[_Query]] = []
-    for body in complex_assert_bodies:
-        qs = _process_body(body, num_inputs, num_outputs)
-        if qs is None:
-            logger.debug(f"Skipping unparseable assert: {body}")
-            continue
-        per_assert.append(qs)
-
-    if not per_assert:
-        logger.warning(f"No parseable complex assertions in {vnnlib_path}; using input-only spec.")
-        out_spec = _build_output_spec([], num_outputs, true_label)
-        return [(base_in_spec, out_spec)]
-
-    complex_queries = _combine_conjunctive_queries(per_assert)
-
-    results: List[Tuple[InputSpec, OutputSpec]] = []
-    for q in complex_queries:
-        x_ineqs: _Query = []
-        y_ineqs: _Query = []
-        skip = False
-        for xc, yc, d in q:
-            if any(v != 0 for v in yc):
-                y_ineqs.append((xc, yc, d))
-            elif any(v != 0 for v in xc):
-                x_ineqs.append((xc, yc, d))
-            elif d < 0:
-                logger.debug(f"Infeasible constant constraint: 0 <= {d}")
-                skip = True
-                break
-        if skip:
-            continue
-        # Share the base InputSpec instance unless this query tightens X further
-        if x_ineqs:
-            in_spec = _build_input_spec(num_inputs, input_shape, bounds_dict, x_ineqs)
-        else:
-            in_spec = base_in_spec
-        out_spec = _build_output_spec(y_ineqs, num_outputs, true_label)
-        results.append((in_spec, out_spec))
-
-    if true_label is not None:
-        promoted = _try_promote_to_top1(results, num_outputs, true_label)
-        if promoted is not None:
-            results = [promoted]
-
-    logger.info(f"Parsed {vnnlib_path.name}: {len(results)} query(ies)")
-    return results
+    raise UnsupportedSpecError(
+        f"{vnnlib_path.name}: VNNLIB 1.0 flat format is no longer supported "
+        f"(ACT is VNNLIB 2.0-only); provide a 2.0 file declaring "
+        f"(vnnlib-version)/(declare-network)."
+    )
 
 
 def validate_vnnlib_file(vnnlib_path: Path) -> bool:
@@ -276,29 +218,6 @@ def validate_vnnlib_file(vnnlib_path: Path) -> bool:
     except VNNLibParseError as e:
         logger.error(f"VNNLIB validation failed: {e}")
         return False
-
-
-def list_vnnlib_variables(vnnlib_path: Path) -> Dict[str, int]:
-    """
-    List all variables declared in a VNNLIB file.
-    
-    Args:
-        vnnlib_path: Path to .vnnlib file
-        
-    Returns:
-        Dict with 'num_inputs' and 'num_outputs'
-    """
-    try:
-        with open(vnnlib_path, 'r') as f:
-            content = f.read()
-        
-        return {
-            'num_inputs': _extract_num_inputs(content),
-            'num_outputs': _extract_num_outputs(content)
-        }
-    except Exception as e:
-        logger.error(f"Failed to list variables: {e}")
-        return {'num_inputs': 0, 'num_outputs': 0}
 
 
 def extract_label_from_vnnlib(vnnlib_path: Path) -> Optional[int]:
@@ -368,10 +287,12 @@ def parse_vnnlib_2_0(
         raise VNNLibParseError(f"Failed to read {vnnlib_path}: {e}") from e
 
     if len(re.findall(r"\(\s*declare-network\b", content)) >= 2:
-        raise UnsupportedSpecError("multi-network (f/g) not yet supported")
+        if "isomorphic-to" in content:
+            return _parse_vnnlib_2_0_isomorphic(content, labeled_tensor)
+        raise UnsupportedSpecError("multi-network (equal-to/monotonic) not yet supported")
 
-    input_name, input_shape = _extract_vnnlib_2_decl(content, "input")
-    output_name, output_shape = _extract_vnnlib_2_decl(content, "output")
+    input_name, _input_dtype, input_shape = _extract_vnnlib_2_decl(content, "input")
+    output_name, _output_dtype, output_shape = _extract_vnnlib_2_decl(content, "output")
     num_inputs = _numel(input_shape)
     num_outputs = _numel(output_shape)
     tensor_shape = tuple(labeled_tensor.tensor.shape) if labeled_tensor is not None else tuple(input_shape)
@@ -390,6 +311,21 @@ def parse_vnnlib_2_0(
         output_name=output_name,
         output_shape=output_shape,
     )
+    return _queries_from_rewritten(
+        rewritten, num_inputs, num_outputs, tensor_shape, true_label, vnnlib_path.name
+    )
+
+
+def _queries_from_rewritten(
+    rewritten: str,
+    num_inputs: int,
+    num_outputs: int,
+    tensor_shape: Tuple[int, ...],
+    true_label,
+    name: str,
+) -> List[Tuple[InputSpec, OutputSpec]]:
+    """Shared core: turn a flat-name-rewritten 2.0 body into (InputSpec, OutputSpec)
+    queries. Used by both single-network and isomorphic dual-network 2.0 parsing."""
     try:
         forms = _parse_all_forms(rewritten)
     except VNNLibParseError:
@@ -410,7 +346,7 @@ def parse_vnnlib_2_0(
 
     if not complex_assert_bodies:
         out_spec = _build_output_spec([], num_outputs, true_label)
-        logger.info(f"Parsed {vnnlib_path.name}: 1 query(ies) [vnnlib 2.0 input-only]")
+        logger.info(f"Parsed {name}: 1 query(ies) [vnnlib 2.0 input-only]")
         return [(base_in_spec, out_spec)]
 
     per_assert: List[List[_Query]] = []
@@ -446,22 +382,97 @@ def parse_vnnlib_2_0(
         if promoted is not None:
             results = [promoted]
 
-    logger.info(f"Parsed {vnnlib_path.name}: {len(results)} query(ies) [vnnlib 2.0]")
+    if len(results) > 1:
+        promoted = _try_promote_to_top1_unlabeled(results, num_outputs)
+        if promoted is not None:
+            results = [promoted]
+
+    logger.info(f"Parsed {name}: {len(results)} query(ies) [vnnlib 2.0]")
     return results
 
 
-def _extract_vnnlib_2_decl(content: str, io_kind: str) -> Tuple[str, Tuple[int, ...]]:
+def _extract_all_vnnlib_2_decls(content: str, io_kind: str) -> List[Tuple[str, Tuple[int, ...]]]:
+    """All declare-input/output entries (multi-network files have one per network)."""
     pattern = re.compile(
         rf"\(\s*declare-{io_kind}\s+([A-Za-z_]\w*)\s+\S+\s+\[([^\]]+)\]\s*\)",
+        re.MULTILINE,
+    )
+    decls: List[Tuple[str, Tuple[int, ...]]] = []
+    for m in pattern.finditer(content):
+        dims = tuple(int(p.strip()) for p in m.group(2).split(",") if p.strip())
+        if not dims or any(d <= 0 for d in dims):
+            raise VNNLibParseError(f"Invalid VNNLIB 2.0 declare-{io_kind} shape: {m.group(2)}")
+        decls.append((m.group(1), dims))
+    if not decls:
+        raise VNNLibParseError(f"VNNLIB 2.0 missing declare-{io_kind}")
+    return decls
+
+
+def _isomorphic_multinet_rewrite(content: str) -> Tuple[str, int, int, Tuple[int, ...]]:
+    """Flatten an isomorphic (f,g) dual-network file to one variable namespace.
+
+    Inputs X_f/X_g are SHARED (tied by ``(== X_f[i] X_g[i])``) so both map to the
+    same X_<flat>; outputs concatenate as [Y_f ; Y_g], i.e. Y_f[j]->Y_<flat>,
+    Y_g[j]->Y_<numel(Y_f)+flat>. The self-equality link asserts collapse to the
+    trivial ``0<=0`` and are ignored downstream. Returns
+    (rewritten, num_inputs, num_outputs_concat, f_input_shape).
+    """
+    inputs = _extract_all_vnnlib_2_decls(content, "input")
+    outputs = _extract_all_vnnlib_2_decls(content, "output")
+    if len(inputs) < 2 or len(outputs) < 2:
+        raise UnsupportedSpecError("isomorphic spec requires two networks")
+    (f_in_name, f_in_shape), (g_in_name, g_in_shape) = inputs[0], inputs[1]
+    (f_out_name, f_out_shape), (g_out_name, g_out_shape) = outputs[0], outputs[1]
+    f_out_numel = _numel(f_out_shape)
+    num_inputs = _numel(f_in_shape)
+    num_outputs = f_out_numel + _numel(g_out_shape)
+    name_map = {
+        f_in_name: ("X", f_in_shape, 0),
+        g_in_name: ("X", g_in_shape, 0),
+        f_out_name: ("Y", f_out_shape, 0),
+        g_out_name: ("Y", g_out_shape, f_out_numel),
+    }
+    var_re = re.compile(r"\b([A-Za-z_]\w*)\s*\[([^\]]+)\]")
+
+    def repl(m: "re.Match[str]") -> str:
+        info = name_map.get(m.group(1))
+        if info is None:
+            return m.group(0)
+        prefix, shape, base = info
+        idx = tuple(int(p.strip()) for p in m.group(2).split(",") if p.strip())
+        return f"{prefix}_{base + _ravel_c_order(idx, shape)}"
+
+    return var_re.sub(repl, content), num_inputs, num_outputs, f_in_shape
+
+
+def _parse_vnnlib_2_0_isomorphic(
+    content: str,
+    labeled_tensor: Optional['LabeledInputTensor'] = None,
+) -> List[Tuple[InputSpec, OutputSpec]]:
+    """Isomorphic equivalence: verify f and g (shared input) agree; specs are
+    built over the concatenated output [Y_f ; Y_g] of the combined model."""
+    rewritten, num_inputs, num_outputs, f_in_shape = _isomorphic_multinet_rewrite(content)
+    tensor_shape = tuple(labeled_tensor.tensor.shape) if labeled_tensor is not None else tuple(f_in_shape)
+    if _numel(tensor_shape) != num_inputs:
+        raise VNNLibParseError(
+            f"isomorphic input shape {f_in_shape} ({num_inputs} elems) != sample {tensor_shape}"
+        )
+    return _queries_from_rewritten(rewritten, num_inputs, num_outputs, tensor_shape, None, "isomorphic")
+
+
+def _extract_vnnlib_2_decl(content: str, io_kind: str) -> Tuple[str, str, Tuple[int, ...]]:
+    """Return ``(var_name, dtype, shape)``; dtype feeds the 2.0 witness header."""
+    pattern = re.compile(
+        rf"\(\s*declare-{io_kind}\s+([A-Za-z_]\w*)\s+(\S+)\s+\[([^\]]+)\]\s*\)",
         re.MULTILINE,
     )
     match = pattern.search(content)
     if match is None:
         raise VNNLibParseError(f"VNNLIB 2.0 missing declare-{io_kind}")
-    dims = tuple(int(part.strip()) for part in match.group(2).split(",") if part.strip())
+    dims = tuple(int(part.strip()) for part in match.group(3).split(",") if part.strip())
     if not dims or any(dim <= 0 for dim in dims):
-        raise VNNLibParseError(f"Invalid VNNLIB 2.0 declare-{io_kind} shape: {match.group(2)}")
-    return match.group(1), dims
+        raise VNNLibParseError(f"Invalid VNNLIB 2.0 declare-{io_kind} shape: {match.group(3)}")
+    return match.group(1), match.group(2), dims
 
 
 def _numel(shape: Tuple[int, ...]) -> int:
@@ -512,7 +523,7 @@ def _normalize_vnnlib_2_body(body: Any) -> Any:
         return ["<=", children[0], children[1]]
     if op == ">" and len(children) == 2:
         return [">=", children[0], children[1]]
-    if op == "=" and len(children) == 2:
+    if op in ("=", "==") and len(children) == 2:
         return ["and", ["<=", children[0], children[1]], [">=", children[0], children[1]]]
     return [op] + children
 
@@ -552,38 +563,8 @@ def _is_constant_linear_expr(expr: Any, num_inputs: int, num_outputs: int) -> bo
 
 
 # -------------------------------------------------------------------------
-# Legacy regex extractors (used by parse_vnnlib_to_tensors; not part of Steps 1-5)
+# Shared bound/property extractors (operate on flat X_n/Y_n post-rewrite)
 # -------------------------------------------------------------------------
-
-
-def _extract_num_inputs(content: str) -> int:
-    """
-    Extract number of input variables from VNNLIB content.
-    
-    Looks for patterns like:
-    - (declare-const X_0 Real)
-    - (declare-const X_1 Real)
-    """
-    x_vars = {int(m) for m in _X_RE.findall(content)}
-    if not x_vars:
-        raise VNNLibParseError("No input variables (X_i) found")
-    # Number of inputs is max index + 1 (assuming 0-indexed)
-    return max(x_vars) + 1
-
-
-def _extract_num_outputs(content: str) -> int:
-    """
-    Extract number of output variables from VNNLIB content.
-    
-    Looks for patterns like:
-    - (declare-const Y_0 Real)
-    - (declare-const Y_1 Real)
-    """
-    y_vars = {int(m) for m in _Y_RE.findall(content)}
-    if not y_vars:
-        logger.warning("No output variables (Y_i) found in VNNLIB")
-        return 0
-    return max(y_vars) + 1
 
 
 def _extract_input_bounds(
@@ -1023,3 +1004,83 @@ def _try_promote_to_top1(
         return None
     y_true = _coerce_label_to_tensor(true_label)
     return queries[0][0], OutputSpec(kind=OutKind.TOP1_ROBUST, y_true=y_true)
+
+
+def _try_promote_to_top1_unlabeled(
+    queries: List[Tuple[InputSpec, OutputSpec]],
+    num_outputs: int,
+) -> Optional[Tuple[InputSpec, OutputSpec]]:
+    """Label-agnostic TOP1 recognition for 2.0 files that omit the label comment.
+
+    Soundness invariant: the shared class ``t`` must be one of the two nonzero
+    indices of the first canonicalised row ``e_t - e_j``, so only those two are
+    trialled; the full structural + full-coverage check is delegated to
+    :func:`_try_promote_to_top1`, which rejects any non-top-1 OR (mixed labels,
+    extra conjuncts, nonzero RHS) — so no unsound collapse is possible.
+    """
+    if len(queries) < 2:
+        return None
+    first_out = queries[0][1]
+    if first_out.kind != OutKind.UNSAFE_LINEAR or first_out.c is None:
+        return None
+    c0 = first_out.c
+    if c0.dim() == 1:
+        c0 = c0.unsqueeze(0)
+    if c0.shape[0] != 1:
+        return None
+    candidates = [i for i, v in enumerate(c0[0].tolist()) if abs(v) > 1e-9]
+    if len(candidates) != 2:
+        return None
+    for cand in candidates:
+        promoted = _try_promote_to_top1(queries, num_outputs, cand)
+        if promoted is not None:
+            return promoted
+    return None
+
+
+def extract_vnnlib_2_io_decls(vnnlib_path):
+    """``((in_name, in_dtype, in_shape), (out_name, out_dtype, out_shape))`` for a
+    single-network VNNLIB 2.0 file, else None (legacy 1.0, or multi-network): the
+    caller then has no single-tensor witness header and degrades ``sat`` to
+    ``unknown``."""
+    try:
+        with open(vnnlib_path, "r") as f:
+            content = f.read()
+    except OSError:
+        return None
+    if "(vnnlib-version" not in content and "(declare-network" not in content:
+        return None
+    if len(re.findall(r"\(\s*declare-network\b", content)) >= 2:
+        return None
+    try:
+        return (_extract_vnnlib_2_decl(content, "input"),
+                _extract_vnnlib_2_decl(content, "output"))
+    except VNNLibParseError:
+        return None
+
+
+def write_vnncomp_result(out_path, token: str, *, x=None, y=None,
+                         in_decl=None, out_decl=None) -> None:
+    """Emit the VNN-COMP result token; for ``sat`` append the counterexample as a
+    VNNLIB 2.0 command-line assignment (VNNLIB-Standard §5.3): per variable a
+    header ``<name> <dtype> [d0,d1,..]`` then its values one-per-line in
+    row-major (C) order, input decl then output decl. This is what the 2026
+    checker (``counterexamples_v2.py::parse_text_assignment``) parses — not the
+    legacy flat ``((X_0 v)...)`` pairs. ``in_decl``/``out_decl`` are
+    ``(name, dtype, shape)`` triples; if either is None the token is written
+    witness-less so the caller can degrade to ``unknown``."""
+    def _assignment(name, dtype, shape, values):
+        dims = ",".join(str(int(d)) for d in shape)
+        return [f"{name} {dtype} [{dims}]"] + [f"{v:.16g}" for v in values]
+
+    with open(out_path, "w") as f:
+        if (token != "sat" or x is None or y is None
+                or in_decl is None or out_decl is None):
+            f.write(token + "\n")
+            return
+        xf = x.detach().cpu().flatten().tolist()
+        yf = y.detach().cpu().flatten().tolist()
+        lines = ["sat"]
+        lines += _assignment(in_decl[0], in_decl[1], in_decl[2], xf)
+        lines += _assignment(out_decl[0], out_decl[1], out_decl[2], yf)
+        f.write("\n".join(lines) + "\n")

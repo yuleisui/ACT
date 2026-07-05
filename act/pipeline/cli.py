@@ -495,6 +495,25 @@ def cmd_fuzz(args):
         print(f"Seeds explored: {report.seeds_explored}")
         print(f"{'=' * 80}\n")
 
+        if report.counterexamples and not args.no_save:
+            import os
+            import torch as _torch
+            from act.front_end.vnnlib_loader.vnnlib_parser import write_vnncomp_result
+
+            os.makedirs(args.output, exist_ok=True)
+            ce0 = report.counterexamples[0]
+            x = ce0.input if hasattr(ce0, "input") else ce0
+            with _torch.no_grad():
+                y = wrapped_model(x)
+            fname = "_".join(map(str, model_id)) if isinstance(model_id, tuple) else str(model_id)
+            write_vnncomp_result(
+                os.path.join(args.output, f"{fname}_result.txt"),
+                "sat", x=x, y=y,
+                in_decl=("X", "float32", tuple(x.shape)),
+                out_decl=("Y", "float32", tuple(y.shape)),
+            )
+            print(f"✓ counterexample witness written for {fname}")
+
     except Exception as e:
         print(f"❌ Fuzzing failed: {e}")
         import traceback
@@ -619,6 +638,18 @@ def _run_vnnlib_verify(args) -> bool:
     )
     if not spec_results:
         raise RuntimeError(f"VNNLibSpecCreator produced no spec_results for category={args.category!r}")
+
+    if getattr(args, "merge_split_relus", False):
+        from act.front_end.model_synthesis import merge_split_relus
+
+        merged_results = []
+        for sr in spec_results:
+            merged_model, n_merged = merge_split_relus(sr[2])
+            if n_merged:
+                print(f"[merge] fused {n_merged} split-ReLU neurons in {sr[1]}")
+                sr = tuple(merged_model if i == 2 else v for i, v in enumerate(sr))
+            merged_results.append(sr)
+        spec_results = merged_results
 
     wrapped = synthesize_models_from_specs(spec_results)
     if not wrapped:
@@ -900,7 +931,14 @@ def _run_netfactory_verify(args) -> bool:
                             validator.record_skip(name, solver, tf_mode, batch_size, reason)
                             continue
 
-                        model = validator.factory.create_model(name, load_weights=True)
+                        # Reconstruct the model from the SAME (batchified) net being
+                        # verified: create_model(name) returns the single-lane model
+                        # whose OutputSpecLayer carries only y_true[0], so the CE
+                        # probe's per-sample satisfied flags would test lane 0's
+                        # class on every lane -- misattributing a CE to certified
+                        # lanes (false [soundness] FAILED).
+                        from act.pipeline.verification.act2torch import ACTToTorch
+                        model = ACTToTorch(act_net).run()
                         label = solver if solver == "dual" else f"{tf_mode}/{solver}"
                         _verify_and_validate_cell(
                             tag=name,
@@ -1223,7 +1261,7 @@ Examples:
         "--bab-branching-method",
         type=str,
         default="random",
-        choices=["random", "babsr", "fsb"],
+        choices=["random", "babsr", "fsb", "gain", "width"],
         help="BaB branching strategy when --bab is set (default: random)",
     )
     bab_group.add_argument(
@@ -1416,6 +1454,13 @@ Examples:
         "--ignore-errors",
         action="store_true",
         help="Always exit 0 (ignore failures and errors for CI)",
+    )
+    validation_group.add_argument(
+        "--merge-split-relus",
+        action="store_true",
+        dest="merge_split_relus",
+        help="Collapse provably-affine DENSE->ReLU->DENSE sandwiches (ReluSplitter "
+             "inverse) on loaded models before verification",
     )
 
     # Add standard device/dtype arguments (shared across all ACT CLIs)

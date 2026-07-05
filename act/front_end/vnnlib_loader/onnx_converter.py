@@ -21,10 +21,156 @@ import torch.nn as nn
 
 logger = logging.getLogger(__name__)
 
+_QDQ_REGISTERED = False
+
+
+def _register_qdq_converters() -> None:
+    """Register ACT-local onnx2torch converters for ONNX QuantizeLinear /
+    DequantizeLinear (opset 10/13). Idempotent; imports onnx2torch lazily so
+    non-VNNLIB workflows never require the onnx stack."""
+    global _QDQ_REGISTERED
+    if _QDQ_REGISTERED:
+        return
+
+    from typing import cast
+
+    from onnx2torch.node_converters.registry import add_converter
+    from onnx2torch.onnx_graph import OnnxGraph
+    from onnx2torch.onnx_node import OnnxNode
+    from onnx2torch.utils.common import (
+        OnnxToTorchModule,
+        OperationConverterResult,
+        get_const_value,
+        onnx_mapping_from_node,
+    )
+
+    def _reshape_axis_param(param: torch.Tensor, x: torch.Tensor, axis) -> torch.Tensor:
+        if param.numel() == 1 or axis is None or param.dim() != 1 or x.dim() == 0:
+            return param
+        ax = axis + x.dim() if axis < 0 else axis
+        shape = [1] * x.dim()
+        shape[ax] = int(param.numel())
+        return param.reshape(shape)
+
+    def _qrange_from_zero_point(zero_point: torch.Tensor):
+        if zero_point.dtype == torch.int8:
+            return -128, 127, "int8"
+        if zero_point.dtype == torch.uint8:
+            return 0, 255, "uint8"
+        if zero_point.dtype == torch.int32:
+            return -(2**31), 2**31 - 1, "int32"
+        raise NotImplementedError(f"QuantizeLinear zero_point dtype {zero_point.dtype} is not supported")
+
+    class OnnxQuantizeLinear(nn.Module, OnnxToTorchModule):
+        def __init__(self, scale, zero_point, axis=None):
+            super().__init__()
+            self.register_buffer("scale", scale.detach().clone().to(dtype=torch.float32))
+            self.register_buffer("zero_point", zero_point.detach().clone())
+            self.axis = axis
+            self.qmin, self.qmax, self.dtype_name = _qrange_from_zero_point(cast(torch.Tensor, self.zero_point))
+
+        def forward(self, x, scale=None, zero_point=None):
+            s = _reshape_axis_param(cast(torch.Tensor, self.scale).to(device=x.device, dtype=x.dtype), x, self.axis)
+            zp = _reshape_axis_param(cast(torch.Tensor, self.zero_point).to(device=x.device, dtype=x.dtype), x, self.axis)
+            return s * torch.clamp(torch.round(x / s), min=float(self.qmin) - zp, max=float(self.qmax) - zp)
+
+    class OnnxDequantizeLinear(nn.Module, OnnxToTorchModule):
+        def __init__(self, scale, zero_point, axis=None):
+            super().__init__()
+            self.register_buffer("scale", scale.detach().clone().to(dtype=torch.float32))
+            self.register_buffer("zero_point", zero_point.detach().clone())
+            self.axis = axis
+            self.qmin, self.qmax, self.dtype_name = _qrange_from_zero_point(cast(torch.Tensor, self.zero_point))
+
+        def forward(self, q, scale=None, zero_point=None):
+            dtype = torch.float32 if not q.is_floating_point() else q.dtype
+            qf = q.to(dtype=dtype)
+            s = _reshape_axis_param(cast(torch.Tensor, self.scale).to(device=q.device, dtype=dtype), qf, self.axis)
+            zp = _reshape_axis_param(cast(torch.Tensor, self.zero_point).to(device=q.device, dtype=dtype), qf, self.axis)
+            return s * (qf - zp)
+
+    def _axis(node: "OnnxNode"):
+        raw = node.attributes.get("axis")
+        return None if raw is None else int(raw)
+
+    def _const_tensor(name: str, graph: "OnnxGraph") -> torch.Tensor:
+        value = get_const_value(name, graph)
+        if not isinstance(value, torch.Tensor):
+            value = torch.as_tensor(value)
+        return value
+
+    @add_converter(operation_type="QuantizeLinear", version=10)
+    @add_converter(operation_type="QuantizeLinear", version=13)
+    def _q(node: "OnnxNode", graph: "OnnxGraph") -> "OperationConverterResult":
+        return OperationConverterResult(
+            torch_module=OnnxQuantizeLinear(_const_tensor(node.input_values[1], graph),
+                                            _const_tensor(node.input_values[2], graph), _axis(node)),
+            onnx_mapping=onnx_mapping_from_node(node=node),
+        )
+
+    @add_converter(operation_type="DequantizeLinear", version=10)
+    @add_converter(operation_type="DequantizeLinear", version=13)
+    def _dq(node: "OnnxNode", graph: "OnnxGraph") -> "OperationConverterResult":
+        return OperationConverterResult(
+            torch_module=OnnxDequantizeLinear(_const_tensor(node.input_values[1], graph),
+                                              _const_tensor(node.input_values[2], graph), _axis(node)),
+            onnx_mapping=onnx_mapping_from_node(node=node),
+        )
+
+    _QDQ_REGISTERED = True
+
 
 class ONNXConversionError(Exception):
     """Exception raised when ONNX conversion fails."""
     pass
+
+
+def _fold_dequantize_initializers(onnx_model):
+    """Fold DequantizeLinear nodes whose data input is an initializer.
+
+    onnx2torch Conv/Gemm converters expect weights/biases as initializers, not
+    computed node outputs. This rewrite is exact: y = scale * (q - zero_point),
+    including per-axis scale/zero_point via the ONNX axis attribute.
+    """
+    import numpy as np
+    import onnx
+    from onnx import numpy_helper
+
+    init_map = {init.name: numpy_helper.to_array(init) for init in onnx_model.graph.initializer}
+    keep_nodes = []
+    folded = 0
+    for node in onnx_model.graph.node:
+        if node.op_type != 'DequantizeLinear' or len(node.input) < 3 or node.input[0] not in init_map:
+            keep_nodes.append(node)
+            continue
+        q = init_map[node.input[0]]
+        scale = init_map.get(node.input[1])
+        zp = init_map.get(node.input[2])
+        if scale is None or zp is None:
+            keep_nodes.append(node)
+            continue
+        axis = None
+        for attr in node.attribute:
+            if attr.name == 'axis':
+                axis = int(onnx.helper.get_attribute_value(attr))
+                break
+        qf = q.astype(np.float32)
+        sf = scale.astype(np.float32)
+        zpf = zp.astype(np.float32)
+        if axis is not None and sf.ndim == 1 and sf.size != 1 and qf.ndim > 0:
+            ax = axis + qf.ndim if axis < 0 else axis
+            shape = [1] * qf.ndim
+            shape[ax] = sf.size
+            sf = sf.reshape(shape)
+            zpf = zpf.reshape(shape)
+        value = (sf * (qf - zpf)).astype(np.float32)
+        onnx_model.graph.initializer.append(numpy_helper.from_array(value, name=node.output[0]))
+        folded += 1
+    if folded:
+        del onnx_model.graph.node[:]
+        onnx_model.graph.node.extend(keep_nodes)
+        logger.info(f"Folded {folded} constant DequantizeLinear node(s) into initializers")
+    return onnx_model
 
 
 def _preprocess_onnx_for_onnx2torch(onnx_model):
@@ -46,6 +192,7 @@ def _preprocess_onnx_for_onnx2torch(onnx_model):
         if node.op_type == 'Clip':
             while len(node.input) > 1 and not node.input[-1]:
                 del node.input[-1]
+    onnx_model = _fold_dequantize_initializers(onnx_model)
     return onnx_model
 
 
@@ -72,6 +219,7 @@ def convert_onnx_to_pytorch(
     try:
         # Import here to avoid requiring onnx for non-VNNLIB workflows
         import onnx
+        _register_qdq_converters()
         from onnx2torch import convert
         
         # Load ONNX model
