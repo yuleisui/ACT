@@ -23,7 +23,7 @@ implementations and a global registry to select between implementations
 
 import torch
 from abc import ABC, abstractmethod
-from typing import Dict, List
+from typing import Any, Dict, Optional
 from act.back_end.core import Bounds, Fact, Layer, Net
 from act.util.options import PerformanceOptions
 
@@ -71,6 +71,8 @@ class TransferFunction(ABC):
         """Implementation name for debugging and logging."""
         pass
 
+    def side_state_signature(self, layer_id: int) -> Any:
+        return None
 
 # Global transfer function management
 _current_tf: TransferFunction = None
@@ -131,22 +133,23 @@ def set_transfer_function_mode(mode: str = "interval") -> None:
 # verifier.py / cli.py read ``is_dual_solver_active()`` to dispatch verify_once
 # through DualSolver.evaluate_spec instead of the LP cascade. Decoupled from
 # TF mode because dual is a backward-only solver, not a forward TF.
-_current_solver_mode: "Optional[str]" = None
+_current_solver_mode: Optional[str] = None
 
 
-def set_solver_mode(mode: "Optional[str]") -> None:
+def set_solver_mode(mode: Optional[str]) -> None:
     global _current_solver_mode
     _current_solver_mode = mode
 
 
-def get_solver_mode() -> "Optional[str]":
+def get_solver_mode() -> Optional[str]:
     return _current_solver_mode
 
 
 def is_dual_solver_active() -> bool:
     return _current_solver_mode == "dual"
 
-
+def is_hybridz_solver_active() -> bool:
+    return _current_solver_mode == "hybridz"
 
 @torch.no_grad()
 def dispatch_tf(L: Layer, before: Dict[int, Fact], after: Dict[int, Fact], net: Net) -> Fact:

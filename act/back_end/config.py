@@ -16,7 +16,7 @@ import yaml
 
 _DEFAULT_YAML = Path(__file__).parent / "config.yaml"
 
-_VALID_SOLVERS = {"auto", "gurobi", "torchlp", "dual"}
+_VALID_SOLVERS = {"auto", "gurobi", "torchlp", "dual", "hybridz"}
 _VALID_DEVICES = {"cpu", "cuda", "gpu"}
 _VALID_DTYPES = {"float32", "float64"}
 _VALID_REGISTRY_MODES = {"intersection", "union"}
@@ -330,6 +330,10 @@ class GenerationConfig:
                 f"expected one of {_VALID_COVERAGE_MODES}"
             )
 
+@dataclass
+class HybridZConfig:
+    timeout: Optional[float] = None
+    engine: str = "dense_hz_objbound"
 
 # ---------------------------------------------------------------------------
 # BackendConfig — unified back-end configuration
@@ -378,6 +382,7 @@ class BackendConfig:
     """
 
     generation: GenerationConfig = field(default_factory=GenerationConfig)
+    hybridz: HybridZConfig = field(default_factory=HybridZConfig)
 
     method: Optional[str] = None
     p: float = 2.0
@@ -461,6 +466,7 @@ class BackendConfig:
         Override naming:
           - ``bab_<field>`` → ``BaBConfig.<field>``
           - ``gen_<field>`` → ``GenerationConfig.<field>``
+          - ``hybridz_<field>`` → ``HybridZConfig.<field>``
           - ``bab_enabled`` → top-level ``bab_enabled``
         """
         path = Path(config_path) if config_path else _DEFAULT_YAML
@@ -473,6 +479,7 @@ class BackendConfig:
         backend_raw: dict[str, Any] = raw.get("backend", {})
         bab_raw: dict[str, Any] = backend_raw.pop("bab", {})
         gen_raw: dict[str, Any] = backend_raw.pop("generation", {})
+        hz_raw: dict[str, Any] = backend_raw.pop("hybridz", {})
 
         # Extract "enabled" from bab section → top-level bab_enabled
         bab_enabled = bab_raw.pop("enabled", None)
@@ -480,14 +487,18 @@ class BackendConfig:
         # Route prefixed overrides to the right sub-config
         bab_fields = {fld.name for fld in fields(BaBConfig)}
         gen_fields = {fld.name for fld in fields(GenerationConfig)}
+        hz_fields = {fld.name for fld in fields(HybridZConfig)}
         bab_overrides: dict[str, Any] = {}
         gen_overrides: dict[str, Any] = {}
+        hz_overrides: dict[str, Any] = {}
         top_overrides: dict[str, Any] = {}
         for k, v in overrides.items():
             if k.startswith("bab_") and k[4:] in bab_fields:
                 bab_overrides[k[4:]] = v
             elif k.startswith("gen_") and k[4:] in gen_fields:
                 gen_overrides[k[4:]] = v
+            elif k.startswith("hybridz_") and k[8:] in hz_fields:
+                hz_overrides[k[8:]] = v
             else:
                 top_overrides[k] = v
 
@@ -500,9 +511,13 @@ class BackendConfig:
         gen_merged = {k: v for k, v in gen_raw.items() if k in gen_fields}
         gen_merged.update(gen_overrides)
         gen_config = GenerationConfig(**gen_merged)
+        
+        hz_merged = {k: v for k, v in hz_raw.items() if k in hz_fields}
+        hz_merged.update(hz_overrides)
+        hz_config = HybridZConfig(**hz_merged)
 
         # Build top-level config
-        top_fields = {fld.name for fld in fields(cls)} - {"bab", "generation"}
+        top_fields = {fld.name for fld in fields(cls)} - {"bab", "generation", "hybridz"}
         top_merged: dict[str, Any] = {}
         for k, v in backend_raw.items():
             if k in top_fields:
@@ -513,7 +528,7 @@ class BackendConfig:
 
         top_merged.update({k: v for k, v in top_overrides.items() if k in top_fields})
 
-        return cls(bab=bab_config, generation=gen_config, **top_merged)
+        return cls(bab=bab_config, generation=gen_config, hybridz=hz_config, **top_merged)
 
     def to_yaml(self, path: Union[str, Path]) -> Path:
         path = Path(path)
@@ -522,12 +537,13 @@ class BackendConfig:
         d = asdict(self)
         bab_d = d.pop("bab")
         gen_d = d.pop("generation")
+        hz_d = d.pop("hybridz")
         bab_enabled = d.pop("bab_enabled")
         bab_d["enabled"] = bab_enabled
 
         with open(path, "w") as f:
             yaml.dump(
-                {"backend": {**d, "bab": bab_d, "generation": gen_d}},
+                {"backend": {**d, "bab": bab_d, "generation": gen_d, "hybridz": hz_d}},
                 f,
                 default_flow_style=False,
                 sort_keys=False,

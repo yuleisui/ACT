@@ -19,7 +19,11 @@ from typing import Dict, Optional, Tuple, cast
 from act.back_end.core import Bounds, Fact, Net, ConSet
 from act.back_end.layer_schema import LayerKind
 from act.back_end.utils import box_join, changed_or_maskdiff, update_cache
-from act.back_end.transfer_functions import dispatch_tf, set_transfer_function_mode
+from act.back_end.transfer_functions import (
+    dispatch_tf,
+    get_transfer_function,
+    set_transfer_function_mode,
+)
 
 # Initialize default transfer function mode
 def initialize_tf_mode(mode: str = "interval"):
@@ -135,10 +139,13 @@ def analyze(
             before[lid] = Fact(Bjoin, Cjoin)
 
         out_fact = dispatch_tf(layer, before, after, net)
+        side_sig = get_transfer_function().side_state_signature(layer.id)
+        side_changed = layer.cache.get("prev_tf_side_state") != side_sig
 
-        if changed_or_maskdiff(layer, out_fact.bounds, None, eps):
+        if changed_or_maskdiff(layer, out_fact.bounds, None, eps) or side_changed:
             after[lid] = out_fact
             update_cache(layer, out_fact.bounds, None)
+            layer.cache["prev_tf_side_state"] = side_sig
             for con in out_fact.cons: globalC.replace(con)
             for sid in net.succs.get(lid, []): WL.append(sid)
 

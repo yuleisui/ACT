@@ -148,8 +148,26 @@ class HybridzTF(TransferFunction):
     def supports_layer(self, layer_kind: str) -> bool:
         return layer_kind.upper() in self._LAYER_REGISTRY
 
+    def get_hz(self, layer_id: int) -> Optional[HZono]:
+        return self._hz_cache.get(int(layer_id))
+    
+    @staticmethod
+    def _hz_sig(hz: Optional[HZono]):
+        if hz is None:
+            return None
+        return (
+            tuple(hz.c.shape),
+            tuple(hz.Gc.shape),
+            tuple(hz.Gb.shape),
+            tuple(hz.Ac.shape),
+            tuple(hz.Ab.shape),
+            tuple(hz.b.shape),
+        )
+    
+    def side_state_signature(self, layer_id: int):
+        return self._hz_sig(self._hz_cache.get(int(layer_id)))
+    
     _HZ_MAX_INPUT_DIM = 1024
-
     def _hz_from_bounds(self, bounds: Bounds) -> Optional[HZono]:
         lb, ub = bounds.lb.flatten(), bounds.ub.flatten()
         n = lb.shape[0]

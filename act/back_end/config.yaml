@@ -31,6 +31,10 @@ backend:
   # Print extra diagnostic output across all commands.
   verbose: false
 
+  hybridz:
+    timeout: null
+    engine: "dense_hz_objbound"
+
   # ── BaBVerification ────────────────────────────────────────────────────────
 
   # Wall-clock budget in seconds for both single execution and BaB verification.
