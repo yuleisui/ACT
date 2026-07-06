@@ -19,7 +19,6 @@ from act.front_end.torchvision_loader.data_model_mapping import (
     get_dataset_info,
     list_datasets_by_category,
     get_all_categories,
-    search_datasets,
     get_preprocessing_transforms,
     validate_dataset_model_compatibility,
     find_dataset_name,
@@ -119,267 +118,6 @@ def print_preprocessing_summary():
     print("=" * 100)
 
 
-def _test_single_dataset_model(
-    dataset_name: str,
-    model_name: str,
-    run_inference: bool,
-    model_cache: dict
-) -> tuple:
-    """
-    Test a single dataset-model pair with uniform preprocessing.
-    
-    Supports both standard TorchVision models and custom models from model_definitions.py.
-    All models use the same preprocessing pipeline (grayscale→RGB, resize to 224×224, normalize).
-    
-    Args:
-        dataset_name: Name of the dataset to test
-        model_name: Name of the model to test
-        run_inference: Whether to run inference test
-        model_cache: Cache of loaded models to speed up testing
-        
-    Returns:
-        Tuple of (model_loaded, is_compatible, inference_passed)
-        - model_loaded: bool - whether the model was successfully loaded
-        - is_compatible: bool - whether the pair passes compatibility checks
-        - inference_passed: bool or None - True if inference passed, False if failed, None if not tested
-    """
-    import torch
-    import torchvision
-    
-    dataset_info = DATASET_MODEL_MAPPING[dataset_name]
-    category = dataset_info["category"]
-    input_size = dataset_info["input_size"]
-    num_classes = dataset_info.get("num_classes", 10)
-    
-    # Try to load model (cached to avoid reloading)
-    if model_name in model_cache:
-        model = model_cache[model_name]
-    else:
-        try:
-            # Try standard TorchVision model first
-            if hasattr(torchvision.models, model_name):
-                model_fn = getattr(torchvision.models, model_name)
-                model = model_fn(weights="DEFAULT")
-                
-                # Adjust final layer for dataset's number of classes
-                if hasattr(model, 'fc'):
-                    in_features = model.fc.in_features
-                    model.fc = torch.nn.Linear(in_features, num_classes)
-                elif hasattr(model, 'classifier'):
-                    classifier = model.classifier
-                    named_kids = list(classifier.named_children())
-                    if named_kids:
-                        last_name, last_child = named_kids[-1]
-                        setattr(classifier, last_name, torch.nn.Linear(last_child.in_features, num_classes))
-                    else:
-                        model.classifier = torch.nn.Linear(classifier.in_features, num_classes)
-                elif hasattr(model, 'heads') and hasattr(model.heads, 'head'):
-                    in_features = model.heads.head.in_features
-                    model.heads.head = torch.nn.Linear(in_features, num_classes)
-            else:
-                # Try custom model from model_definitions
-                from act.front_end.torchvision_loader.model_definitions import get_model
-                model = get_model(model_name, num_classes=num_classes)
-            
-            model.eval()
-            model_cache[model_name] = model
-            
-        except Exception as e:
-            # Model cannot be loaded (neither standard nor custom)
-            return (False, False, None)
-    
-    # Validate compatibility
-    result = validate_dataset_model_compatibility(dataset_name, model_name)
-    is_compatible = result["compatible"]
-    
-    # Run inference test (only for classification datasets)
-    inference_result = None
-    if run_inference and category == "classification" and is_compatible and model is not None:
-        try:
-            # Create sample input tensor
-            sample = torch.randn(1, *input_size)
-            
-            # Apply standard preprocessing transformations (uniform for all models)
-            processed = sample
-            
-            # Grayscale to RGB
-            if processed.shape[1] == 1:
-                processed = processed.repeat(1, 3, 1, 1)
-            
-            # Resize to 224x224
-            if processed.shape[-2:] != (224, 224):
-                processed = torch.nn.functional.interpolate(
-                    processed, size=(224, 224), mode='bilinear', align_corners=False
-                )
-            
-            # Run inference
-            with torch.no_grad():
-                output = model(processed)
-            
-            # Verify output shape
-            expected_classes = num_classes
-            if output.shape[-1] == expected_classes:
-                inference_result = True
-            else:
-                inference_result = False
-            
-        except Exception as e:
-            inference_result = False
-    
-    # Return: (model_loaded, is_compatible, inference_result)
-    return (True, is_compatible, inference_result)
-
-
-def test_all_dataset_model_pairs(run_inference: bool = True):
-    """
-    Test all dataset-model pairs comprehensively with optional inference validation.
-    
-    Args:
-        run_inference: If True, run inference tests on classification datasets
-        
-    Returns:
-        Tuple of (total_pairs, tested_pairs, compatible_pairs, inference_passed, inference_failed)
-    """
-    print("\n" + "="*100)
-    print("COMPREHENSIVE DATASET-MODEL ALIGNMENT TEST" + (" (with inference)" if run_inference else ""))
-    print("="*100)
-    
-    # Get all categories dynamically
-    all_categories = get_all_categories()
-    
-    # Track results - initialize dynamically based on actual categories
-    results = {category: [] for category in all_categories}
-    
-    # Initialize global counters
-    total_pairs = 0
-    tested_pairs = 0
-    compatible_pairs = 0
-    inference_passed = 0
-    inference_failed = 0
-    
-    # Cache loaded models to speed up testing
-    model_cache = {}
-    
-    # Test each dataset with all its models using the helper function
-    for dataset_name in sorted(DATASET_MODEL_MAPPING.keys()):
-        dataset_info = DATASET_MODEL_MAPPING[dataset_name]
-        category = dataset_info["category"]
-        models = dataset_info["models"]
-        
-        # Initialize result structure for this dataset
-        testable_models = []
-        ds_compatible = 0
-        ds_inf_passed = 0
-        ds_inf_failed = 0
-        
-        # Test each model for this dataset
-        for model_name in models:
-            is_testable, is_compatible, inference_result = _test_single_dataset_model(
-                dataset_name=dataset_name,
-                model_name=model_name,
-                run_inference=run_inference,
-                model_cache=model_cache
-            )
-            
-            if is_testable:
-                testable_models.append(model_name)
-                tested_pairs += 1
-            
-            if is_compatible:
-                ds_compatible += 1
-                compatible_pairs += 1
-            
-            if inference_result is True:
-                ds_inf_passed += 1
-                inference_passed += 1
-            elif inference_result is False:
-                ds_inf_failed += 1
-                inference_failed += 1
-            
-            total_pairs += 1
-        
-        # Get preprocessing requirements
-        preprocessing = get_preprocessing_transforms(dataset_name)
-        preprocessing_steps = []
-        if preprocessing:
-            if preprocessing.get("grayscale_to_rgb", False):
-                preprocessing_steps.append("Grayscale→RGB")
-            if "resize_to" in preprocessing:
-                target = preprocessing["resize_to"]
-                preprocessing_steps.append(f"Resize→{target[0]}×{target[1]}")
-            if "normalize" in preprocessing:
-                preprocessing_steps.append("Normalize")
-        
-        if not preprocessing_steps:
-            preprocessing_steps.append("None (ready)")
-        
-        # Create result for this dataset
-        dataset_result = {
-            "dataset": dataset_name,
-            "total_models": len(models),
-            "testable_models": len(testable_models),
-            "inference_passed": ds_inf_passed,
-            "inference_failed": ds_inf_failed,
-            "models": testable_models[:3] if len(testable_models) > 3 else testable_models,
-            "preprocessing": preprocessing_steps
-        }
-        
-        # Store result by category
-        results[category].append(dataset_result)
-    
-    # Print results by category (use dynamically retrieved categories)
-    for category in all_categories:
-        if not results[category]:
-            continue
-        
-        print(f"\n{'='*100}")
-        print(f"{category.upper()} DATASETS ({len(results[category])} datasets)")
-        print('='*100)
-        print(f"{'Dataset':<25} {'Example Models':<40} {'Total':<7} {'Test':<6} {'Infer':<11} {'Preprocessing'}")
-        print('-'*100)
-        
-        for item in results[category]:
-            models_str = f"{item['total_models']}"
-            testable_str = f"{item['testable_models']}"
-            
-            # Format inference results
-            if run_inference and (item['inference_passed'] > 0 or item['inference_failed'] > 0):
-                inf_str = f"{item['inference_passed']}✓ {item['inference_failed']}✗"
-            else:
-                inf_str = "N/A"
-            
-            prep_str = ", ".join(item['preprocessing'])
-            example_models = ", ".join(item['models']) if item['models'] else "custom only"
-            
-            print(f"{item['dataset']:<25} {example_models:<40} {models_str:<7} {testable_str:<6} {inf_str:<11} {prep_str}")
-    
-    # Print summary statistics
-    print(f"\n{'='*100}")
-    print("SUMMARY STATISTICS")
-    print('='*100)
-    print(f"Total Datasets: {len(DATASET_MODEL_MAPPING)}")
-    
-    # Count unique models
-    unique_models = set()
-    for info in DATASET_MODEL_MAPPING.values():
-        unique_models.update(info["models"])
-    print(f"Total Unique Models: {len(unique_models)}")
-    
-    print(f"Total Dataset-Model Pairs: {total_pairs}")
-    print(f"Testable Pairs (standard models): {tested_pairs}")
-    print(f"Compatible Pairs (validated): {compatible_pairs}")
-    print(f"Compatibility Rate: {compatible_pairs/tested_pairs*100:.1f}%")
-    
-    if run_inference:
-        print(f"\nInference Tests (classification only):")
-        print(f"  Passed: {inference_passed}")
-        print(f"  Failed: {inference_failed}")
-        if inference_passed + inference_failed > 0:
-            print(f"  Success Rate: {inference_passed/(inference_passed+inference_failed)*100:.1f}%")
-    
-    return total_pairs, tested_pairs, compatible_pairs, inference_passed, inference_failed
-
-
 def print_dataset_detail(dataset_name: str):
     """
     Print detailed information about a specific dataset (case-insensitive).
@@ -444,8 +182,6 @@ TorchVision-Specific Commands:
   --datasets-for MODEL      Show compatible datasets for a model
   --load-torchvision DS M   Load downloaded dataset-model pair
   --inference DS MODEL      Test inference on a dataset-model pair
-  --all                     Run comprehensive alignment tests
-  --all-with-inference      Run tests with inference validation
 
 For Common Operations (list, search, download, info):
   Use the unified CLI: python -m act.front_end
@@ -508,19 +244,6 @@ For Common Operations (list, search, download, info):
         metavar="MODEL",
         dest="datasets_for",
         help="Show all datasets that can run inference with a specific model"
-    )
-    # Comprehensive testing
-    parser.add_argument(
-        "--all",
-        action="store_true",
-        dest="test_all",
-        help="Run comprehensive alignment tests with tables for all dataset-model pairs"
-    )
-    parser.add_argument(
-        "--all-with-inference",
-        action="store_true",
-        dest="test_with_inference",
-        help="Run comprehensive tests with inference validation (classification only)"
     )
     # Download/load commands (TorchVision-specific; for the cross-creator CLI use ``python -m act.front_end``).
     parser.add_argument(
@@ -892,36 +615,6 @@ For Common Operations (list, search, download, info):
             import traceback
             print(f"\nDetails:\n{traceback.format_exc()}")
     
-    elif args.test_all or args.test_with_inference:
-        # Run comprehensive test
-        run_inference = args.test_with_inference
-        total_pairs, tested_pairs, compatible_pairs, inf_passed, inf_failed = test_all_dataset_model_pairs(run_inference=run_inference)
-        
-        # Print preprocessing summary
-        print("")
-        print_preprocessing_summary()
-        
-        # Print final summary
-        print("\n" + "="*100)
-        print("✓ COMPREHENSIVE ALIGNMENT TEST COMPLETE")
-        print("="*100)
-        print(f"\nResults:")
-        print(f"  • Dataset-Model Pairs: {total_pairs} total, {tested_pairs} testable, {compatible_pairs} validated")
-        if run_inference:
-            print(f"  • Inference Tests: {inf_passed} passed, {inf_failed} failed")
-            if inf_passed + inf_failed > 0:
-                print(f"  • Overall Success Rate: {(inf_passed/(inf_passed+inf_failed)*100):.1f}%")
-        
-        print("\nKey Findings:")
-        print("  1. All grayscale datasets (MNIST family) properly convert to RGB")
-        print("  2. All low-resolution datasets correctly resize to 224×224")
-        print("  3. All datasets include proper normalization specifications")
-        print("  4. Preprocessing pipeline ensures 100% compatibility")
-        if run_inference:
-            print("  5. Inference validated on classification dataset-model pairs")
-        print("  5. Detection, segmentation, video, and optical flow use custom models" if not run_inference else "  6. Detection, segmentation, video, and optical flow use custom models")
-        print("  6. Ready for ACT verification workflows" if not run_inference else "  7. Ready for ACT verification workflows")
-    
     elif args.validate:
         user_dataset, user_model = args.validate
         try:
@@ -1006,8 +699,6 @@ For Common Operations (list, search, download, info):
         print("  python -m act.front_end.torchvision_loader --models-for CIFAR10")
         print("  python -m act.front_end.torchvision_loader --datasets-for resnet18")
         print("  python -m act.front_end.torchvision_loader --inference MNIST resnet18")
-        print("  python -m act.front_end.torchvision_loader --all")
-        print("  python -m act.front_end.torchvision_loader --all-with-inference")
         print("=" * 100)
 
 

@@ -10,7 +10,6 @@ License: AGPLv3+
 """
 
 import argparse
-from pathlib import Path
 from typing import Any, Optional, cast
 
 from act.front_end.creator_registry import detect_creator, list_creators, get_creator

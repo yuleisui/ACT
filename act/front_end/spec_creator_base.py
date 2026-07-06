@@ -9,12 +9,15 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Tuple, Dict, Any, Optional, Callable, Union
+import logging
 import yaml
 import torch
-from pathlib import Path
 
 from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
 from act.util.path_config import get_spec_config_path, get_default_spec_config_path
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -381,6 +384,30 @@ class BaseSpecCreator(ABC):
         
         return len(errors) == 0, errors
     
+    def _validate_and_filter_specs(
+        self,
+        spec_pairs: List[Tuple[InputSpec, OutputSpec]],
+        pytorch_model: torch.nn.Module,
+        sample_input: torch.Tensor
+    ) -> List[Tuple[InputSpec, OutputSpec]]:
+        """Validate spec pairs against model and filter invalid ones."""
+        valid_pairs = []
+        for input_spec, output_spec in spec_pairs:
+            try:
+                is_valid, errors = self.validate_spec_pair_with_model(
+                    input_spec, output_spec, pytorch_model, sample_input
+                )
+                if is_valid:
+                    valid_pairs.append((input_spec, output_spec))
+                else:
+                    logger.debug(
+                        "Spec pair validation failed: %s, %s, with errors:\n%s",
+                        input_spec.kind, output_spec.kind, "\n".join(errors),
+                    )
+            except Exception as e:
+                logger.debug("Spec validation error: %s", e)
+        return valid_pairs
+
     # ==================== SPEC COMBINATION ==================== #
     
     def _create_spec_combinations(

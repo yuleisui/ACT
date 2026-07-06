@@ -27,8 +27,7 @@ import copy
 import torch
 import torch.fx as fx
 import torch.nn as nn
-from dataclasses import dataclass, field
-from typing import Dict, Any, Optional, List, Tuple, Union
+from typing import Dict, Any, List, Tuple
 
 # Import ACT components
 from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
@@ -44,14 +43,6 @@ from act.front_end.verifiable_model import (
 # -----------------------------------------------------------------------------
 # 2) Small utilities
 # -----------------------------------------------------------------------------
-def prod(seq: Tuple[int, ...]) -> int:
-    """Calculate product of sequence elements."""
-    p = 1
-    for s in seq:
-        p *= s
-    return p
-
-
 def infer_layout_from_tensor(x: torch.Tensor) -> str:
     """Infer tensor layout (HWC, CHW, or FLAT) from shape."""
     if x.dim() == 3:

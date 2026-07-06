@@ -5,9 +5,8 @@ A comprehensive framework for downloading, managing, and loading TorchVision dat
 ## Features
 
 - **40+ Datasets**: Comprehensive mapping of TorchVision datasets across multiple categories
-- **189 Dataset-Model Pairs**: Pre-validated compatible combinations with inference testing
+- **189 Dataset-Model Pairs**: Compatible dataset-model combinations
 - **63 Unique Models**: Support for CNNs, ResNets, EfficientNets, ViTs, and more
-- **Pre-Download Validation**: Automatic inference testing before downloading (classification datasets)
 - **Auto-Download**: Automatically download missing datasets when loading
 - **Preprocessing**: Automatic preprocessing pipelines (resize, normalize, grayscale→RGB)
 - **Path Management**: Centralized configuration via `act.util.path_config`
@@ -44,31 +43,29 @@ act/front_end/torchvision_loader/
 - Search and query functions
 - Case-insensitive name resolution
 
-**`data_model_loader.py` (524 lines)**
-- Download functionality with pre-validation (`download_dataset_model_pair`)
+**`data_model_loader.py`**
+- Download functionality with compatibility checks (`download_dataset_model_pair`)
 - Load functionality with auto-download (`load_dataset_model_pair`)
 - Downloaded pairs management (`list_downloaded_pairs`)
 - Directory size calculation and formatting
 - Metadata management
 
-**`cli.py` (850 lines)**
+**`cli.py`**
 - Command-line interface implementation
-- Single dataset-model pair testing (`_test_single_dataset_model`)
-- Comprehensive test suite (`test_all_dataset_model_pairs`)
 - Detailed output formatting and reporting
 - All CLI commands (--summary, --download, --load, etc.)
 
-**`model_definitions.py` (129 lines)**
+**`model_definitions.py`**
 - Custom model architectures (SimpleCNN, LeNet5)
 - Model definition code generation
 - Support for 1-channel grayscale input
 
-**`__init__.py` (55 lines)**
+**`__init__.py`**
 - Package-level exports
 - Unified import interface
 - Version information
 
-**`__main__.py` (14 lines)**
+**`__main__.py`**
 - Entry point for `python -m act.front_end.torchvision_loader`
 - Delegates to CLI main function
 
@@ -127,16 +124,9 @@ python -m act.front_end.torchvision_loader --preprocessing-summary
 
 ### 3. Download Dataset-Model Pairs
 
-**⚠️ Pre-Download Validation**: All downloads are automatically validated before downloading!
-- Tests if model is loadable (standard `torchvision.models` or custom models in `model_definitions.py`)
-- Validates dataset-model compatibility
-- Runs inference test for classification datasets
-- Raises `AssertionError` if validation fails
-
 **Basic Download (Test Split)**
 ```bash
 # Download test split only (default)
-# These will be validated with inference tests before downloading
 python -m act.front_end.torchvision_loader --download MNIST resnet18
 python -m act.front_end.torchvision_loader --download CIFAR10 resnet18
 python -m act.front_end.torchvision_loader --download FashionMNIST resnet18
@@ -157,7 +147,7 @@ python -m act.front_end.torchvision_loader --download MNIST resnet18 --split tes
 python -m act.front_end.torchvision_loader --download MNIST resnet18 --split both
 ```
 
-**Standard TorchVision Models (Validated)**
+**Standard TorchVision Models**
 ```bash
 # ResNet family
 python -m act.front_end.torchvision_loader --download CIFAR10 resnet18
@@ -178,20 +168,6 @@ python -m act.front_end.torchvision_loader --download SVHN vgg16
 # MobileNet family
 python -m act.front_end.torchvision_loader --download CIFAR10 mobilenet_v2
 python -m act.front_end.torchvision_loader --download STL10 mobilenet_v2
-```
-
-**Validation Example Output:**
-```
-================================================================================
-PRE-DOWNLOAD VALIDATION: MNIST + resnet18
-================================================================================
-Validation Results:
-  • Testable (exists in torchvision.models): True
-  • Compatible (passes compatibility check): True
-  • Inference test: True
-
-✓ Validation passed! Proceeding with download...
-================================================================================
 ```
 
 ### 4. List Downloaded Pairs
@@ -246,7 +222,7 @@ python -m act.front_end.torchvision_loader --load-torchvision MNIST resnet18
 python -m act.front_end.torchvision_loader --load-torchvision CIFAR10 resnet18 --batch-size 64
 ```
 
-### 6. Validation and Testing
+### 6. Validation and Preprocessing
 
 ```bash
 # Validate dataset-model compatibility
@@ -259,12 +235,6 @@ python -m act.front_end.torchvision_loader --show-preprocessing CIFAR10
 
 # Show preprocessing summary for all datasets
 python -m act.front_end.torchvision_loader --preprocessing-summary
-
-# Test all dataset-model pairs (compatibility only)
-python -m act.front_end.torchvision_loader --all
-
-# Test all with inference validation (classification datasets)
-python -m act.front_end.torchvision_loader --all-with-inference
 ```
 
 ## Quick Start Examples
@@ -272,7 +242,7 @@ python -m act.front_end.torchvision_loader --all-with-inference
 ### Example 1: Download and Load MNIST with ResNet18
 
 ```bash
-# Download MNIST with ResNet18 (automatically validated)
+# Download MNIST with ResNet18
 python -m act.front_end.torchvision_loader --download MNIST resnet18 --split test
 
 # Load it for use
@@ -289,16 +259,9 @@ python -m act.front_end.torchvision_loader --models-for CIFAR10
 python -m act.front_end.torchvision_loader --datasets-for resnet50
 ```
 
-### Example 3: Test All Pairs with Inference
-
-```bash
-# Run comprehensive test with inference validation
-python -m act.front_end.torchvision_loader --all-with-inference
-```
-
 ## Recommended Dataset-Model Pairs
 
-All pairs listed below have been validated with inference tests:
+Common compatible pairs include:
 
 ### MNIST Family (28×28 grayscale)
 
@@ -476,7 +439,6 @@ from act.front_end.torchvision_loader import (
 # Direct module imports
 from act.front_end.torchvision_loader.data_model_loader import load_dataset_model_pair
 from act.front_end.torchvision_loader.data_model_mapping import get_dataset_info
-from act.front_end.torchvision_loader.cli import _test_single_dataset_model
 ```
 
 ### Loading Datasets Programmatically
@@ -484,13 +446,13 @@ from act.front_end.torchvision_loader.cli import _test_single_dataset_model
 ```python
 from act.front_end.torchvision_loader import load_dataset_model_pair
 
-# Load a dataset-model pair (auto-downloads if not found with validation)
+# Load a dataset-model pair (auto-downloads if not found)
 result = load_dataset_model_pair(
     dataset_name='MNIST',
     model_name='resnet18',  # Must be in torchvision.models
     split='test',
     batch_size=32,
-    auto_download=True  # Automatically download and validate if not found
+    auto_download=True  # Automatically download if not found
 )
 
 # Access components
@@ -506,12 +468,12 @@ for images, labels in dataloader:
     # ... your code here
 ```
 
-### Downloading Programmatically with Validation
+### Downloading Programmatically
 
 ```python
 from act.front_end.torchvision_loader import download_dataset_model_pair
 
-# Download a dataset-model pair (with automatic validation)
+# Download a dataset-model pair
 try:
     result = download_dataset_model_pair(
         dataset_name='CIFAR10',
@@ -522,18 +484,13 @@ try:
     if result['status'] == 'success':
         print(f"Downloaded to: {result['dataset_path']}")
         print(f"Size: {result['size_formatted']}")
-except AssertionError as e:
-    print(f"Validation failed: {e}")
-    # Model not in torchvision.models, incompatible, or inference failed
 ```
 
 ### Testing Single Dataset-Model Pair
 
 ```python
-from act.front_end.torchvision_loader.cli import _test_single_dataset_model
 
 # Test a specific pair before downloading
-is_testable, is_compatible, inference_result = _test_single_dataset_model(
     dataset_name='MNIST',
     model_name='resnet18',
     run_inference=True,  # Run inference validation
@@ -600,70 +557,6 @@ from act.util.path_config import get_torchvision_data_root
 root_dir = get_torchvision_data_root()
 ```
 
-## Pre-Download Validation
-
-### How It Works
-
-Every `download_dataset_model_pair()` call automatically validates the pair **before downloading**:
-
-1. **Testability Check**: Model must exist in `torchvision.models`
-   - Custom models (`simple_cnn`, `lenet5`) are rejected
-   - Only standard TorchVision models pass this check
-
-2. **Compatibility Check**: Dataset and model must be compatible
-   - Checks input size compatibility
-   - Validates preprocessing requirements
-   - Ensures proper channel alignment
-
-3. **Inference Test** (Classification only): Actual forward pass with sample data
-   - Creates sample tensor matching dataset dimensions
-   - Applies preprocessing (grayscale→RGB, resize, normalize)
-   - Runs inference through the model
-   - Confirms successful output generation
-
-### Validation Examples
-
-**✓ Successful Validation:**
-```bash
-python -m act.front_end.torchvision_loader --download MNIST resnet18
-```
-```
-================================================================================
-PRE-DOWNLOAD VALIDATION: MNIST + resnet18
-================================================================================
-Validation Results:
-  • Testable (exists in torchvision.models): True
-  • Compatible (passes compatibility check): True
-  • Inference test: True
-
-✓ Validation passed! Proceeding with download...
-```
-
-**✗ Failed Validation (Incompatible Pair):**
-```bash
-python -m act.front_end.torchvision_loader --download FlyingChairs resnet18
-```
-```
-================================================================================
-PRE-DOWNLOAD VALIDATION: FlyingChairs + resnet18
-================================================================================
-Validation Results:
-  • Model Loadable: True
-  • Dataset-Model Compatible: False
-
-❌ VALIDATION FAILED: Dataset 'FlyingChairs' is incompatible with model 'resnet18'.
-   The pair failed compatibility validation checks.
-
-AssertionError: ❌ VALIDATION FAILED: Dataset 'FlyingChairs' is incompatible...
-```
-
-### Benefits
-
-- **Early Error Detection**: Catch incompatibilities before downloading gigabytes
-- **Inference Guarantee**: Confirmed working pairs (classification datasets)
-- **Resource Savings**: No wasted bandwidth on broken pairs
-- **Quality Assurance**: Only validated pairs can be downloaded
-
 ## Preprocessing Details
 
 ### Automatic Preprocessing
@@ -682,13 +575,10 @@ The framework automatically handles:
 
 ## Tips and Best Practices
 
-1. **Use standard TorchVision models**: Pre-download validation only works with models in `torchvision.models`
-2. **Start with test split**: Use `--split test` for faster downloads and testing
-3. **Check compatibility**: Use `--validate` before downloading large datasets
-4. **Monitor disk space**: Use `--list-downloads` to track total size
-5. **Use auto-download**: `load_dataset_model_pair()` with `auto_download=True` for seamless workflow
-6. **Test before download**: Use `_test_single_dataset_model()` to validate pairs programmatically
-7. **Comprehensive testing**: Run `--all-with-inference` to test all 127 testable pairs
+1. **Start with test split**: Use `--split test` for faster downloads and testing
+2. **Check compatibility**: Use `--validate` before downloading large datasets
+3. **Monitor disk space**: Use `--list-downloads` to track total size
+4. **Use auto-download**: `load_dataset_model_pair()` with `auto_download=True` for seamless workflow
 
 ## Troubleshooting
 
@@ -702,22 +592,12 @@ python -m act.front_end.torchvision_loader --download MNIST resnet18
 python -m act.front_end.torchvision_loader --download FashionMNIST simple_cnn
 ```
 
-### Validation Failed: Inference Test Failed
-```bash
-# Error: Model cannot process preprocessed data
-AssertionError: Inference test failed for DATASET + MODEL
-
-# Solution: Check preprocessing requirements and model compatibility
-python -m act.front_end.torchvision_loader --validate DATASET MODEL
-python -m act.front_end.torchvision_loader --show-preprocessing DATASET
-```
-
 ### Dataset Not Found
 ```bash
 # Check if dataset exists
 python -m act.front_end.torchvision_loader --summary | grep -i mnist
 
-# Download it first (with validation)
+# Download it first
 python -m act.front_end.torchvision_loader --download MNIST resnet18
 ```
 
@@ -761,8 +641,6 @@ rm -rf data/torchvision/MNIST
 | `--preprocessing-summary` | Show preprocessing summary for all |
 | `--models-for DATASET` | Show all compatible models for dataset |
 | `--datasets-for MODEL` | Show all datasets compatible with model |
-| `--all` | Test all dataset-model pairs (compatibility only) |
-| `--all-with-inference` | Test all pairs with inference validation |
 
 ## Statistics
 
@@ -770,13 +648,10 @@ rm -rf data/torchvision/MNIST
 - **Classification Datasets**: 27 (testable with inference)
 - **Detection/Segmentation/Video/Flow**: 13 (custom models only)
 - **Total Models**: 63 unique architectures
-- **Testable Pairs**: 127 (standard TorchVision models)
 - **Total Pairs**: 189 (including custom model combinations)
 - **Categories**: 5 (classification, detection, segmentation, video, optical_flow)
 - **Custom Models**: 2 (SimpleCNN, LeNet5 - rejected by validation)
 - **Standard TorchVision Models**: 61 (ResNet, VGG, EfficientNet, ViT, etc.)
-- **Compatibility Rate**: 100% (all testable pairs validated)
-- **Inference Success Rate**: 100% (all classification pairs pass inference)
 
 ## License
 

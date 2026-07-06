@@ -211,7 +211,6 @@ def download_dataset_model_pair(
         >>> print(result['dataset_path'])
         '/path/to/ACT/data/torchvision/MNIST/raw/'
     """
-    import shutil
     import traceback
     
     # Use path from config if not specified
@@ -222,77 +221,6 @@ def download_dataset_model_pair(
         # Normalize names (case-insensitive)
         dataset_name = find_dataset_name(dataset_name)
         model_name = find_model_name(model_name)
-        
-        # VALIDATION STEP: Test the dataset-model pair before downloading
-        print(f"\n{'='*80}")
-        print(f"PRE-DOWNLOAD VALIDATION: {dataset_name} + {model_name}")
-        print(f"{'='*80}")
-        
-        from act.front_end.torchvision_loader.cli import _test_single_dataset_model
-        import torchvision.models
-        
-        # Get dataset info to check if it's a classification dataset
-        dataset_info = get_dataset_info(dataset_name)
-        is_classification = dataset_info['category'] == 'classification'
-        
-        # Check if model is standard or custom
-        is_standard_model = hasattr(torchvision.models, model_name)
-        model_type = "standard (torchvision.models)" if is_standard_model else "custom (model_definitions.py)"
-        print(f"Model Type: {model_type}")
-        
-        # Run validation test (with inference for classification datasets)
-        model_cache = {}
-        is_testable, is_compatible, inference_result = _test_single_dataset_model(
-            dataset_name=dataset_name,
-            model_name=model_name,
-            run_inference=is_classification,  # Only test inference for classification
-            model_cache=model_cache
-        )
-        
-        print(f"Validation Results:")
-        print(f"  • Model Loadable: {is_testable}")
-        print(f"  • Dataset-Model Compatible: {is_compatible}")
-        if is_classification and inference_result is not None:
-            print(f"  • Inference Test: {'✓ PASSED' if inference_result else '✗ FAILED'}")
-        
-        # Testability covers standard torchvision.models and any custom
-        # models registered in model_definitions.get_model().
-        if not is_testable:
-            error_msg = (
-                f"❌ VALIDATION FAILED: Model '{model_name}' cannot be loaded.\n"
-                f"   • Standard models must exist in torchvision.models\n"
-                f"   • Custom models must be defined in model_definitions.py with get_model() support"
-            )
-            print(f"\n{error_msg}")
-            assert False, error_msg
-        
-        # Check compatibility
-        if not is_compatible:
-            error_msg = (
-                f"❌ VALIDATION FAILED: Dataset '{dataset_name}' is incompatible with model '{model_name}'.\n"
-                f"   The pair failed compatibility validation checks."
-            )
-            print(f"\n{error_msg}")
-            assert False, error_msg
-        
-        # Check inference result for classification datasets
-        if is_classification:
-            print(f"  • Inference test: {inference_result}")
-            
-            if inference_result is False:
-                error_msg = (
-                    f"❌ VALIDATION FAILED: Inference test failed for {dataset_name} + {model_name}.\n"
-                    f"   The model could not process preprocessed data from this dataset."
-                )
-                print(f"\n{error_msg}")
-                assert False, error_msg
-            elif inference_result is True:
-                print(f"\n✓ Validation passed! Proceeding with download...")
-        else:
-            print(f"  • Inference test: N/A (non-classification dataset)")
-            print(f"\n✓ Validation passed! Proceeding with download...")
-        
-        print(f"{'='*80}\n")
         
         # Validate compatibility
         validation = validate_dataset_model_compatibility(dataset_name, model_name)

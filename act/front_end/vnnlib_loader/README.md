@@ -80,7 +80,6 @@ act/front_end/vnnlib_loader/
 - Category listing and search
 - Download and load commands
 - Instance validation
-- VNNLIB parsing and inspection
 
 **`__init__.py`**
 - Package-level exports
@@ -306,30 +305,8 @@ Total Instances: 160
 ================================================================================
 ```
 
-### 5. Load Category Instances
+### 5. Unified CLI (Auto-Detection)
 
-```bash
-# Load a specific instance from a category
-python -m act.front_end.vnnlib_loader --load acasxu_2023 0
-
-# Load a specific instance
-python -m act.front_end.vnnlib_loader --load cifar100_2024 5
-```
-
-### 6. Parse and Validate VNNLIB Files
-
-```bash
-# Parse a VNNLIB file
-python -m act.front_end.vnnlib_loader --parse-vnnlib path/to/property.vnnlib
-
-# Validate VNNLIB syntax
-python -m act.front_end.vnnlib_loader --validate-vnnlib path/to/property.vnnlib
-
-# Show instance details
-python -m act.front_end.vnnlib_loader --instance-info acasxu_2023 0
-```
-
-### 7. Unified CLI (Auto-Detection)
 
 The unified CLI automatically detects VNNLIB categories:
 
@@ -355,11 +332,7 @@ python -m act.front_end --info acasxu_2023
 # Download ACAS Xu category
 python -m act.front_end.vnnlib_loader --download acasxu_2023
 
-# List instances
-python -m act.front_end.vnnlib_loader --instance-info acasxu_2023
-
-# Load a specific instance
-python -m act.front_end.vnnlib_loader --load acasxu_2023 0
+# Use the unified CLI or programmatic APIs to work with downloaded instances
 ```
 
 ### Example 2: Explore Categories by Type
@@ -370,14 +343,6 @@ python -m act.front_end.vnnlib_loader --type image_classification
 
 # Find control system categories
 python -m act.front_end.vnnlib_loader --type control
-```
-
-### Example 3: Parse VNNLIB Properties
-
-```bash
-# Download and parse a category
-python -m act.front_end.vnnlib_loader --download test
-python -m act.front_end.vnnlib_loader --parse-vnnlib data/vnnlib/test/vnnlib/prop_1.vnnlib
 ```
 
 ## Recommended Categories by Use Case

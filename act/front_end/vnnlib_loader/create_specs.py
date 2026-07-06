@@ -16,7 +16,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Tuple, Dict, Optional
 import logging
-import torch
 import torch.nn as nn
 
 from act.front_end.spec_creator_base import BaseSpecCreator, LabeledInputTensor
@@ -273,47 +272,6 @@ class VNNLibSpecCreator(BaseSpecCreator):
         
         return (category, instance_id, pytorch_model, labeled_tensors, spec_pairs)
     
-    def _validate_and_filter_specs(
-        self,
-        spec_pairs: List[Tuple[InputSpec, OutputSpec]],
-        pytorch_model: nn.Module,
-        sample_input: torch.Tensor
-    ) -> List[Tuple[InputSpec, OutputSpec]]:
-        """
-        Validate spec pairs against model and filter invalid ones.
-        
-        Args:
-            spec_pairs: List of (InputSpec, OutputSpec) tuples
-            pytorch_model: PyTorch model to validate against
-            sample_input: Sample input tensor for shape inference
-            
-        Returns:
-            Filtered list of valid spec pairs
-        """
-        valid_pairs = []
-        
-        for input_spec, output_spec in spec_pairs:
-            try:
-                is_valid, errors = self.validate_spec_pair_with_model(
-                    input_spec,
-                    output_spec,
-                    pytorch_model,
-                    sample_input
-                )
-                
-                if is_valid:
-                    valid_pairs.append((input_spec, output_spec))
-                else:
-                    logger.debug(
-                        f"Spec pair validation failed: {input_spec.kind}, {output_spec.kind}, with errors:\n"
-                        f"{"\n".join(errors)}"
-                    )
-            
-            except Exception as e:
-                logger.debug(f"Spec validation error: {e}")
-        
-        return valid_pairs
-    
     def list_categories(self) -> List[str]:
         """
         List locally downloaded VNNLIB benchmark categories.
@@ -328,33 +286,6 @@ class VNNLibSpecCreator(BaseSpecCreator):
             ['mnist_fc', 'cifar10_resnet']
         """
         return list_local_categories()
-
-
-# Convenience function for quick usage
-def create_vnnlib_specs(
-    categories: Optional[List[str]] = None,
-    max_instances: Optional[int] = None,
-    config_name: str = "vnnlib_default"
-) -> List[Tuple[str, str, nn.Module, List[LabeledInputTensor], List[Tuple[InputSpec, OutputSpec]]]]:
-    """
-    Convenience function to create VNNLIB specs with default settings.
-    
-    Args:
-        categories: List of benchmark categories (None = all)
-        max_instances: Max instances per category (None = all)
-        config_name: Configuration preset name
-        
-    Returns:
-        List of (category, instance_id, pytorch_model, labeled_tensors, spec_pairs)
-        
-    Example:
-        >>> results = create_vnnlib_specs(["mnist_fc"], max_instances=10)
-    """
-    creator = VNNLibSpecCreator(config_name=config_name)
-    return creator.create_specs_for_data_model_pairs(
-        categories=categories,
-        max_instances=max_instances
-    )
 
 
 def create_specs_from_paths(onnx_path, vnnlib_path, category: str = "custom"):
