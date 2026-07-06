@@ -23,7 +23,10 @@ from typing import Dict, Optional
 from act.back_end.core import Bounds, Fact, Layer, Net, ConSet
 from act.back_end.transfer_functions import TransferFunction
 from act.back_end.layer_schema import LayerKind
-from act.back_end.solver.solver_hz import HZono, hz_from_bounds, hz_compute_bounds
+from act.back_end.solver.solver_hz import (
+    HZono,
+    hz_from_bounds,
+)
 
 import act.back_end.hybridz_tf.tf_mlp as hz_mlp
 import act.back_end.hybridz_tf.tf_cnn as hz_cnn
@@ -39,6 +42,17 @@ class HybridzTF(TransferFunction):
         self._cache_net_id: Optional[int] = None
         self._tanh_K: int = 1
         self._sigmoid_K: int = 1
+        self._var_id_stride: int = 1
+
+    @staticmethod
+    def _net_var_id_stride(net: Net) -> int:
+        max_id = -1
+        for layer in net.layers:
+            if layer.in_vars:
+                max_id = max(max_id, max(layer.in_vars))
+            if layer.out_vars:
+                max_id = max(max_id, max(layer.out_vars))
+        return max(max_id + 1, 1)
 
     _LAYER_REGISTRY = {
         # Identity / spec
@@ -63,16 +77,8 @@ class HybridzTF(TransferFunction):
         # Multi-input: HZ + interval
         LayerKind.ADD.value: lambda L, b, tf: hz_mlp.tf_add(L, b, tf),
         LayerKind.MUL.value: lambda L, b, tf: hz_mlp.tf_mul(L, b, tf),
-        LayerKind.SUB.value: lambda L, b, tf: interval_mlp.tf_sub(
-            L,
-            tf._net.get_predecessor_bounds(L.id, tf._after, tf._before, 0),
-            tf._net.get_predecessor_bounds(L.id, tf._after, tf._before, 1),
-        ),
-        LayerKind.DIV.value: lambda L, b, tf: interval_mlp.tf_div(
-            L,
-            tf._net.get_predecessor_bounds(L.id, tf._after, tf._before, 0),
-            tf._net.get_predecessor_bounds(L.id, tf._after, tf._before, 1),
-        ),
+        LayerKind.SUB.value: lambda L, b, tf: hz_mlp.tf_sub(L, b, tf),
+        LayerKind.DIV.value: lambda L, b, tf: hz_mlp.tf_div(L, b, tf),
         LayerKind.CONCAT.value: lambda L, b, tf: hz_mlp.tf_concat(L, b, tf),
         # CNN: HZ + interval
         LayerKind.CONV2D.value: lambda L, b, tf: hz_cnn.tf_conv2d(L, b, tf),
@@ -106,23 +112,20 @@ class HybridzTF(TransferFunction):
         ),
         # CNN: interval-only
         LayerKind.AVGPOOL1D.value: lambda L, b, tf: interval_cnn.tf_avgpool1d(L, b),
-        LayerKind.AVGPOOL2D.value: lambda L, b, tf: interval_cnn.tf_avgpool2d(L, b),
+        LayerKind.AVGPOOL2D.value: lambda L, b, tf: hz_cnn.tf_avgpool2d(L, b, tf),
         LayerKind.MAXPOOL3D.value: lambda L, b, tf: interval_cnn.tf_maxpool3d(L, b),
         LayerKind.PAD.value:      lambda L, b, tf: interval_cnn.tf_pad(L, b),
         LayerKind.CONV1D.value: lambda L, b, tf: interval_cnn.tf_conv1d(L, b),
         LayerKind.CONV3D.value: lambda L, b, tf: interval_cnn.tf_conv3d(L, b),
-        LayerKind.CONVTRANSPOSE2D.value: lambda L, b, tf: (
-            interval_cnn.tf_convtranspose2d(L, b)
-        ),
-        LayerKind.FLATTEN.value: lambda L, b, tf: interval_cnn.tf_flatten(L, b),
-        # Shape ops: interval-only
-        LayerKind.RESHAPE.value: lambda L, b, tf: interval_mlp.tf_reshape(L, b),
-        LayerKind.TRANSPOSE.value: lambda L, b, tf: interval_mlp.tf_transpose(L, b),
-        LayerKind.SQUEEZE.value: lambda L, b, tf: interval_mlp.tf_squeeze(L, b),
-        LayerKind.UNSQUEEZE.value: lambda L, b, tf: interval_mlp.tf_unsqueeze(L, b),
-        LayerKind.EXPAND.value: lambda L, b, tf: interval_mlp.tf_expand(L, b),
-        LayerKind.SLICE.value: lambda L, b, tf: interval_mlp.tf_slice(L, b),
-        LayerKind.GATHER.value: lambda L, b, tf: interval_mlp.tf_gather(L, b),
+        LayerKind.CONVTRANSPOSE2D.value: lambda L, b, tf: hz_cnn.tf_convtranspose2d(L, b, tf),
+        LayerKind.FLATTEN.value: lambda L, b, tf: hz_mlp.tf_flatten(L, b, tf),
+        LayerKind.RESHAPE.value: lambda L, b, tf: hz_mlp.tf_reshape(L, b, tf),
+        LayerKind.TRANSPOSE.value: lambda L, b, tf: hz_mlp.tf_transpose(L, b, tf),
+        LayerKind.SQUEEZE.value: lambda L, b, tf: hz_mlp.tf_squeeze(L, b, tf),
+        LayerKind.UNSQUEEZE.value: lambda L, b, tf: hz_mlp.tf_unsqueeze(L, b, tf),
+        LayerKind.EXPAND.value: lambda L, b, tf: hz_mlp.tf_expand(L, b, tf),
+        LayerKind.SLICE.value: lambda L, b, tf: hz_mlp.tf_slice(L, b, tf),
+        LayerKind.GATHER.value: lambda L, b, tf: hz_mlp.tf_gather(L, b, tf),
         # RNN
         LayerKind.LSTM.value: lambda L, b, tf: hz_rnn.tf_lstm(L, b, tf),
         LayerKind.GRU.value: lambda L, b, tf: hz_rnn.tf_gru(L, b, tf),
@@ -150,11 +153,24 @@ class HybridzTF(TransferFunction):
 
     def get_hz(self, layer_id: int) -> Optional[HZono]:
         return self._hz_cache.get(int(layer_id))
-    
+
     @staticmethod
-    def _hz_sig(hz: Optional[HZono]):
+    def _id_sig(ids: Optional[torch.Tensor]):
+        if ids is None:
+            return None
+        vals = ids.detach().cpu().reshape(-1).tolist()
+        return (tuple(ids.shape), tuple(int(v) for v in vals))
+
+    @classmethod
+    def _hz_sig(cls, hz: Optional[HZono]):
         if hz is None:
             return None
+        eq_sig = None
+        if hz.eq_mask is not None:
+            eq_sig = (
+                tuple(hz.eq_mask.shape),
+                tuple(bool(v) for v in hz.eq_mask.detach().cpu().reshape(-1).tolist()),
+            )
         return (
             tuple(hz.c.shape),
             tuple(hz.Gc.shape),
@@ -162,26 +178,50 @@ class HybridzTF(TransferFunction):
             tuple(hz.Ac.shape),
             tuple(hz.Ab.shape),
             tuple(hz.b.shape),
+            eq_sig,
+            cls._id_sig(hz.col_ids),
+            cls._id_sig(hz.bcol_ids),
         )
-    
+
     def side_state_signature(self, layer_id: int):
         return self._hz_sig(self._hz_cache.get(int(layer_id)))
-    
+
     _HZ_MAX_INPUT_DIM = 1024
-    def _hz_from_bounds(self, bounds: Bounds) -> Optional[HZono]:
-        lb, ub = bounds.lb.flatten(), bounds.ub.flatten()
-        n = lb.shape[0]
-        if n > self._HZ_MAX_INPUT_DIM:
+
+    def _col_ids_from_vars(self, bounds: Bounds, var_ids) -> Optional[torch.Tensor]:
+        if not var_ids:
             return None
-        c = ((lb + ub) / 2.0).view(-1, 1)
+        n = len(var_ids)
+        total = int(bounds.lb.numel())
+        if n <= 0 or total % n != 0:
+            return None
+        base = torch.tensor(var_ids, dtype=torch.long, device=bounds.lb.device)
+        B = total // n
+        if B == 1:
+            return base
+        offsets = (
+            torch.arange(B, dtype=torch.long, device=bounds.lb.device).view(-1, 1)
+            * self._var_id_stride
+        )
+        return (offsets + base.view(1, -1)).reshape(-1)
+
+    def _hz_from_bounds(
+        self,
+        bounds: Bounds,
+        *,
+        col_ids: Optional[torch.Tensor] = None,
+    ) -> Optional[HZono]:
+        lb, ub = bounds.lb.flatten(), bounds.ub.flatten()
         rad = (ub - lb) / 2.0
-        return HZono(
-            c=c,
-            Gc=torch.diag(rad),
-            Gb=lb.new_zeros(n, 0),
-            Ac=lb.new_zeros(0, n),
-            Ab=lb.new_zeros(0, 0),
-            b=lb.new_zeros(0, 1),
+        ng = int((rad > 0).sum().item())
+        if ng > self._HZ_MAX_INPUT_DIM:
+            return None
+        ids = col_ids.to(device=lb.device) if col_ids is not None else None
+        return hz_from_bounds(
+            bounds,
+            lb.dtype,
+            lb.device,
+            col_ids=ids,
         )
 
     def apply(
@@ -200,22 +240,39 @@ class HybridzTF(TransferFunction):
         if self._cache_net_id != net_id:
             self._hz_cache.clear()
             self._cache_net_id = net_id
+            self._var_id_stride = self._net_var_id_stride(net)
 
         self._net = net
         self._before = before
         self._after = after
 
         if k in ("INPUT", "INPUT_SPEC"):
-            hz_init = self._hz_from_bounds(input_bounds)
+            hz_init = self._hz_from_bounds(
+                input_bounds,
+                col_ids=self._col_ids_from_vars(input_bounds, L.out_vars),
+            )
             if hz_init is not None:
                 self._hz_cache[L.id] = hz_init
         elif k != "ASSERT":
             preds = net.preds.get(L.id, [])
             if preds and preds[0] in self._hz_cache:
                 self._hz_cache[L.id] = self._hz_cache[preds[0]]
+            elif not preds:
+                hz_init = self._hz_from_bounds(
+                    input_bounds,
+                    col_ids=self._col_ids_from_vars(input_bounds, L.in_vars),
+                )
+                if hz_init is not None:
+                    self._hz_cache[L.id] = hz_init
 
         n_out = len(L.out_vars)
-        if n_out >= self._HZ_MAX_INPUT_DIM and k not in (
+        hz_carried = self._hz_cache.get(L.id)
+        ngnb = (
+            hz_carried.Gc.shape[1] + hz_carried.Gb.shape[1]
+            if hz_carried is not None
+            else 0
+        )
+        if max(n_out, ngnb) > self._HZ_MAX_INPUT_DIM and k not in (
             "INPUT",
             "INPUT_SPEC",
             "ASSERT",
@@ -225,7 +282,11 @@ class HybridzTF(TransferFunction):
         hz_before = self._hz_cache.get(L.id)
         result = self._LAYER_REGISTRY[k](L, input_bounds, self)
 
-        if hz_before is not None and self._hz_cache.get(L.id) is hz_before:
+        if (
+            hz_before is not None
+            and self._hz_cache.get(L.id) is hz_before
+            and k not in ("INPUT", "INPUT_SPEC")
+        ):
             self._hz_cache[L.id] = hz_from_bounds(
                 result.bounds, result.bounds.lb.dtype, result.bounds.lb.device
             )

@@ -42,15 +42,7 @@ def tf_conv2d(L, bounds, tf):
 
 
 def tf_maxpool2d(L, bounds, tf):
-    # MaxPool over the K×K window of HZ-encoded inputs has no compositional
-    # zonotope form: the output is the elementwise max of K² candidates each
-    # represented by independent HZ rows. The previous implementation gathered
-    # ONE row per window by `argmax(bds.lb)`, but the concrete maximum can
-    # come from a different window position whose HZ row has a higher UB
-    # (surfaced by layer_testing_cnn_pool — concrete=0.347 > picked_row_ub=0.275).
-    # Until a sound HZ-domain MaxPool (e.g. via per-window UB envelope over all
-    # K² generator-row maxes) is implemented, drop HZ refinement and fall back
-    # to interval, which IS sound.
+    # MaxPool is not affine in the HZ rows; keep interval bounds for soundness.
     tf._hz_cache[L.id] = None
     return interval.tf_maxpool2d(L, bounds)
 
@@ -68,7 +60,6 @@ def _conv2d_generators(
     if G.shape[1] == 0:
         return G.new_zeros(B * n_out_per_sample, 0)
     ng = G.shape[1]
-    # (B*C*H*W, ng) → (ng, B*C*H*W) → (ng, B, C, H, W) → (ng*B, C, H, W)
     imgs = G.t().contiguous().view(ng, B, C, H, W).reshape(ng * B, C, H, W)
     out = F.conv2d(
         imgs,
@@ -80,7 +71,6 @@ def _conv2d_generators(
         groups=groups,
     )
     _, Cp, Hp, Wp = out.shape
-    # (ng*B, Cp, Hp, Wp) → (ng, B, Cp, Hp, Wp) → (B, Cp, Hp, Wp, ng)
     return (
         out.view(ng, B, Cp, Hp, Wp)
         .permute(1, 2, 3, 4, 0)
@@ -92,12 +82,6 @@ def _conv2d_generators(
 def hz_conv2d(
     hz: HZono, weight, bias, stride, padding, dilation, groups, input_shape
 ) -> HZono:
-    """Apply conv2d to a hybrid zonotope: convolve the center as one
-    ``(B, C, H, W)`` image and each generator column as ``B`` per-batch
-    images. ``B`` is recovered from ``hz.c.numel() // (C*H*W)`` so this
-    works uniformly for B=1 and B>1 without materialising a
-    block-diagonal weight.
-    """
     if len(input_shape) == 4:
         _, C, H, W = input_shape
     elif len(input_shape) == 3:
@@ -136,4 +120,125 @@ def hz_conv2d(
         Ac=hz.Ac.clone(),
         Ab=hz.Ab.clone(),
         b=hz.b.clone(),
+        eq_mask=None if hz.eq_mask is None else hz.eq_mask.clone(),
+        col_ids=None if hz.col_ids is None else hz.col_ids.clone(),
+        bcol_ids=None if hz.bcol_ids is None else hz.bcol_ids.clone(),
     )
+
+
+def _spatial_op_generators(G, op_fn, B, C, H, W, n_out_per_sample):
+    """Apply a linear BCHW spatial operator to each HZ generator column.
+
+    If y = S(x) + b and x = c + G xi, then each output generator is
+    G'[:, j] = vec(S(unvec(G[:, j]))), without materializing the matrix for S.
+    """
+    if G.shape[1] == 0:
+        return G.new_zeros(B * n_out_per_sample, 0)
+    ng = G.shape[1]
+    imgs = G.t().contiguous().view(ng, B, C, H, W).reshape(ng * B, C, H, W)
+    out = op_fn(imgs)
+    _, Cp, Hp, Wp = out.shape
+    return (
+        out.view(ng, B, Cp, Hp, Wp)
+        .permute(1, 2, 3, 4, 0)
+        .contiguous()
+        .reshape(B * Cp * Hp * Wp, ng)
+    )
+
+
+def _hz_spatial_affine(hz: HZono, op_fn, input_shape, bias=None) -> HZono:
+    if len(input_shape) == 4:
+        _, C, H, W = input_shape
+    elif len(input_shape) == 3:
+        C, H, W = input_shape
+    else:
+        raise ValueError(f"Unexpected input_shape={input_shape}")
+    spatial_in = C * H * W
+    B = hz.c.numel() // spatial_in
+    out_c = op_fn(hz.c.view(B, C, H, W))
+    _, Cp, Hp, Wp = out_c.shape
+    if bias is not None:
+        out_c = out_c + bias.to(hz.c).view(1, -1, 1, 1)
+    n_out = Cp * Hp * Wp
+    return HZono(
+        c=out_c.reshape(-1, 1),
+        Gc=_spatial_op_generators(hz.Gc, op_fn, B, C, H, W, n_out),
+        Gb=_spatial_op_generators(hz.Gb, op_fn, B, C, H, W, n_out),
+        Ac=hz.Ac.clone(),
+        Ab=hz.Ab.clone(),
+        b=hz.b.clone(),
+        eq_mask=None if hz.eq_mask is None else hz.eq_mask.clone(),
+        col_ids=None if hz.col_ids is None else hz.col_ids.clone(),
+        bcol_ids=None if hz.bcol_ids is None else hz.bcol_ids.clone(),
+    )
+
+
+def hz_avgpool2d(hz, kernel_size, stride, padding, input_shape) -> HZono:
+    op = lambda x: F.avg_pool2d(
+        x,
+        kernel_size=kernel_size,
+        stride=stride if stride is not None else kernel_size,
+        padding=padding,
+    )
+    return _hz_spatial_affine(hz, op, input_shape)
+
+
+def tf_avgpool2d(L, bounds, tf):
+    hz_in = tf._hz_cache.get(L.id)
+    if hz_in is not None:
+        ishape = L.params.get("input_shape")
+        if ishape is not None:
+            tf._hz_cache[L.id] = hz_avgpool2d(
+                hz_in,
+                L.params.get("kernel_size"),
+                L.params.get("stride"),
+                L.params.get("padding", 0),
+                ishape,
+            )
+        else:
+            hz_in = None
+    fact = interval.tf_avgpool2d(L, bounds)
+    if hz_in is not None:
+        return _hz_fact(fact, tf._hz_cache[L.id])
+    return fact
+
+
+def hz_convtranspose2d(
+    hz, weight, bias, stride, padding, output_padding, dilation, groups, input_shape
+) -> HZono:
+    weight = weight.to(hz.c)
+    op = lambda x: F.conv_transpose2d(
+        x,
+        weight,
+        bias=None,
+        stride=stride,
+        padding=padding,
+        output_padding=output_padding,
+        dilation=dilation,
+        groups=groups,
+    )
+    return _hz_spatial_affine(hz, op, input_shape, bias=bias)
+
+
+def tf_convtranspose2d(L, bounds, tf):
+    hz_in = tf._hz_cache.get(L.id)
+    if hz_in is not None:
+        ishape = L.params.get("input_shape")
+        if ishape is not None:
+            tf._hz_cache[L.id] = hz_convtranspose2d(
+                hz_in,
+                L.params["weight"],
+                L.params.get("bias"),
+                L.params.get("stride", 1),
+                L.params.get("padding", 0),
+                L.params.get("output_padding", 0),
+                L.params.get("dilation", 1),
+                L.params.get("groups", 1),
+                ishape,
+            )
+        else:
+            hz_in = None
+    fact = interval.tf_convtranspose2d(L, bounds)
+    if hz_in is not None:
+        return _hz_fact(fact, tf._hz_cache[L.id])
+    return fact
