@@ -13,6 +13,7 @@ License: AGPLv3+
 """
 
 import argparse
+from dataclasses import fields
 import datetime
 import glob
 import json
@@ -21,7 +22,7 @@ import statistics
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, NamedTuple, Optional, Union, cast
+from typing import Any, Dict, List, NamedTuple, Optional, Union, cast, get_args, get_origin, get_type_hints
 
 from act.back_end.config import VALID_BERT_METHODS, _VALID_SOLVERS
 from act.back_end.layer_schema import LayerKind
@@ -31,6 +32,111 @@ from act.util.cli_utils import add_device_args, initialize_from_args
 
 _TF_MODES: tuple[str, ...] = ("interval", "hybridz")
 _SOLVERS: tuple[str, ...] = tuple(sorted(_VALID_SOLVERS))
+
+
+def _strip_optional(tp: Any) -> Any:
+    origin = get_origin(tp)
+    if origin is Union:
+        args = [arg for arg in get_args(tp) if arg is not type(None)]
+        if len(args) == 1:
+            return args[0]
+    return tp
+
+
+def _parse_config_value(tp: Any):
+    base = _strip_optional(tp)
+    origin = get_origin(base)
+    if base in (int, float, str):
+        return base
+    if origin in (list, List):
+        def _parse_list(raw: str) -> list[Any]:
+            if raw.strip().startswith("["):
+                value = json.loads(raw)
+                if not isinstance(value, list):
+                    raise argparse.ArgumentTypeError("expected a JSON list")
+                return value
+            return [item for item in raw.split(",") if item]
+        return _parse_list
+    return str
+
+
+def _add_dataclass_config_args(parser: argparse.ArgumentParser) -> None:
+    """Expose all BackendConfig dataclass fields without hand-maintained drift."""
+    from act.back_end.config import BackendConfig, BaBConfig, GenerationConfig, HybridZConfig
+
+    existing_options = {
+        option
+        for action in parser._actions
+        for option in action.option_strings
+    }
+
+    def add_group(cls: type[Any], title: str, flag_prefix: str, dest_prefix: str, skip: set[str]) -> None:
+        group = parser.add_argument_group(title)
+        type_hints = get_type_hints(cls)
+        for fld in fields(cls):
+            if fld.name in skip:
+                continue
+            flag = f"--{flag_prefix}{fld.name.replace('_', '-')}"
+            dest = f"{dest_prefix}{fld.name}"
+            field_type = type_hints.get(fld.name, fld.type)
+            base = _strip_optional(field_type)
+            help_text = f"Override config field {cls.__name__}.{fld.name} (default: from config.yaml)"
+            if flag in existing_options:
+                no_flag = f"--no-{flag[2:]}"
+                if base is bool and no_flag not in existing_options:
+                    group.add_argument(
+                        no_flag,
+                        action="store_false",
+                        default=None,
+                        dest=dest,
+                        help=help_text,
+                    )
+                    existing_options.add(no_flag)
+                continue
+            if base is bool:
+                group.add_argument(
+                    flag,
+                    action=argparse.BooleanOptionalAction,
+                    default=None,
+                    dest=dest,
+                    help=help_text,
+                )
+                existing_options.add(flag)
+                existing_options.add(f"--no-{flag[2:]}")
+            else:
+                group.add_argument(
+                    flag,
+                    type=_parse_config_value(field_type),
+                    default=None,
+                    dest=dest,
+                    help=help_text,
+                )
+                existing_options.add(flag)
+
+    add_group(
+        BackendConfig,
+        "Backend Config Overrides (generated)",
+        "",
+        "",
+        {"bab", "generation", "hybridz"},
+    )
+    add_group(BaBConfig, "BaB Config Overrides (generated)", "bab-", "bab_", set())
+    add_group(GenerationConfig, "Generation Config Overrides (generated)", "gen-", "gen_", set())
+    add_group(HybridZConfig, "HybridZ Config Overrides (generated)", "hz-", "hybridz_", set())
+
+
+def _backend_override_keys_from_dataclasses() -> set[str]:
+    from act.back_end.config import BackendConfig, BaBConfig, GenerationConfig, HybridZConfig
+
+    keys = {
+        fld.name
+        for fld in fields(BackendConfig)
+        if fld.name not in {"bab", "generation", "hybridz"}
+    }
+    keys.update(f"bab_{fld.name}" for fld in fields(BaBConfig))
+    keys.update(f"gen_{fld.name}" for fld in fields(GenerationConfig))
+    keys.update(f"hybridz_{fld.name}" for fld in fields(HybridZConfig))
+    return keys
 
 
 class _SkipUnsupported(NamedTuple):
@@ -1147,6 +1253,10 @@ Examples:
     # Add standard device/dtype arguments (shared across all ACT CLIs)
     add_device_args(parser)
 
+    # Add missing config-backed flags from dataclass fields. Explicit legacy
+    # flags above win on spelling/dest behavior; generated flags fill gaps.
+    _add_dataclass_config_args(parser)
+
     # Detect user-provided flags BEFORE parsing so env vars / config.yaml
     # can serve as fallbacks without overriding explicit CLI flags.
     argv = sys.argv[1:]
@@ -1224,7 +1334,7 @@ Examples:
 
 # (override_key, args_attr, env_var, env_cast, cli_check)
 # cli_check="user_set" for flags with non-None defaults (--device/--dtype/--registry-mode)
-_BACKEND_OVERRIDE_SPEC: list[tuple[str, str, Optional[str], Any, str]] = [
+_BACKEND_ALIAS_OVERRIDE_SPEC: list[tuple[str, str, Optional[str], Any, str]] = [
     ("solver",               "solver",              "ACT_SOLVER",     None, "not_none"),
     ("device",               "device",              "ACT_DEVICE",     None, "user_set"),
     ("dtype",                "dtype",               "ACT_DTYPE",      None, "user_set"),
@@ -1272,19 +1382,31 @@ _BACKEND_OVERRIDE_SPEC: list[tuple[str, str, Optional[str], Any, str]] = [
 ]
 
 
+def _build_backend_override_spec() -> list[tuple[str, str, Optional[str], Any, str]]:
+    spec = list(_BACKEND_ALIAS_OVERRIDE_SPEC)
+    aliased_keys = {key for key, *_ in spec}
+    for key in sorted(_backend_override_keys_from_dataclasses() - aliased_keys):
+        spec.append((key, key, None, None, "not_none"))
+    return spec
+
+
+_BACKEND_OVERRIDE_SPEC = _build_backend_override_spec()
+
+
 def _collect_backend_overrides(args: Any, _user_set: Any) -> dict[str, Any]:
     """Build overrides dict from CLI flags + env vars (precedence: CLI > env > yaml)."""
     overrides: dict[str, Any] = {}
-    for key, attr, env, cast, check in _BACKEND_OVERRIDE_SPEC:
+    for key, attr, env, env_cast, check in _BACKEND_OVERRIDE_SPEC:
         cli_val = getattr(args, attr, None)
         if check == "user_set":
-            cli_provided = _user_set(f"--{attr.replace('_', '-')}")
+            attr_flag = attr.replace('_', '-')
+            cli_provided = _user_set(f"--{attr_flag}") or _user_set(f"--no-{attr_flag}")
         else:
             cli_provided = cli_val is not None
         if cli_provided:
             overrides[key] = cli_val
         elif env is not None and os.environ.get(env):
-            overrides[key] = cast(os.environ[env]) if cast else os.environ[env]
+            overrides[key] = env_cast(os.environ[env]) if env_cast else os.environ[env]
 
     if args.verbose:
         overrides["verbose"] = True
