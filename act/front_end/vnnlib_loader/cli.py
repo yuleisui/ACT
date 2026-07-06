@@ -187,36 +187,6 @@ def main():
         dest="list_downloads",
         help="List all downloaded categories"
     )
-    parser.add_argument(
-        "--load",
-        nargs=2,
-        metavar=("CATEGORY", "INSTANCE_ID"),
-        help="Load a specific instance from a category [NOT IMPLEMENTED]"
-    )
-    
-    # VNNLIB-specific commands (placeholders)
-    parser.add_argument(
-        "--parse-vnnlib",
-        type=str,
-        metavar="FILE",
-        dest="parse_vnnlib",
-        help="Parse a VNNLIB file and show constraints [NOT IMPLEMENTED]"
-    )
-    parser.add_argument(
-        "--validate-vnnlib",
-        type=str,
-        metavar="FILE",
-        dest="validate_vnnlib",
-        help="Validate VNNLIB file syntax [NOT IMPLEMENTED]"
-    )
-    parser.add_argument(
-        "--instance-info",
-        nargs=2,
-        metavar=("CATEGORY", "INSTANCE_ID"),
-        dest="instance_info",
-        help="Show details about a specific instance [NOT IMPLEMENTED]"
-    )
-    
     # Add standard device/dtype arguments
     add_device_args(parser)
     
@@ -361,26 +331,6 @@ def main():
             
         except Exception as e:
             print(f"Error listing downloads: {e}")
-    
-    elif args.load:
-        category, instance_id = args.load
-        print(f"\n⚠️  Load functionality not yet implemented.")
-        print(f"    Category: {category}")
-        print(f"    Instance: {instance_id}")
-    
-    elif args.parse_vnnlib:
-        print(f"\n⚠️  VNNLIB parsing not yet implemented.")
-        print(f"    File: {args.parse_vnnlib}")
-    
-    elif args.validate_vnnlib:
-        print(f"\n⚠️  VNNLIB validation not yet implemented.")
-        print(f"    File: {args.validate_vnnlib}")
-    
-    elif args.instance_info:
-        category, instance_id = args.instance_info
-        print(f"\n⚠️  Instance info not yet implemented.")
-        print(f"    Category: {category}")
-        print(f"    Instance: {instance_id}")
     
     else:
         parser.print_help()

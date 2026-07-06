@@ -178,7 +178,6 @@ python -m act.front_end.torchvision_loader --models-for CIFAR10
 python -m act.front_end.torchvision_loader --datasets-for resnet18
 python -m act.front_end.torchvision_loader --validate MNIST resnet18
 python -m act.front_end.torchvision_loader --preprocessing-summary
-python -m act.front_end.torchvision_loader --all-with-inference
 
 # Download specific dataset-model pair (not all models)
 python -m act.front_end.torchvision_loader --download MNIST simple_cnn
@@ -190,7 +189,6 @@ python -m act.front_end.torchvision_loader --download MNIST simple_cnn
 python -m act.front_end.vnnlib_loader --list
 python -m act.front_end.vnnlib_loader --info acasxu_2023
 python -m act.front_end.vnnlib_loader --download cifar100_2024 --max-instances 10
-python -m act.front_end.vnnlib_loader --parse-vnnlib path/to/file.vnnlib
 ```
 
 ## Programmatic Usage

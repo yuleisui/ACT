@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-from act.front_end.bert_loader.create_specs import BertSpecCreator, create_bert_specs
+from act.front_end.bert_loader.create_specs import BertSpecCreator
 from act.front_end.bert_loader.data_loader import (
     BertEmbeddingClassifier,
     BertExample,
@@ -32,7 +32,6 @@ __all__ = [
     "BertExample",
     "BertSpecCreator",
     "BertVocabulary",
-    "create_bert_specs",
     "find_bert_dataset_name",
     "list_bert_datasets",
     "load_bert_dataset",

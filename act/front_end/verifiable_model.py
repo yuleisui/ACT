@@ -73,6 +73,7 @@
 #===---------------------------------------------------------------------===#
 
 from __future__ import annotations
+import math
 import torch
 import torch.nn as nn
 from typing import Dict, Any, Optional, List, Tuple, Union
@@ -82,14 +83,6 @@ from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
 from act.front_end.spec_creator_base import LabeledInputTensor
 from act.back_end.layer_schema import LayerKind, REGISTRY
 from act.back_end.layer_util import create_layer
-
-
-def prod(seq: Tuple[int, ...]) -> int:
-    """Helper function to compute product of shape dimensions."""
-    p = 1
-    for s in seq:
-        p *= s
-    return p
 
 
 class VerifiableModel(nn.Module):
@@ -351,7 +344,7 @@ class InputLayer(nn.Module):
         For batched inputs (shape[0] > 1), allocates batch_size * per_sample_vars.
         """
         batch_size = self.shape[0]
-        per_sample = prod(self.shape[1:])
+        per_sample = math.prod(self.shape[1:])
         N = batch_size * per_sample  # Total vars for all samples in batch
         out_vars = list(range(len(in_vars), len(in_vars) + N))
         
@@ -785,7 +778,6 @@ class OutputSpecLayer(nn.Module):
                 return (y, True, "⚠️ OUTPUT MARGIN: Missing y_true")
             
             # y is (batch, n_classes)
-            n_classes = y.shape[1]
             true_scores = y[torch.arange(batch_size, device=y.device), self.y_true]  # (batch,)
             
             # Mask out true class to get max of others
