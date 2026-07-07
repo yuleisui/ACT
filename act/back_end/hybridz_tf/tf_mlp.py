@@ -19,55 +19,33 @@ from act.back_end.solver.solver_hz import (
     HZono,
     hz_multiply,
     hz_add_const,
-    hz_minkowski_sum,
     hz_from_bounds,
     hz_compute_bounds,
+    hz_concat,
+    hz_sgm_add,
+    hz_sub,
 )
 import act.back_end.interval_tf.tf_mlp as interval
 import act.back_end.interval_tf.tf_cnn as interval_cnn
 
 
 def _hz_fact(fact: Fact, hz: HZono) -> Fact:
-    """Combine HZ-refined bounds (flat ``(n, 1)`` shape) with interval's
-    batch-aware fact: reshape HZ bounds to match ``fact.bounds`` and keep
-    interval's constraint set. Use everywhere a hybridz handler returns
-    after refining the HZ cache.
-    """
     hb = hz_compute_bounds(hz)
+    lb = torch.maximum(hb.lb.reshape_as(fact.bounds.lb), fact.bounds.lb)
+    ub = torch.minimum(hb.ub.reshape_as(fact.bounds.ub), fact.bounds.ub)
     return Fact(
-        bounds=Bounds(
-            lb=hb.lb.reshape_as(fact.bounds.lb),
-            ub=hb.ub.reshape_as(fact.bounds.ub),
-        ),
+        bounds=Bounds(lb=lb, ub=ub),
         cons=fact.cons,
     )
 
 
-# ============================================================================
-# Batch-native HZ helpers
-# ----------------------------------------------------------------------------
-# HZono stores ``c: (n, 1)``, ``Gc: (n, ng)``, ``Gb: (n, nb)`` where the
-# leading dimension ``n`` is the *flattened* output size of the encoded
-# layer including any leading batch axis ``B``. For per-channel ops
-# (DENSE, BIAS, SCALE) we recover ``B`` from ``n // per_channel`` and
-# operate via broadcasted 3D matmul / per-row scaling so that no
-# block-diagonal weight is materialised.
-# ============================================================================
-
-
 def _hz_apply_per_batch_linear(hz: HZono, W: torch.Tensor, B: int) -> HZono:
-    """Apply ``y = W x`` independently to each of ``B`` instances stacked
-    along the leading axis of ``hz``. Equivalent to
-    ``hz_multiply(hz, block_diag(W, ...))`` without materialising the
-    block-diagonal matrix.
-    """
     in_dim = W.shape[1]
     out_dim = W.shape[0]
     if B == 1:
         return hz_multiply(hz, W)
     ng = hz.Gc.shape[1]
     nb = hz.Gb.shape[1]
-    # (out, in) @ (B, in, *) broadcasts → (B, out, *)
     c3 = hz.c.view(B, in_dim, 1)
     new_c = (W @ c3).reshape(B * out_dim, 1)
     if ng:
@@ -81,13 +59,13 @@ def _hz_apply_per_batch_linear(hz: HZono, W: torch.Tensor, B: int) -> HZono:
     return HZono(
         c=new_c, Gc=new_Gc, Gb=new_Gb,
         Ac=hz.Ac.clone(), Ab=hz.Ab.clone(), b=hz.b.clone(),
+        eq_mask=None if hz.eq_mask is None else hz.eq_mask.clone(),
+        col_ids=None if hz.col_ids is None else hz.col_ids.clone(),
+        bcol_ids=None if hz.bcol_ids is None else hz.bcol_ids.clone(),
     )
 
 
 def _hz_add_per_channel(hz: HZono, v: torch.Tensor, B: int) -> HZono:
-    """Add per-channel constant ``v: (out,)`` to each of ``B`` stacked
-    instances in ``hz.c``. ``hz.c`` has shape ``(B*out, 1)``.
-    """
     v = v.to(dtype=hz.c.dtype, device=hz.c.device).flatten()
     if B > 1:
         v = v.repeat(B)
@@ -95,11 +73,6 @@ def _hz_add_per_channel(hz: HZono, v: torch.Tensor, B: int) -> HZono:
 
 
 def _hz_scale_per_channel(hz: HZono, a: torch.Tensor, B: int) -> HZono:
-    """Multiply hz fields by per-channel ``a: (out,)``. ``hz.c`` shape
-    is ``(B*out, 1)``; we broadcast ``a`` once per batch via repeat.
-    Equivalent to ``hz_multiply(hz, diag(a_repeated))`` without building
-    the diagonal matrix.
-    """
     a = a.to(dtype=hz.c.dtype, device=hz.c.device).flatten()
     if B > 1:
         a = a.repeat(B)
@@ -109,7 +82,88 @@ def _hz_scale_per_channel(hz: HZono, a: torch.Tensor, B: int) -> HZono:
         Gc=a_col * hz.Gc,
         Gb=a_col * hz.Gb,
         Ac=hz.Ac.clone(), Ab=hz.Ab.clone(), b=hz.b.clone(),
+        eq_mask=None if hz.eq_mask is None else hz.eq_mask.clone(),
+        col_ids=None if hz.col_ids is None else hz.col_ids.clone(),
+        bcol_ids=None if hz.bcol_ids is None else hz.bcol_ids.clone(),
     )
+
+
+def _hz_is_point(hz: HZono) -> bool:
+    gc_zero = hz.Gc.numel() == 0 or bool((hz.Gc.abs() <= 1e-12).all())
+    gb_zero = hz.Gb.numel() == 0 or bool((hz.Gb.abs() <= 1e-12).all())
+    return gc_zero and gb_zero
+
+
+def _broadcast_flat(v: torch.Tensor, n: int) -> torch.Tensor:
+    v = v.flatten()
+    if v.numel() == n:
+        return v
+    if v.numel() == 1:
+        return v.expand(n)
+    if n % v.numel() == 0:
+        return v.repeat(n // v.numel())
+    raise ValueError(f"cannot broadcast {v.numel()} values to {n}")
+
+
+def _hz_scale_elementwise(hz: HZono, a: torch.Tensor) -> HZono:
+    a = _broadcast_flat(a.to(dtype=hz.c.dtype, device=hz.c.device), hz.c.shape[0])
+    acol = a.view(-1, 1)
+    return HZono(
+        c=acol * hz.c,
+        Gc=acol * hz.Gc,
+        Gb=acol * hz.Gb,
+        Ac=hz.Ac.clone(),
+        Ab=hz.Ab.clone(),
+        b=hz.b.clone(),
+        eq_mask=None if hz.eq_mask is None else hz.eq_mask.clone(),
+        col_ids=None if hz.col_ids is None else hz.col_ids.clone(),
+        bcol_ids=None if hz.bcol_ids is None else hz.bcol_ids.clone(),
+    )
+
+
+def _prod(shape) -> int:
+    out = 1
+    for dim in shape:
+        out *= int(dim)
+    return out
+
+
+def _shared_const_block(flat: torch.Tensor, shape, batch: int):
+    dim = _prod(shape)
+    if dim == 0:
+        return None
+    if flat.numel() == dim:
+        return flat.view(*shape)
+    if batch > 0 and flat.numel() == batch * dim:
+        blocks = flat.view(batch, dim)
+        if bool(torch.allclose(blocks, blocks[:1].expand_as(blocks))):
+            return blocks[0].view(*shape)
+    return None
+
+
+def _hz_matmul_const(L, hz: HZono, const: torch.Tensor, *, variable_is_left: bool):
+    dtype, device = hz.c.dtype, hz.c.device
+    x_shape = tuple(int(d) for d in L.params["x_shape"])
+    y_shape = tuple(int(d) for d in L.params["y_shape"])
+    in_shape = x_shape if variable_is_left else y_shape
+    in_dim = _prod(in_shape)
+    if in_dim == 0 or hz.c.shape[0] % in_dim != 0:
+        return None
+    B = hz.c.shape[0] // in_dim
+    C = const.to(dtype=dtype, device=device).flatten()
+    if variable_is_left:
+        W = _shared_const_block(C, y_shape, B)
+        if W is None:
+            return None
+        eye = torch.eye(in_dim, dtype=dtype, device=device).view(in_dim, *x_shape)
+        out = torch.matmul(eye, W).reshape(in_dim, -1)
+    else:
+        W = _shared_const_block(C, x_shape, B)
+        if W is None:
+            return None
+        eye = torch.eye(in_dim, dtype=dtype, device=device).view(in_dim, *y_shape)
+        out = torch.matmul(W, eye).reshape(in_dim, -1)
+    return _hz_apply_per_batch_linear(hz, out.t().contiguous(), B)
 
 
 # ============================================================================
@@ -254,15 +308,17 @@ def tf_abs(L, bounds, tf):
 
 
 def tf_bn(L, bounds, tf):
-    # BN's HZ refinement built a per-sample diag(A) of shape (n, n) and tried
-    # to multiply with hz_in.c of shape (B*n, 1). That only works for B=1;
-    # at B>1 it raises "mat1 and mat2 shapes cannot be multiplied" because
-    # the HZ row layout flattens batch×feature into a single leading dim.
-    # A batch-aware fix would require block-diag(A) replicated B times, which
-    # is the same scope as a proper HZ batchify rewrite. Until that lands,
-    # fall back to interval (sound, works at any B).
-    tf._hz_cache[L.id] = None
-    return interval.tf_bn(L, bounds)
+    hz_in = tf._hz_cache.get(L.id)
+    if hz_in is not None:
+        A, c = L.params["A"], L.params["c"]
+        B = hz_in.c.shape[0] // A.numel()
+        tf._hz_cache[L.id] = _hz_add_per_channel(
+            _hz_scale_per_channel(hz_in, A, B), c, B
+        )
+    fact = interval.tf_bn(L, bounds)
+    if hz_in is not None:
+        return _hz_fact(fact, tf._hz_cache[L.id])
+    return fact
 
 
 def tf_add(L, bounds, tf):
@@ -271,7 +327,7 @@ def tf_add(L, bounds, tf):
         preds = tf._net.preds.get(L.id, [])
         hz2 = tf._hz_cache.get(preds[1]) if len(preds) > 1 else None
         if hz2 is not None:
-            tf._hz_cache[L.id] = hz_minkowski_sum(hz_in, hz2)
+            tf._hz_cache[L.id] = hz_sgm_add(hz_in, hz2)
         else:
             hz_in = None
     fact = interval.tf_add(
@@ -285,37 +341,51 @@ def tf_add(L, bounds, tf):
 
 
 def tf_mul(L, bounds, tf):
+    bx = tf._net.get_predecessor_bounds(L.id, tf._after, tf._before, 0)
+    by = tf._net.get_predecessor_bounds(L.id, tf._after, tf._before, 1)
+    fact = interval.tf_mul(L, bx, by)
     hz_in = tf._hz_cache.get(L.id)
     if hz_in is not None:
-        dtype, device = hz_in.c.dtype, hz_in.c.device
         preds = tf._net.preds.get(L.id, [])
         hz2 = tf._hz_cache.get(preds[1]) if len(preds) > 1 else None
         if hz2 is not None:
-            b1, b2 = hz_compute_bounds(hz_in), hz_compute_bounds(hz2)
-            corners = torch.stack(
-                [b1.lb * b2.lb, b1.lb * b2.ub, b1.ub * b2.lb, b1.ub * b2.ub]
-            )
-            tf._hz_cache[L.id] = hz_from_bounds(
-                Bounds(lb=corners.min(0)[0], ub=corners.max(0)[0]), dtype, device
-            )
+            if _hz_is_point(hz2):
+                tf._hz_cache[L.id] = _hz_scale_elementwise(hz_in, hz2.c)
+            elif _hz_is_point(hz_in):
+                tf._hz_cache[L.id] = _hz_scale_elementwise(hz2, hz_in.c)
+            else:
+                tf._hz_cache.pop(L.id, None)
+                return fact
         else:
             hz_in = None
-    fact = interval.tf_mul(
-        L,
-        tf._net.get_predecessor_bounds(L.id, tf._after, tf._before, 0),
-        tf._net.get_predecessor_bounds(L.id, tf._after, tf._before, 1),
-    )
     if hz_in is not None:
         return _hz_fact(fact, tf._hz_cache[L.id])
+    return fact
+
+
+def tf_div(L, bounds, tf):
+    bx = tf._net.get_predecessor_bounds(L.id, tf._after, tf._before, 0)
+    by = tf._net.get_predecessor_bounds(L.id, tf._after, tf._before, 1)
+    fact = interval.tf_div(L, bx, by)
+    hz_in = tf._hz_cache.get(L.id)
+    if hz_in is not None:
+        preds = tf._net.preds.get(L.id, [])
+        hz2 = tf._hz_cache.get(preds[1]) if len(preds) > 1 else None
+        if hz2 is not None and _hz_is_point(hz2):
+            denom = _broadcast_flat(
+                hz2.c.to(dtype=hz_in.c.dtype, device=hz_in.c.device),
+                hz_in.c.shape[0],
+            )
+            if bool((denom.abs() > 1e-12).all()):
+                tf._hz_cache[L.id] = _hz_scale_elementwise(hz_in, 1.0 / denom)
+                return _hz_fact(fact, tf._hz_cache[L.id])
+        tf._hz_cache.pop(L.id, None)
     return fact
 
 
 def tf_constant(L, bounds, tf):
     val = L.params["value"].flatten()
     n = val.numel()
-    # When the surrounding net is batched (e.g., upstream ADD sibling is
-    # ``[B, *shape]``), replicate the constant per batch element so the
-    # downstream HZ Minkowski-sum / element-wise ops see matching sizes.
     if bounds is not None and n > 0:
         in_numel = int(bounds.lb.numel())
         if in_numel > 0 and in_numel % n == 0:
@@ -359,12 +429,24 @@ def tf_where(L, bounds, tf):
 
 
 def tf_matmul(L, bounds, tf):
+    bx = tf._net.get_predecessor_bounds(L.id, tf._after, tf._before, 0)
+    by = tf._net.get_predecessor_bounds(L.id, tf._after, tf._before, 1)
+    fact = interval.tf_matmul(L, bx, by)
+    hz_in = tf._hz_cache.get(L.id)
+    if hz_in is not None:
+        preds = tf._net.preds.get(L.id, [])
+        hz2 = tf._hz_cache.get(preds[1]) if len(preds) > 1 else None
+        if hz2 is not None:
+            out = None
+            if _hz_is_point(hz2):
+                out = _hz_matmul_const(L, hz_in, hz2.c, variable_is_left=True)
+            elif _hz_is_point(hz_in):
+                out = _hz_matmul_const(L, hz2, hz_in.c, variable_is_left=False)
+            if out is not None:
+                tf._hz_cache[L.id] = out
+                return _hz_fact(fact, tf._hz_cache[L.id])
     tf._hz_cache.pop(L.id, None)
-    return interval.tf_matmul(
-        L,
-        tf._net.get_predecessor_bounds(L.id, tf._after, tf._before, 0),
-        tf._net.get_predecessor_bounds(L.id, tf._after, tf._before, 1),
-    )
+    return fact
 
 
 def tf_arg_extremum(L, bounds, tf):
@@ -372,9 +454,147 @@ def tf_arg_extremum(L, bounds, tf):
     return interval.tf_arg_extremum(L, bounds)
 
 
+def _row_indices_upsample_nearest(L, n_in: int, n_out: int):
+    mode = str(L.params.get("mode", "nearest")).lower()
+    if mode != "nearest":
+        return None
+    in_shape = L.params.get("input_shape")
+    if in_shape is None:
+        return None
+    in_shape = tuple(int(d) for d in in_shape)
+    if _prod(in_shape) != int(n_in) or len(in_shape) < 3:
+        return None
+    view_shape = (1, *in_shape) if len(in_shape) == 3 else in_shape
+    spatial_rank = len(view_shape) - 2
+    size = L.params.get("size")
+    scale_factor = L.params.get("scale_factor")
+    if size is not None and isinstance(size, (list, tuple)):
+        size = tuple(int(s) for s in size)
+        if len(size) > spatial_rank:
+            size = size[-spatial_rank:]
+    if scale_factor is not None and isinstance(scale_factor, (list, tuple)):
+        scale_factor = tuple(float(s) for s in scale_factor)
+        if len(scale_factor) > spatial_rank:
+            scale_factor = scale_factor[-spatial_rank:]
+    if size is None and scale_factor is None:
+        out_shape = L.params.get("output_shape")
+        if out_shape is None:
+            return None
+        out_shape = tuple(int(d) for d in out_shape)
+        out_view_shape = (1, *out_shape) if len(out_shape) == 3 else out_shape
+        if len(out_view_shape) != len(view_shape):
+            return None
+        size = out_view_shape[2:]
+    base = torch.arange(int(n_in), dtype=torch.float64).view(*view_shape)
+    idx = F.interpolate(base, size=size, scale_factor=scale_factor, mode="nearest")
+    idx = idx.reshape(-1).long()
+    return idx if idx.numel() == int(n_out) else None
+
+
 def tf_upsample(L, bounds, tf):
-    tf._hz_cache.pop(L.id, None)
-    return interval_cnn.tf_upsample(L, bounds)
+    fact = interval_cnn.tf_upsample(L, bounds)
+    hz_in = tf._hz_cache.get(L.id)
+    if hz_in is None:
+        return fact
+    rows = _row_indices_upsample_nearest(L, hz_in.c.shape[0], fact.bounds.lb.numel())
+    if rows is None:
+        tf._hz_cache.pop(L.id, None)
+        return fact
+    tf._hz_cache[L.id] = _hz_gather_rows(hz_in, rows.to(device=hz_in.c.device))
+    return _hz_fact(fact, tf._hz_cache[L.id])
+
+
+def _row_indices_slice(L, n: int):
+    if "input_shape" not in L.params:
+        return None
+    inp_shape = tuple(int(d) for d in L.params["input_shape"])
+    per = _prod(inp_shape)
+    if per == 0 or int(n) % per != 0:
+        return None
+    batch = int(n) // per
+    idx = torch.arange(int(n)).view(batch, *inp_shape)
+    starts = L.params.get("starts", [])
+    ends = L.params.get("ends", [])
+    axes = L.params.get("axes", list(range(len(inp_shape))))
+    steps = L.params.get("steps", [1] * len(axes))
+    slices = [slice(None)] * (len(inp_shape) + 1)
+    for i, axis in enumerate(axes):
+        axis = int(axis)
+        end = ends[i]
+        if end > inp_shape[axis]:
+            end = inp_shape[axis]
+        slices[axis + 1] = slice(starts[i], end, steps[i])
+    return idx[tuple(slices)].reshape(-1)
+
+
+def _row_indices_gather(L, n: int):
+    if "input_shape" not in L.params:
+        return None
+    inp_shape = tuple(int(d) for d in L.params["input_shape"])
+    per = _prod(inp_shape)
+    if per == 0 or int(n) % per != 0:
+        return None
+    batch = int(n) // per
+    axis = int(L.params.get("axis", 0))
+    if axis < 0:
+        axis += len(inp_shape)
+    raw_idx = L.params["indices"]
+    if isinstance(raw_idx, (list, tuple)):
+        indices = torch.tensor(raw_idx, dtype=torch.long)
+    elif hasattr(raw_idx, "detach"):
+        indices = raw_idx.detach().cpu().long()
+    else:
+        indices = torch.as_tensor(raw_idx, dtype=torch.long)
+    idx = torch.arange(int(n)).view(batch, *inp_shape)
+    return torch.index_select(idx, dim=axis + 1, index=indices.reshape(-1)).reshape(-1)
+
+
+def _row_indices_expand(L, n: int):
+    in_shape = L.params.get("input_shape")
+    out_shape = L.params.get("output_shape") or L.params.get("shape")
+    if in_shape is None or out_shape is None:
+        return None
+    in_shape = tuple(int(d) for d in in_shape)
+    out_shape = tuple(int(d) for d in out_shape)
+    per = _prod(in_shape)
+    if per == 0 or int(n) % per != 0:
+        return None
+    batch = int(n) // per
+    try:
+        return torch.arange(int(n)).view(batch, *in_shape).broadcast_to(
+            batch, *out_shape
+        ).reshape(-1)
+    except RuntimeError:
+        return None
+
+
+def _row_indices_reduce_sum(L, n_in: int, n_out: int):
+    in_shape = L.params.get("input_shape")
+    if in_shape is None:
+        return None
+    in_shape = tuple(int(d) for d in in_shape)
+    per = _prod(in_shape)
+    if per == 0 or int(n_in) % per != 0:
+        return None
+    batch = int(n_in) // per
+    axes = L.params.get("axes")
+    axes = list(range(len(in_shape))) if not axes else [int(a) for a in axes]
+    axes = [(a + len(in_shape)) if a < 0 else a for a in axes]
+    keepdims = bool(L.params.get("keepdims", 0))
+    out_shape = []
+    for i, dim in enumerate(in_shape):
+        if i in axes:
+            if keepdims:
+                out_shape.append(1)
+        else:
+            out_shape.append(dim)
+    if _prod(out_shape) * batch != int(n_out):
+        return None
+    out_idx = torch.arange(int(n_out)).view(batch, *out_shape)
+    view_shape = [batch]
+    for i, dim in enumerate(in_shape):
+        view_shape.append(1 if i in axes else dim)
+    return out_idx.reshape(tuple(view_shape)).broadcast_to(batch, *in_shape).reshape(-1)
 
 
 def tf_scatter_nd(L, bounds, tf):
@@ -391,8 +611,35 @@ def tf_reduce_sum(L, bounds, tf):
     hz_in = tf._hz_cache.get(L.id)
     fact = interval.tf_reduce_sum(L, bounds)
     if hz_in is not None:
-        dtype, device = hz_in.c.dtype, hz_in.c.device
-        tf._hz_cache[L.id] = hz_from_bounds(fact.bounds, dtype, device)
+        rows = _row_indices_reduce_sum(
+            L, hz_in.c.shape[0], fact.bounds.lb.numel()
+        )
+        if rows is None:
+            tf._hz_cache[L.id] = hz_from_bounds(
+                fact.bounds, fact.bounds.lb.dtype, fact.bounds.lb.device
+            )
+        else:
+            rows = rows.to(device=hz_in.c.device)
+            out_n = int(fact.bounds.lb.numel())
+            c = hz_in.c.new_zeros(out_n, 1)
+            Gc = hz_in.Gc.new_zeros(out_n, hz_in.Gc.shape[1])
+            Gb = hz_in.Gb.new_zeros(out_n, hz_in.Gb.shape[1])
+            c.index_add_(0, rows, hz_in.c)
+            if hz_in.Gc.shape[1]:
+                Gc.index_add_(0, rows, hz_in.Gc)
+            if hz_in.Gb.shape[1]:
+                Gb.index_add_(0, rows, hz_in.Gb)
+            tf._hz_cache[L.id] = HZono(
+                c=c,
+                Gc=Gc,
+                Gb=Gb,
+                Ac=hz_in.Ac,
+                Ab=hz_in.Ab,
+                b=hz_in.b,
+                eq_mask=hz_in.eq_mask,
+                col_ids=hz_in.col_ids,
+                bcol_ids=hz_in.bcol_ids,
+            )
     return fact
 
 
@@ -402,10 +649,7 @@ def tf_concat(L, bounds, tf):
         preds = tf._net.preds.get(L.id, [])
         parts = [tf._hz_cache.get(pid) for pid in preds]
         if all(p is not None for p in parts):
-            result = parts[0]
-            for p in parts[1:]:
-                result = hz_minkowski_sum(result, p)
-            tf._hz_cache[L.id] = result
+            tf._hz_cache[L.id] = hz_concat(parts)
         else:
             hz_in = None
     fact = interval.tf_concat(
@@ -413,6 +657,135 @@ def tf_concat(L, bounds, tf):
     )
     if hz_in is not None:
         return _hz_fact(fact, tf._hz_cache[L.id])
+    return fact
+
+
+def tf_sub(L, bounds, tf):
+    hz_in = tf._hz_cache.get(L.id)
+    if hz_in is not None:
+        preds = tf._net.preds.get(L.id, [])
+        hz2 = tf._hz_cache.get(preds[1]) if len(preds) > 1 else None
+        if hz2 is not None:
+            tf._hz_cache[L.id] = hz_sub(hz_in, hz2)
+        else:
+            hz_in = None
+    fact = interval.tf_sub(
+        L,
+        tf._net.get_predecessor_bounds(L.id, tf._after, tf._before, 0),
+        tf._net.get_predecessor_bounds(L.id, tf._after, tf._before, 1),
+    )
+    if hz_in is not None:
+        return _hz_fact(fact, tf._hz_cache[L.id])
+    return fact
+
+
+def tf_flatten(L, bounds, tf):
+    fact = interval_cnn.tf_flatten(L, bounds)
+    hz_in = tf._hz_cache.get(L.id)
+    if hz_in is not None:
+        tf._hz_cache[L.id] = _hz_rebind(hz_in)
+        return _hz_fact(fact, tf._hz_cache[L.id])
+    return fact
+
+
+def tf_reshape(L, bounds, tf):
+    fact = interval.tf_reshape(L, bounds)
+    hz_in = tf._hz_cache.get(L.id)
+    if hz_in is not None:
+        tf._hz_cache[L.id] = _hz_rebind(hz_in)
+        return _hz_fact(fact, tf._hz_cache[L.id])
+    return fact
+
+
+def _hz_rebind(hz: HZono) -> HZono:
+    return HZono(
+        c=hz.c,
+        Gc=hz.Gc,
+        Gb=hz.Gb,
+        Ac=hz.Ac,
+        Ab=hz.Ab,
+        b=hz.b,
+        eq_mask=hz.eq_mask,
+        col_ids=hz.col_ids,
+        bcol_ids=hz.bcol_ids,
+    )
+
+
+def _hz_gather_rows(hz: HZono, row_idx: torch.Tensor) -> HZono:
+    ri = row_idx.to(device=hz.c.device, dtype=torch.long)
+    return HZono(
+        c=hz.c[ri],
+        Gc=hz.Gc[ri],
+        Gb=hz.Gb[ri],
+        Ac=hz.Ac,
+        Ab=hz.Ab,
+        b=hz.b,
+        eq_mask=hz.eq_mask,
+        col_ids=hz.col_ids,
+        bcol_ids=hz.bcol_ids,
+    )
+
+
+def tf_squeeze(L, bounds, tf):
+    fact = interval.tf_squeeze(L, bounds)
+    hz_in = tf._hz_cache.get(L.id)
+    if hz_in is not None:
+        tf._hz_cache[L.id] = _hz_rebind(hz_in)
+        return _hz_fact(fact, tf._hz_cache[L.id])
+    return fact
+
+
+def tf_unsqueeze(L, bounds, tf):
+    fact = interval.tf_unsqueeze(L, bounds)
+    hz_in = tf._hz_cache.get(L.id)
+    if hz_in is not None:
+        tf._hz_cache[L.id] = _hz_rebind(hz_in)
+        return _hz_fact(fact, tf._hz_cache[L.id])
+    return fact
+
+
+def tf_transpose(L, bounds, tf):
+    fact = interval.tf_transpose(L, bounds)
+    hz_in = tf._hz_cache.get(L.id)
+    if hz_in is not None:
+        tf._hz_cache[L.id] = _hz_rebind(hz_in)
+        return _hz_fact(fact, tf._hz_cache[L.id])
+    return fact
+
+
+def tf_slice(L, bounds, tf):
+    fact = interval.tf_slice(L, bounds)
+    hz_in = tf._hz_cache.get(L.id)
+    if hz_in is not None:
+        rows = _row_indices_slice(L, hz_in.c.shape[0])
+        if rows is not None and rows.numel() == fact.bounds.lb.numel():
+            tf._hz_cache[L.id] = _hz_gather_rows(hz_in, rows)
+            return _hz_fact(fact, tf._hz_cache[L.id])
+        tf._hz_cache.pop(L.id, None)
+    return fact
+
+
+def tf_gather(L, bounds, tf):
+    fact = interval.tf_gather(L, bounds)
+    hz_in = tf._hz_cache.get(L.id)
+    if hz_in is not None:
+        rows = _row_indices_gather(L, hz_in.c.shape[0])
+        if rows is not None and rows.numel() == fact.bounds.lb.numel():
+            tf._hz_cache[L.id] = _hz_gather_rows(hz_in, rows)
+            return _hz_fact(fact, tf._hz_cache[L.id])
+        tf._hz_cache.pop(L.id, None)
+    return fact
+
+
+def tf_expand(L, bounds, tf):
+    fact = interval.tf_expand(L, bounds)
+    hz_in = tf._hz_cache.get(L.id)
+    if hz_in is not None:
+        rows = _row_indices_expand(L, hz_in.c.shape[0])
+        if rows is not None and rows.numel() == fact.bounds.lb.numel():
+            tf._hz_cache[L.id] = _hz_gather_rows(hz_in, rows)
+            return _hz_fact(fact, tf._hz_cache[L.id])
+        tf._hz_cache.pop(L.id, None)
     return fact
 
 
