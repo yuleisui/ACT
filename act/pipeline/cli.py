@@ -35,6 +35,140 @@ from act.pipeline.fuzzing.actfuzzer import ACTFuzzer, FuzzingConfig
 from act.pipeline.verification.per_neuron_bounds import PerNeuronCheckConfig
 
 
+_FUZZ_MUTATION_WEIGHT_KEYS = frozenset(
+    {"gradient", "pgd", "activation", "boundary", "random"}
+)
+
+
+_FUZZ_OVERRIDE_SPEC: list[tuple[str, str, str, Any]] = [
+    ("max_iterations", "--iterations", "iterations", int),
+    ("timeout_seconds", "--timeout", "timeout", float),
+    ("coverage_strategy", "--coverage-strategy", "coverage_strategy", str),
+    ("activation_threshold", "--activation-threshold", "activation_threshold", float),
+    ("mutation_weights", "--mutation-weights", "mutation_weights", dict),
+    ("perturb_mode", "--perturb-mode", "perturb_mode", str),
+    ("perturb_scale", "--perturb-scale", "perturb_scale", float),
+    ("seed_selection_strategy", "--seed-selection", "seed_selection_strategy", str),
+    ("save_counterexamples", "--no-save", "save_counterexamples", bool),
+    ("output_dir", "--output", "output", Path),
+    ("report_interval", "--report-interval", "report_interval", int),
+    ("verbose", "--fuzz-verbose", "fuzz_verbose", int),
+    ("trace_level", "--trace-level", "trace_level", int),
+    ("trace_sample_rate", "--trace-sample", "trace_sample", int),
+    ("trace_storage", "--trace-storage", "trace_storage", str),
+    ("trace_output", "--trace-output", "trace_output", Path),
+    ("stop_on_first_violation", "--stop-on-first-violation", "stop_on_first_violation", bool),
+]
+
+
+def _parse_mutation_weights(raw: str) -> dict[str, float]:
+    """Parse a complete mutation-weight override from key=value CSV text."""
+    weights: dict[str, float] = {}
+    try:
+        for item in raw.split(","):
+            key, value = item.split("=", 1)
+            key = key.strip()
+            weights[key] = float(value.strip())
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "expected comma-separated key=value pairs, e.g. "
+            "gradient=0,pgd=0.4,activation=0.3,boundary=0.2,random=0.1"
+        ) from exc
+
+    missing = _FUZZ_MUTATION_WEIGHT_KEYS - weights.keys()
+    extra = weights.keys() - _FUZZ_MUTATION_WEIGHT_KEYS
+    if missing or extra:
+        details = []
+        if missing:
+            details.append(f"missing: {', '.join(sorted(missing))}")
+        if extra:
+            details.append(f"unknown: {', '.join(sorted(extra))}")
+        raise argparse.ArgumentTypeError(
+            "mutation weights must provide exactly "
+            f"{', '.join(sorted(_FUZZ_MUTATION_WEIGHT_KEYS))} ({'; '.join(details)})"
+        )
+
+    total = sum(weights.values())
+    if abs(total - 1.0) > 1e-9:
+        raise argparse.ArgumentTypeError(
+            f"mutation weights must sum to 1.0, got {total:g}"
+        )
+    return weights
+
+
+def _add_fuzz_config_args(parser: argparse.ArgumentParser) -> None:
+    group = parser.add_argument_group("Fuzzing Config Overrides")
+    group.add_argument(
+        "--coverage-strategy",
+        type=str,
+        default=None,
+        help="Coverage strategy (default: from config.yaml)",
+    )
+    group.add_argument(
+        "--activation-threshold",
+        type=float,
+        default=None,
+        help="Neuron activation threshold for coverage (default: from config.yaml)",
+    )
+    group.add_argument(
+        "--mutation-weights",
+        type=str,
+        default=None,
+        metavar="K=V,...",
+        help="Full mutation weights override, e.g. gradient=0,pgd=0.4,activation=0.3,boundary=0.2,random=0.1",
+    )
+    group.add_argument(
+        "--perturb-mode",
+        type=str,
+        default=None,
+        help="Perturbation sizing mode (default: from config.yaml)",
+    )
+    group.add_argument(
+        "--perturb-scale",
+        type=float,
+        default=None,
+        help="Fraction of feasible range per mutation (default: from config.yaml)",
+    )
+    group.add_argument(
+        "--seed-selection",
+        type=str,
+        default=None,
+        help="Seed selection strategy (default: from config.yaml)",
+    )
+    group.add_argument(
+        "--fuzz-verbose",
+        type=int,
+        default=None,
+        help="Fuzzing verbosity: 0=silent, 1=progress violations, 2=each violation (default: from config.yaml)",
+    )
+    group.add_argument(
+        "--stop-on-first-violation",
+        action="store_true",
+        default=None,
+        help="Stop after the first counterexample (default: from config.yaml/FuzzingConfig default)",
+    )
+
+
+def _collect_fuzzing_overrides(args: Any) -> dict[str, Any]:
+    overrides: dict[str, Any] = {}
+    for key, _flag, attr, cast_fn in _FUZZ_OVERRIDE_SPEC:
+        value = getattr(args, attr, None)
+        if value is None:
+            continue
+        if key == "save_counterexamples":
+            value = False
+        elif key == "mutation_weights":
+            value = _parse_mutation_weights(value)
+        elif cast_fn is Path and not isinstance(value, Path):
+            value = Path(value)
+        elif cast_fn is int and not isinstance(value, int):
+            value = int(str(value))
+        elif cast_fn is float and not isinstance(value, float):
+            value = float(str(value))
+        overrides[key] = value
+    return overrides
+
+
 
 def print_header():
     """Print simple header."""
@@ -305,19 +439,9 @@ def cmd_fuzz(args):
         print(f"⚠️  Strict mode enabled: Errors will be raised on constraint violations")
     print()
 
-    # Load configuration from YAML with CLI overrides
-    overrides: dict[str, Any] = dict(
-        max_iterations=args.iterations,
-        timeout_seconds=args.timeout,
-        save_counterexamples=not args.no_save,
-        output_dir=Path(args.output),
-        report_interval=args.report_interval,
-        # Tracing configuration
-        trace_level=args.trace_level,
-        trace_sample_rate=args.trace_sample,
-        trace_storage=args.trace_storage,
-        trace_output=Path(args.trace_output) if args.trace_output else None,
-    )
+    # Load configuration from YAML with CLI overrides. Unset CLI options remain
+    # None sentinels and therefore do not clobber config.yaml values.
+    overrides = _collect_fuzzing_overrides(args)
     config = FuzzingConfig.from_yaml(**overrides)
 
     # Create spec creator and load data-model pairs
@@ -495,19 +619,20 @@ def cmd_fuzz(args):
         print(f"Seeds explored: {report.seeds_explored}")
         print(f"{'=' * 80}\n")
 
-        if report.counterexamples and not args.no_save:
+        if report.counterexamples and config.save_counterexamples:
             import os
             import torch as _torch
             from act.front_end.vnnlib_loader.vnnlib_parser import write_vnncomp_result
 
-            os.makedirs(args.output, exist_ok=True)
+            os.makedirs(config.output_dir, exist_ok=True)
             ce0 = report.counterexamples[0]
-            x = ce0.input if hasattr(ce0, "input") else ce0
+            x = cast(Any, getattr(ce0, "input", ce0))
             with _torch.no_grad():
-                y = wrapped_model(x)
+                y_raw = wrapped_model(x)
+            y = cast(Any, y_raw["output"] if isinstance(y_raw, dict) else y_raw)
             fname = "_".join(map(str, model_id)) if isinstance(model_id, tuple) else str(model_id)
             write_vnncomp_result(
-                os.path.join(args.output, f"{fname}_result.txt"),
+                os.path.join(config.output_dir, f"{fname}_result.txt"),
                 "sat", x=x, y=y,
                 in_decl=("X", "float32", tuple(x.shape)),
                 out_decl=("Y", "float32", tuple(y.shape)),
@@ -1325,29 +1450,33 @@ Examples:
     fuzz_group.add_argument(
         "--iterations",
         type=int,
-        default=10000,
-        help="Max fuzzing iterations (default: 10000)",
+        default=None,
+        help="Max fuzzing iterations (default: from config.yaml)",
     )
     fuzz_group.add_argument(
         "--timeout",
         type=float,
-        default=3600.0,
-        help="Timeout in seconds (default: 3600)",
+        default=None,
+        help="Timeout in seconds (default: from config.yaml)",
     )
     fuzz_group.add_argument(
         "--output",
         type=str,
-        default="fuzzing_results",
-        help="Output directory (default: fuzzing_results)",
+        default=None,
+        help="Output directory (default: from config.yaml)",
     )
     fuzz_group.add_argument(
-        "--no-save", action="store_true", help="Don't save counterexamples to disk"
+        "--no-save",
+        action="store_false",
+        default=None,
+        dest="save_counterexamples",
+        help="Don't save counterexamples to disk",
     )
     fuzz_group.add_argument(
         "--report-interval",
         type=int,
-        default=100,
-        help="Report progress every N iterations (default: 100)",
+        default=None,
+        help="Report progress every N iterations (default: from config.yaml)",
     )
     fuzz_group.add_argument(
         "--strict-mode",
@@ -1361,14 +1490,14 @@ Examples:
         "--trace-level",
         type=int,
         choices=[0, 1, 2, 3],
-        default=0,
+        default=None,
         help="Tracing detail level: 0=disabled (default), 1=basic (iteration metrics + inputs), "
         "2=full (+ layer activations), 3=debug (+ gradients and loss)",
     )
     trace_group.add_argument(
         "--trace-sample",
         type=int,
-        default=1,
+        default=None,
         metavar="N",
         help="Capture every Nth iteration (default: 1 = all iterations). "
         "Use higher values to reduce overhead (e.g., 10 = every 10th iteration)",
@@ -1377,8 +1506,8 @@ Examples:
         "--trace-storage",
         type=str,
         choices=["hdf5", "json"],
-        default="json",
-        help="Storage backend: json=text/readable (default), hdf5=binary/compressed",
+        default=None,
+        help="Storage backend: json=text/readable, hdf5=binary/compressed (default: from config.yaml)",
     )
     trace_group.add_argument(
         "--trace-output",
@@ -1465,6 +1594,8 @@ Examples:
 
     # Add standard device/dtype arguments (shared across all ACT CLIs)
     add_device_args(parser)
+
+    _add_fuzz_config_args(parser)
 
     args = parser.parse_args()
 
