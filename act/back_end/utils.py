@@ -19,6 +19,9 @@ from act.util.options import PerformanceOptions
 
 EPS = 1e-12
 
+def split_weight(W):
+    return W.clamp(min=0), W.clamp(max=0)
+
 def box_join(a: Bounds, b: Bounds) -> Bounds:
     return Bounds(lb=torch.minimum(a.lb, b.lb), ub=torch.maximum(a.ub, b.ub))
 
@@ -95,9 +98,24 @@ def bound_var_interval(l: torch.Tensor, u: torch.Tensor) -> Tuple[float, float]:
     r = 0.5*(u-l); v_hi = float(torch.mean((2*r)**2))
     return (0.0, v_hi)
 
+def four_corner_envelope(xl, xu, yl, yu, sum_axis=None, keepdim=False, scale=1.0):
+    """Four-corner McCormick envelope (lb, ub) of x*y over [xl,xu]x[yl,yu].
+
+    ``sum_axis`` contracts the envelope along a matmul/attention axis; ``scale``
+    is a post-sum factor (e.g. 1/dk). ``amin``/``amax`` over the stacked corners
+    are bit-identical to the nested-``minimum`` / ``min(stack,0).values`` idioms.
+    """
+    p = torch.stack([xl*yl, xl*yu, xu*yl, xu*yu], dim=0)
+    lb = p.amin(dim=0); ub = p.amax(dim=0)
+    if sum_axis is not None:
+        lb = lb.sum(dim=sum_axis, keepdim=keepdim); ub = ub.sum(dim=sum_axis, keepdim=keepdim)
+    if scale != 1.0:
+        lb = lb * scale; ub = ub * scale
+    return lb, ub
+
+
 def scale_interval(cx_lo, cx_hi, inv_lo, inv_hi):
-    cand = torch.stack([cx_lo*inv_lo, cx_lo*inv_hi, cx_hi*inv_lo, cx_hi*inv_hi], dim=0)
-    return torch.min(cand, dim=0).values, torch.max(cand, dim=0).values
+    return four_corner_envelope(cx_lo, cx_hi, inv_lo, inv_hi)
 
 
 def validate_constraints(globalC, after: Dict, net) -> bool:

@@ -14,6 +14,7 @@
 
 # core.py
 import torch
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Optional, Any, Union
 import importlib
@@ -162,6 +163,42 @@ class Net:
         return facts[layer_id].bounds.lb.shape
         
         
+def topological_sort(net: Net, reverse: bool = False) -> List[int]:
+    """Kahn topological order over the ACT DAG.
+
+    ``reverse=False`` returns forward order (each layer after its
+    predecessors); ``reverse=True`` returns reverse order (each layer after
+    its successors). Neighbour lists are order-preserving deduped via
+    ``dict.fromkeys`` so duplicate edges cannot inflate an in-degree that
+    never reaches zero, while first-occurrence order keeps tie-breaking
+    deterministic.
+
+    Raises:
+        ValueError: If the graph has a cycle or disconnected layers.
+    """
+    in_edges = net.succs if reverse else net.preds
+    out_edges = net.preds if reverse else net.succs
+    layer_ids = [layer.id for layer in net.layers]
+    in_deg: Dict[int, int] = {
+        lid: len(dict.fromkeys(in_edges.get(lid, []))) for lid in layer_ids
+    }
+    queue = deque(lid for lid in layer_ids if in_deg[lid] == 0)
+    order: List[int] = []
+    while queue:
+        lid = queue.popleft()
+        order.append(lid)
+        for nxt in dict.fromkeys(out_edges.get(lid, [])):
+            in_deg[nxt] -= 1
+            if in_deg[nxt] == 0:
+                queue.append(nxt)
+    if len(order) != len(layer_ids):
+        raise ValueError(
+            f"topological_sort: graph has cycle or disconnected layers "
+            f"({len(order)}/{len(layer_ids)} sorted)"
+        )
+    return order
+
+
 @dataclass(eq=True, frozen=True)
 class Bounds:
     lb: torch.Tensor

@@ -13,6 +13,7 @@
 
 import torch
 from act.back_end.core import Bounds, Con, ConSet, Fact, Layer
+from act.back_end.utils import affine_bounds, split_weight, four_corner_envelope
 
 
 def tf_lstm(L: Layer, Bin: Bounds) -> Fact:
@@ -456,14 +457,12 @@ def _gru_cell_bounds(x_bounds, h_bounds, weight_ih, weight_hh, bias_ih, bias_hh)
 
 def _apply_linear_bounds(input_bounds, weight, bias=None):
     """Apply linear transformation to bounds."""
-    W_pos = torch.clamp(weight, min=0)
-    W_neg = torch.clamp(weight, max=0)
+    W_pos, W_neg = split_weight(weight)
     if bias is None:
         bias = weight.new_zeros(weight.shape[0])
     # input_bounds.lb shape (..., in_features); weight shape (out, in).
-    out_lb = input_bounds.lb @ W_pos.T + input_bounds.ub @ W_neg.T + bias
-    out_ub = input_bounds.ub @ W_pos.T + input_bounds.lb @ W_neg.T + bias
-    return Bounds(out_lb, out_ub)
+    out = affine_bounds(W_pos, W_neg, bias, Bounds(input_bounds.lb, input_bounds.ub))
+    return Bounds(out.lb, out.ub)
 
 
 def _apply_sigmoid_bounds(bounds):
@@ -490,12 +489,5 @@ def _apply_relu_bounds(bounds):
 def _multiply_bounds(bounds1, bounds2):
     """Multiply two interval bounds."""
     # For interval [a,b] * [c,d], result is [min(ac,ad,bc,bd), max(ac,ad,bc,bd)]
-    a, b = bounds1.lb, bounds1.ub
-    c, d = bounds2.lb, bounds2.ub
-    
-    products = [a*c, a*d, b*c, b*d]
-    
-    return Bounds(
-        torch.min(torch.stack(products), dim=0)[0],
-        torch.max(torch.stack(products), dim=0)[0]
-    )
+    lb, ub = four_corner_envelope(bounds1.lb, bounds1.ub, bounds2.lb, bounds2.ub)
+    return Bounds(lb, ub)

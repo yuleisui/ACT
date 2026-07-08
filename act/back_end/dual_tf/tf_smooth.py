@@ -18,6 +18,7 @@ import math
 import torch
 from typing import Tuple, Callable, Dict, Any, List
 from act.back_end.core import Bounds
+from act.back_end.interval_tf.tf_mlp import _sin_interval, _cos_interval, _quantize_params_flat, _quantize_qdq_value
 from .tf_forward import LinearBound, Frame, _reset_forward_box
 
 
@@ -40,73 +41,6 @@ def erf(x: torch.Tensor) -> torch.Tensor:
 
 def derf(x: torch.Tensor) -> torch.Tensor:
     return (2.0 / math.sqrt(math.pi)) * torch.exp(-x * x)
-
-
-def _periodic_critical_exists(lo: torch.Tensor, hi: torch.Tensor, offset: float, period: float) -> torch.Tensor:
-    eps = torch.finfo(lo.dtype).eps * 16.0
-    a = (lo - offset) / period - eps
-    b = (hi - offset) / period + eps
-    return torch.floor(b) >= torch.ceil(a)
-
-
-def _sin_interval(lo: torch.Tensor, hi: torch.Tensor) -> Bounds:
-    two_pi = 2.0 * math.pi
-    finite = torch.isfinite(lo) & torch.isfinite(hi) & (torch.abs(lo) <= 1.0e12) & (torch.abs(hi) <= 1.0e12)
-    hi = torch.maximum(hi, lo)
-    width = hi - lo
-    endpoint_lo = torch.sin(lo)
-    endpoint_hi = torch.sin(hi)
-    base_lb = torch.minimum(endpoint_lo, endpoint_hi)
-    base_ub = torch.maximum(endpoint_lo, endpoint_hi)
-    full_period = width >= two_pi
-    has_max = _periodic_critical_exists(lo, hi, 0.5 * math.pi, two_pi)
-    has_min = _periodic_critical_exists(lo, hi, -0.5 * math.pi, two_pi)
-    lb = torch.where(has_min | full_period, torch.full_like(base_lb, -1.0), base_lb)
-    ub = torch.where(has_max | full_period, torch.full_like(base_ub, 1.0), base_ub)
-    lb = torch.where(finite, lb, torch.full_like(lb, -1.0))
-    ub = torch.where(finite, ub, torch.full_like(ub, 1.0))
-    return Bounds(lb, ub)
-
-
-def _cos_interval(lo: torch.Tensor, hi: torch.Tensor) -> Bounds:
-    two_pi = 2.0 * math.pi
-    finite = torch.isfinite(lo) & torch.isfinite(hi) & (torch.abs(lo) <= 1.0e12) & (torch.abs(hi) <= 1.0e12)
-    hi = torch.maximum(hi, lo)
-    width = hi - lo
-    endpoint_lo = torch.cos(lo)
-    endpoint_hi = torch.cos(hi)
-    base_lb = torch.minimum(endpoint_lo, endpoint_hi)
-    base_ub = torch.maximum(endpoint_lo, endpoint_hi)
-    full_period = width >= two_pi
-    has_max = _periodic_critical_exists(lo, hi, 0.0, two_pi)
-    has_min = _periodic_critical_exists(lo, hi, math.pi, two_pi)
-    lb = torch.where(has_min | full_period, torch.full_like(base_lb, -1.0), base_lb)
-    ub = torch.where(has_max | full_period, torch.full_like(base_ub, 1.0), base_ub)
-    lb = torch.where(finite, lb, torch.full_like(lb, -1.0))
-    ub = torch.where(finite, ub, torch.full_like(ub, 1.0))
-    return Bounds(lb, ub)
-
-
-def _quantize_params_flat(L: Any, n: int, device: torch.device, dtype: torch.dtype):
-    scale = L.params["scale"].to(device=device, dtype=dtype).flatten()
-    zero_point = L.params["zero_point"].to(device=device, dtype=dtype).flatten()
-    if scale.numel() == 1:
-        scale = scale.expand(n)
-    elif scale.numel() != n:
-        raise NotImplementedError(f"quantize:{L.id}: scale with {scale.numel()} entries cannot broadcast to flat size {n}")
-    if zero_point.numel() == 1:
-        zero_point = zero_point.expand(n)
-    elif zero_point.numel() != n:
-        raise NotImplementedError(f"quantize:{L.id}: zero_point with {zero_point.numel()} entries cannot broadcast to flat size {n}")
-    if torch.any(scale <= 0):
-        raise ValueError(f"quantize:{L.id}: scale must be positive")
-    qmin = torch.full((n,), float(L.params["qmin"]), device=device, dtype=dtype)
-    qmax = torch.full((n,), float(L.params["qmax"]), device=device, dtype=dtype)
-    return scale, zero_point, qmin, qmax
-
-
-def _quantize_qdq_value(x: torch.Tensor, scale: torch.Tensor, zero_point: torch.Tensor, qmin: torch.Tensor, qmax: torch.Tensor) -> torch.Tensor:
-    return scale * torch.clamp(torch.round(x / scale), min=qmin - zero_point, max=qmax - zero_point)
 
 
 def _dual_constant_box_backward(nu: torch.Tensor, lower: torch.Tensor, upper: torch.Tensor, M: int = 1) -> Tuple[torch.Tensor, torch.Tensor]:

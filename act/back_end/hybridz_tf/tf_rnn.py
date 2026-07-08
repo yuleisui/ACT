@@ -14,6 +14,7 @@
 
 import torch
 from act.back_end.core import Bounds, Con, ConSet, Fact, Layer
+from act.back_end.utils import affine_bounds, split_weight, four_corner_envelope
 
 
 # ============================================================================
@@ -199,10 +200,10 @@ def _affine_only(x_lb, x_ub, W, bias):
     """Interval affine y = W @ x + bias preserving the leading batch dim.
     x shape: (..., in); W shape: (out, in); bias shape: (out,) or None.
     """
-    W_pos = W.clamp(min=0)
-    W_neg = W.clamp(max=0)
-    out_lb = x_lb @ W_pos.T + x_ub @ W_neg.T
-    out_ub = x_ub @ W_pos.T + x_lb @ W_neg.T
+    W_pos, W_neg = split_weight(W)
+    zero_bias = W.new_zeros(W.shape[0])
+    out = affine_bounds(W_pos, W_neg, zero_bias, Bounds(x_lb, x_ub))
+    out_lb, out_ub = out.lb, out.ub
     if bias is not None:
         out_lb = out_lb + bias
         out_ub = out_ub + bias
@@ -218,12 +219,7 @@ def _affine_block(x_lb, x_ub, h_lb, h_ub, W_ih, W_hh, b_ih, b_hh):
 
 def _interval_mul(a_lb, a_ub, b_lb, b_ub):
     """[a_lb,a_ub] ⊙ [b_lb,b_ub] = [min,max] over the four corner products."""
-    p1 = a_lb * b_lb
-    p2 = a_lb * b_ub
-    p3 = a_ub * b_lb
-    p4 = a_ub * b_ub
-    stacked = torch.stack([p1, p2, p3, p4], dim=0)
-    return stacked.min(dim=0).values, stacked.max(dim=0).values
+    return four_corner_envelope(a_lb, a_ub, b_lb, b_ub)
 
 
 # ============================================================================

@@ -18,7 +18,7 @@ import itertools
 import math
 from typing import List
 from act.back_end.core import Bounds, Con, ConSet, Fact, Layer
-from act.back_end.utils import affine_bounds, pwl_meta
+from act.back_end.utils import affine_bounds, pwl_meta, four_corner_envelope
 
 
 def _sanitize_smooth_bounds(lb: torch.Tensor, ub: torch.Tensor) -> Bounds:
@@ -185,8 +185,8 @@ def tf_sub(L: Layer, Bx: Bounds, By: Bounds) -> Fact:
     return Fact(B, C)
 
 def tf_mul(L: Layer, Bx: Bounds, By: Bounds) -> Fact:
-    cand=torch.stack([Bx.lb*By.lb, Bx.lb*By.ub, Bx.ub*By.lb, Bx.ub*By.ub], dim=0)
-    B=Bounds(torch.min(cand,0).values, torch.max(cand,0).values); C=ConSet()
+    lb,ub=four_corner_envelope(Bx.lb, Bx.ub, By.lb, By.ub)
+    B=Bounds(lb,ub); C=ConSet()
     C.replace(Con("INEQ", tuple(L.out_vars + L.params["x_vars"] + L.params["y_vars"]),
         {"tag":f"mcc:{L.id}","lx":Bx.lb,"ux":Bx.ub,"ly":By.lb,"uy":By.ub}))
     C.add_box(L.id,L.out_vars,B); return Fact(B,C)
@@ -219,12 +219,9 @@ def tf_matmul(L: Layer, Bx: Bounds, By: Bounds) -> Fact:
     A_ub = Bx.ub.view(batch_size, *x_shape).unsqueeze(-1)
     B_lb = By.lb.view(batch_size, *y_shape).unsqueeze(-3)
     B_ub = By.ub.view(batch_size, *y_shape).unsqueeze(-3)
-    c1, c2 = A_lb * B_lb, A_lb * B_ub
-    c3, c4 = A_ub * B_lb, A_ub * B_ub
-    lo = torch.minimum(torch.minimum(c1, c2), torch.minimum(c3, c4))
-    hi = torch.maximum(torch.maximum(c1, c2), torch.maximum(c3, c4))
-    out_lb = lo.sum(dim=-2).reshape(batch_size, -1)
-    out_ub = hi.sum(dim=-2).reshape(batch_size, -1)
+    lo, hi = four_corner_envelope(A_lb, A_ub, B_lb, B_ub, sum_axis=-2)
+    out_lb = lo.reshape(batch_size, -1)
+    out_ub = hi.reshape(batch_size, -1)
     Bres = Bounds(out_lb, out_ub)
     C = ConSet(); C.add_box(L.id, L.out_vars, Bres)
     return Fact(Bres, C)
@@ -447,8 +444,8 @@ def tf_softplus(L: Layer, Bin: Bounds) -> Fact:
 
 def tf_silu(L: Layer, Bin: Bounds) -> Fact:
     s_lb, s_ub = 1/(1+torch.exp(-Bin.lb)), 1/(1+torch.exp(-Bin.ub))
-    cand=torch.stack([Bin.lb*s_lb, Bin.lb*s_ub, Bin.ub*s_lb, Bin.ub*s_ub],0)
-    B=Bounds(torch.min(cand,0).values, torch.max(cand,0).values)
+    lb,ub=four_corner_envelope(Bin.lb, Bin.ub, s_lb, s_ub)
+    B=Bounds(lb,ub)
     C=ConSet(); C.replace(Con("INEQ", tuple(L.out_vars+L.in_vars), {"tag":f"silu:{L.id}","s_lb":s_lb,"s_ub":s_ub}))
     C.add_box(L.id,L.out_vars,B); return Fact(B,C)
 

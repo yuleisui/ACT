@@ -14,6 +14,7 @@ import torch
 import torch.nn.functional as F
 from typing import Callable, Tuple
 from act.back_end.core import Bounds, Con, ConSet, Fact, Layer
+from act.back_end.utils import split_weight
 
 
 def tf_conv2d(L: Layer, Bin: Bounds) -> Fact:
@@ -686,8 +687,7 @@ def _conv_bound_pair(
     assert lb_in.shape == ub_in.shape, (
         f"_conv_bound_pair: lb/ub shape mismatch ({tuple(lb_in.shape)} vs {tuple(ub_in.shape)})"
     )
-    W_pos = weight.clamp(min=0)
-    W_neg = weight.clamp(max=0)
+    W_pos, W_neg = split_weight(weight)
     B = lb_in.shape[0]
     in_for_pos = torch.cat([lb_in, ub_in], dim=0)
     in_for_neg = torch.cat([ub_in, lb_in], dim=0)
