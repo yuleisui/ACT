@@ -48,14 +48,32 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install coverage torch torchvision onnx onnx2torch onnx-simplifier tensorflow pandas numpy scipy pyyaml tqdm psutil transformers scikit-learn
+          pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install coverage onnx onnx2torch onnx-simplifier tensorflow pandas numpy scipy pyyaml tqdm psutil transformers scikit-learn
 
-      - name: Download VNNLIB benchmarks
+      - name: Fetch VNNLIB benchmarks (authenticated sparse checkout, avoids raw.githubusercontent rate-limit)
+        uses: actions/checkout@v4
+        with:
+          repository: VNN-COMP/vnncomp2026_benchmarks
+          path: _vnncomp_benchmarks
+          sparse-checkout: |
+            benchmarks/acasxu_2023/2.0
+            benchmarks/dist_shift_2023/2.0
+            benchmarks/safenlp_2024/2.0
+            benchmarks/collins_rul_cnn_2022/2.0
+            benchmarks/vit_2023/2.0
+
+      - name: Stage and decompress benchmarks into data/vnnlib
         run: |
           cd ${{ github.workspace }}
           for cat in acasxu_2023 dist_shift_2023 safenlp_2024 collins_rul_cnn_2022 vit_2023; do
-            coverage run -p -m act.front_end --download $cat
+            src="_vnncomp_benchmarks/benchmarks/$cat/2.0"
+            dst="data/vnnlib/$cat"
+            mkdir -p "$dst"
+            cp -r "$src"/. "$dst"/
+            find "$dst" -name '*.gz' -exec gunzip -f {} +
           done
+          rm -rf _vnncomp_benchmarks
 
       - name: Download TorchVision MNIST
         run: |
