@@ -495,6 +495,33 @@ def _hz_compute_bounds_gurobi(hz: HZono) -> Bounds:
     return GurobiSolver.compute_bounds(hz)
 
 
+def _hz_has_inequality_constraints(hz: HZono) -> bool:
+    return hz.eq_mask is not None and not bool(torch.all(hz.eq_mask).item())
+
+
+def _hz_constraint_split(hz: HZono):
+    Ac_np = hz.Ac.detach().cpu().numpy().astype("float64")
+    Ab_np = hz.Ab.detach().cpu().numpy().astype("float64")
+    b_np = hz.b.detach().cpu().numpy().astype("float64").reshape(-1)
+    if Ac_np.shape[0] == 0:
+        return None, None, None, None
+
+    A = np.concatenate([Ac_np, Ab_np], axis=1)
+    if hz.eq_mask is None:
+        return A, b_np, None, None
+
+    mask = hz.eq_mask.detach().cpu().numpy().astype(bool).reshape(-1)
+    if mask.shape[0] != A.shape[0]:
+        raise ValueError("HZ eq_mask length does not match constraint rows")
+
+    A_eq = A[mask] if mask.any() else None
+    b_eq = b_np[mask] if mask.any() else None
+    ineq = ~mask
+    A_ub = A[ineq] if ineq.any() else None
+    b_ub = b_np[ineq] if ineq.any() else None
+    return A_eq, b_eq, A_ub, b_ub
+
+
 def _hz_compute_bounds_scipy(hz: HZono) -> Bounds:
     n = int(hz.c.shape[0])
     p = int(hz.Gc.shape[1])
@@ -502,14 +529,7 @@ def _hz_compute_bounds_scipy(hz: HZono) -> Bounds:
     c_np = hz.c.detach().cpu().numpy().astype("float64").reshape(-1)
     Gc_np = hz.Gc.detach().cpu().numpy().astype("float64")
     Gb_np = hz.Gb.detach().cpu().numpy().astype("float64")
-    Ac_np = hz.Ac.detach().cpu().numpy().astype("float64")
-    Ab_np = hz.Ab.detach().cpu().numpy().astype("float64")
-    b_np = hz.b.detach().cpu().numpy().astype("float64").reshape(-1)
-
-    A_eq = (
-        np.concatenate([Ac_np, Ab_np], axis=1) if (Ac_np.size or Ab_np.size) else None
-    )
-    b_eq = b_np if (A_eq is not None) else None
+    A_eq, b_eq, A_ub, b_ub = _hz_constraint_split(hz)
     var_bounds = [(-1.0, 1.0)] * (p + q)
 
     LB = np.empty((n,), dtype=np.float64)
@@ -517,7 +537,13 @@ def _hz_compute_bounds_scipy(hz: HZono) -> Bounds:
     for i in range(n):
         obj = np.concatenate([Gc_np[i], Gb_np[i]], axis=0)
         res_min = linprog(
-            c=obj, A_eq=A_eq, b_eq=b_eq, bounds=var_bounds, method="highs"
+            c=obj,
+            A_eq=A_eq,
+            b_eq=b_eq,
+            A_ub=A_ub,
+            b_ub=b_ub,
+            bounds=var_bounds,
+            method="highs",
         )
         if not res_min.success:
             raise RuntimeError(
@@ -525,7 +551,13 @@ def _hz_compute_bounds_scipy(hz: HZono) -> Bounds:
             )
         LB[i] = c_np[i] + res_min.fun
         res_max = linprog(
-            c=-obj, A_eq=A_eq, b_eq=b_eq, bounds=var_bounds, method="highs"
+            c=-obj,
+            A_eq=A_eq,
+            b_eq=b_eq,
+            A_ub=A_ub,
+            b_ub=b_ub,
+            bounds=var_bounds,
+            method="highs",
         )
         if not res_max.success:
             raise RuntimeError(
@@ -559,7 +591,7 @@ def hz_compute_bounds(hz: HZono, *, exact: bool = False) -> Bounds:
         return _hz_bounds_unconstrained(hz)
     if not exact:
         return _hz_bounds_unconstrained(hz)
-    if _HAS_GUROBI:
+    if _HAS_GUROBI and not _hz_has_inequality_constraints(hz):
         try:
             return _hz_compute_bounds_gurobi(hz)
         except Exception as e:
