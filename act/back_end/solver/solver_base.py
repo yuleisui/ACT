@@ -239,6 +239,22 @@ def _problem(N: int, nvars: int, m_eq: int = 0, m_le: int = 0) -> BatchLPProblem
     )
 
 
+def _make_problem_n1(nvars, m_eq=0, m_le=0, lb_val=0.0, ub_val=1.0):
+    return BatchLPProblem(
+        nvars=nvars,
+        m_eq=m_eq,
+        m_le=m_le,
+        lb=torch.full((1, nvars), lb_val),
+        ub=torch.full((1, nvars), ub_val),
+        A_eq_blockdiag=_empty_blockdiag(1, m_eq, nvars),
+        b_eq=torch.zeros(1, m_eq),
+        A_le_blockdiag=_empty_blockdiag(1, m_le, nvars),
+        b_le=torch.zeros(1, m_le),
+        obj_c=torch.zeros(1, nvars),
+        obj_const=torch.zeros(1),
+    )
+
+
 def _test_batch_lp_problem_valid():
     p = _problem(N=2, nvars=3)
     assert p.N == 2

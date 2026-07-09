@@ -18,15 +18,15 @@ with activation bounds stored PRE-activation unless ``post_activation=True``.
 
 # pyright: reportMissingImports=false, reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportUnknownArgumentType=false, reportAttributeAccessIssue=false, reportOptionalMemberAccess=false, reportMissingParameterType=false, reportUntypedFunctionDecorator=false, reportDeprecated=false
 
-from collections import deque
 from dataclasses import dataclass
 
 import torch
 import torch.nn.functional as F
 from typing import Dict, List, Optional, Tuple
 
-from act.back_end.core import Bounds, Layer, Net
+from act.back_end.core import Bounds, Layer, Net, topological_sort
 from act.back_end.layer_schema import LayerKind
+from act.back_end.utils import affine_bounds, split_weight
 from act.util.device_manager import get_default_device, get_default_dtype
 
 
@@ -182,15 +182,10 @@ def _box_dense(layer: Layer, lb: torch.Tensor, ub: torch.Tensor) -> Tuple[torch.
     b = layer.params.get("bias")
     lb = _align_batch(lb, W.shape[1])
     ub = _align_batch(ub, W.shape[1])
-    W_pos = W.clamp(min=0)
-    W_neg = W.clamp(max=0)
-    out_lb = lb @ W_pos.transpose(0, 1) + ub @ W_neg.transpose(0, 1)
-    out_ub = ub @ W_pos.transpose(0, 1) + lb @ W_neg.transpose(0, 1)
-    if b is not None:
-        bias_vec = _align(b.flatten(), W.shape[0])
-        out_lb = out_lb + bias_vec
-        out_ub = out_ub + bias_vec
-    return out_lb, out_ub
+    W_pos, W_neg = split_weight(W)
+    bias_vec = lb.new_zeros(W.shape[0]) if b is None else _align(b.flatten(), W.shape[0])
+    out = affine_bounds(W_pos, W_neg, bias_vec, Bounds(lb, ub))
+    return out.lb, out.ub
 
 
 def _box_bias(layer: Layer, lb: torch.Tensor, ub: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -247,24 +242,6 @@ def _reset_forward_box(lb: torch.Tensor, ub: torch.Tensor, device, dtype
     """Reset dual-track state on a concrete box."""
     lin, x_L, x_U = _reset_lin(lb, ub, device, dtype)
     return lin, (x_L, x_U)
-
-
-def _topological_sort(net: Net) -> List[int]:
-    """Return a Kahn topological order over the ACT DAG."""
-    layer_ids = [layer.id for layer in net.layers]
-    in_deg: Dict[int, int] = {lid: len(set(net.preds.get(lid, []))) for lid in layer_ids}
-    queue = deque(lid for lid in layer_ids if in_deg[lid] == 0)
-    order: List[int] = []
-    while queue:
-        lid = queue.popleft()
-        order.append(lid)
-        for succ in net.succs.get(lid, []):
-            in_deg[succ] -= 1
-            if in_deg[succ] == 0:
-                queue.append(succ)
-    if len(order) != len(layer_ids):
-        raise ValueError(f"compute_forward_bounds: graph has cycle or disconnected layers ({len(order)}/{len(layer_ids)} sorted)")
-    return order
 
 
 def _sum_interval_bounds(boxes: List[Bounds]) -> Bounds:
@@ -347,7 +324,7 @@ def compute_forward_bounds(net: Net, input_lb: torch.Tensor, input_ub: torch.Ten
     box_state: Dict[int, Bounds] = {}
     lin_state: Dict[int, LinearBound] = {}
     frame_dict: Dict[int, Tuple[torch.Tensor, torch.Tensor]] = {}
-    topo_order = _topological_sort(net)
+    topo_order = topological_sort(net)
     by_id = getattr(net, "by_id", {layer.id: layer for layer in net.layers})
     entry_box = Bounds(lb_in, ub_in)
     entry_lin = _identity_lin(B, input_dim, device, dtype)
@@ -792,8 +769,7 @@ def _fwd_conv2d_interval(layer: Layer, lb: torch.Tensor, ub: torch.Tensor
             f"failed for lb.shape={tuple(lb.shape)}"
         ) from e
 
-    W_pos = weight.clamp(min=0)
-    W_neg = weight.clamp(max=0)
+    W_pos, W_neg = split_weight(weight)
     conv_kw = dict(stride=stride, padding=padding, dilation=dilation, groups=groups)
     lb_out = F.conv2d(lb_4d, W_pos, None, **conv_kw) + F.conv2d(ub_4d, W_neg, None, **conv_kw)
     ub_out = F.conv2d(ub_4d, W_pos, None, **conv_kw) + F.conv2d(lb_4d, W_neg, None, **conv_kw)

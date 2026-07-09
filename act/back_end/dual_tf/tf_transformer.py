@@ -36,6 +36,7 @@ from typing import Callable
 
 import torch
 
+from act.back_end.utils import four_corner_envelope
 from act.back_end.interval_tf.tf_attention import (
     _GELU_INFLECTION,
     _GELU_MIN_X,
@@ -283,14 +284,7 @@ def forward_attention(L, parent_boxes, parent_lins, parent_frames, preds,
     else:
         raise NotImplementedError(f"forward_attention: unsupported kind {k!r}")
 
-    p1 = x_l * y_l
-    p2 = x_l * y_u
-    p3 = x_u * y_l
-    p4 = x_u * y_u
-    lo = scale * torch.minimum(torch.minimum(p1, p2), torch.minimum(p3, p4)).sum(
-        dim=-1, keepdim=True)
-    hi = scale * torch.maximum(torch.maximum(p1, p2), torch.maximum(p3, p4)).sum(
-        dim=-1, keepdim=True)
+    lo, hi = four_corner_envelope(x_l, x_u, y_l, y_u, sum_axis=-1, keepdim=True, scale=scale)
     if isinstance(mask, torch.Tensor):
         m = mask.to(device=lo.device, dtype=lo.dtype).reshape(lo.shape[0], -1)
         lo = lo + m
@@ -365,9 +359,7 @@ def _matmul_mccormick_box(x_l, x_u, y_l, y_u, G, I, K, J):
     xu = x_u.reshape(B, G, I, K).unsqueeze(-1)
     yl = y_l.reshape(B, G, K, J).unsqueeze(-3)
     yu = y_u.reshape(B, G, K, J).unsqueeze(-3)
-    c1, c2, c3, c4 = xl * yl, xl * yu, xu * yl, xu * yu
-    lo = torch.minimum(torch.minimum(c1, c2), torch.minimum(c3, c4)).sum(dim=-2)
-    hi = torch.maximum(torch.maximum(c1, c2), torch.maximum(c3, c4)).sum(dim=-2)
+    lo, hi = four_corner_envelope(xl, xu, yl, yu, sum_axis=-2)
     return lo.reshape(B, -1), hi.reshape(B, -1)
 
 

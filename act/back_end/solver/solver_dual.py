@@ -15,8 +15,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union, cast
 
 import torch
-from act.back_end.core import Bounds, Layer, Net
+from act.back_end.core import Bounds, Layer, Net, topological_sort
 from act.back_end.layer_schema import LayerKind
+from act.back_end.dual_tf.tf_forward import _intersect_boxes
 from act.back_end.solver.solver_base import Solver, SolverCaps
 from act.front_end.specs import OutputSpec, OutKind
 from act.util.device_manager import get_default_device, get_default_dtype
@@ -101,33 +102,6 @@ def _clone_alpha_tree(tree: Any) -> Any:
     if isinstance(tree, (list, tuple)):
         return type(tree)(_clone_alpha_tree(value) for value in tree)
     raise TypeError(f"unsupported alpha pytree node: {type(tree)!r}")
-
-
-def _reverse_topological_sort(net: Net) -> List[int]:
-    """Kahn's algorithm on net.succs.
-
-    Returns layer IDs in reverse-topological order: every layer appears
-    after all its successors.
-
-    Raises:
-        ValueError: If the graph contains a cycle or disconnected layers.
-    """
-    in_deg: Dict[int, int] = {layer.id: len(net.succs.get(layer.id, [])) for layer in net.layers}
-    queue: List[int] = [lid for lid, degree in in_deg.items() if degree == 0]
-    order: List[int] = []
-    while queue:
-        lid = queue.pop(0)
-        order.append(lid)
-        for pred in set(net.preds.get(lid, [])):
-            in_deg[pred] -= 1
-            if in_deg[pred] == 0:
-                queue.append(pred)
-    if len(order) != len(net.layers):
-        raise ValueError(
-            f"DualSolver: graph has cycle or disconnected layers "
-            f"({len(order)}/{len(net.layers)} sorted)"
-        )
-    return order
 
 
 # Floor on the L2 witness denominator so a zero-coefficient block yields a
@@ -356,9 +330,6 @@ class DualSolver(Solver):
                 c = c.to(device=device, dtype=dtype)
             B = c.shape[0]
 
-            for _ in range(self.n_iters):
-                pass
-
             if start_lid is not None:
                 # Interior start: c is a linear functional on layer
                 # ``start_lid``'s output; only its ancestors are visited by
@@ -387,7 +358,7 @@ class DualSolver(Solver):
             nu_snapshot: Dict[int, torch.Tensor] = {}
             obj = torch.zeros(B, dtype=c.dtype, device=c.device)
 
-            topo_order = _reverse_topological_sort(net)
+            topo_order = topological_sort(net, reverse=True)
             registry = self.tf._BACKWARD_REGISTRY
 
             for lid in topo_order:
@@ -998,8 +969,7 @@ class DualSolver(Solver):
                 ub_new[s:e] = -res.margins[e - s:]
             lb_ref = lb0[0].clone()
             ub_ref = ub0[0].clone()
-            lb_ref[amb_idx] = torch.maximum(lb_ref[amb_idx], lb_new)
-            ub_ref[amb_idx] = torch.minimum(ub_ref[amb_idx], ub_new)
+            lb_ref[amb_idx], ub_ref[amb_idx] = _intersect_boxes(lb_ref[amb_idx], ub_ref[amb_idx], lb_new, ub_new)
             ub_ref = torch.maximum(ub_ref, lb_ref)
             refined = Bounds(
                 lb_ref.view_as(b.lb[0]).unsqueeze(0).clone(),
@@ -1107,8 +1077,7 @@ class DualSolver(Solver):
             ub_new = -margins[:, n_amb:]
             lb_ref = lb0.clone()
             ub_ref = ub0.clone()
-            lb_ref[:, amb_idx] = torch.maximum(lb_ref[:, amb_idx], lb_new)
-            ub_ref[:, amb_idx] = torch.minimum(ub_ref[:, amb_idx], ub_new)
+            lb_ref[:, amb_idx], ub_ref[:, amb_idx] = _intersect_boxes(lb_ref[:, amb_idx], ub_ref[:, amb_idx], lb_new, ub_new)
             ub_ref = torch.maximum(ub_ref, lb_ref)
             refined = Bounds(
                 lb_ref.view_as(b.lb).clone(),

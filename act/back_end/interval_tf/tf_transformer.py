@@ -15,7 +15,7 @@
 import torch
 from typing import List, Optional, Tuple, cast
 from act.back_end.core import Bounds, Con, ConSet, Fact, Layer
-from act.back_end.utils import pwl_meta, scale_interval
+from act.back_end.utils import pwl_meta, scale_interval, four_corner_envelope
 from act.back_end.interval_tf.tf_mlp import tf_concat
 from act.back_end.interval_tf.tf_attention import LinearBounds, att_scores_dual_planar
 
@@ -99,9 +99,7 @@ def tf_att_scores(L: Layer, Bq: Bounds, Bk: Bounds) -> Fact:
     if Bk.lb.shape[0] != batch_size:
         raise ValueError(f"ATT_SCORES expects matching batch dims, got {batch_size} and {Bk.lb.shape[0]}")
     s=Bq.lb.new_tensor(1.0/float(cast(float, cast(object, L.params["dk"]))))
-    lo=torch.minimum(torch.minimum(Bq.lb*Bk.lb, Bq.lb*Bk.ub), torch.minimum(Bq.ub*Bk.lb, Bq.ub*Bk.ub))
-    hi=torch.maximum(torch.maximum(Bq.lb*Bk.lb, Bq.lb*Bk.ub), torch.maximum(Bq.ub*Bk.lb, Bq.ub*Bk.ub))
-    lb=s*lo.sum(dim=-1, keepdim=True); ub=s*hi.sum(dim=-1, keepdim=True)
+    lb,ub=four_corner_envelope(Bq.lb, Bq.ub, Bk.lb, Bk.ub, sum_axis=-1, keepdim=True, scale=s)
     mask = L.params.get("mask")
     if isinstance(mask, torch.Tensor): lb=lb+mask; ub=ub+mask
     B=Bounds(lb,ub); C=ConSet()
@@ -148,8 +146,7 @@ def tf_att_mix(L: Layer, Bw: Bounds, Bv: Bounds) -> Fact:
     batch_size = Bw.lb.shape[0]
     if Bv.lb.shape[0] != batch_size:
         raise ValueError(f"ATT_MIX expects matching batch dims, got {batch_size} and {Bv.lb.shape[0]}")
-    lo=torch.minimum(torch.minimum(Bw.lb*Bv.lb, Bw.lb*Bv.ub), torch.minimum(Bw.ub*Bv.lb, Bw.ub*Bv.ub)).sum(dim=-1, keepdim=True)
-    hi=torch.maximum(torch.maximum(Bw.lb*Bv.lb, Bw.lb*Bv.ub), torch.maximum(Bw.ub*Bv.lb, Bw.ub*Bv.ub)).sum(dim=-1, keepdim=True)
+    lo,hi=four_corner_envelope(Bw.lb, Bw.ub, Bv.lb, Bv.ub, sum_axis=-1, keepdim=True)
     B=Bounds(lo,hi); C=ConSet()
     C.replace(Con("INEQ", tuple(L.out_vars + cast(List[int], cast(object, L.params["w_vars"])) + cast(List[int], cast(object, L.params["v_vars"]))), {"tag":f"att_mix:{L.id}","mcc":True,"rowsize":L.params["rowsize"]}))
     C.add_box(L.id,L.out_vars,B); return Fact(B,C)

@@ -3,7 +3,13 @@ from __future__ import annotations
 from typing import Optional, TYPE_CHECKING
 import numpy as np
 import os
-from act.back_end.solver.solver_base import Solver, SolverCaps
+from act.back_end.solver.solver_base import (
+    Solver,
+    SolverCaps,
+    _empty_blockdiag,
+    _problem,
+    _make_problem_n1,
+)
 from act.util.path_config import get_project_root
 
 if TYPE_CHECKING:
@@ -196,32 +202,6 @@ import importlib.util as _ilu
 _HAS_GUROBI = _ilu.find_spec("gurobipy") is not None
 
 
-def _make_problem_n1(nvars, m_eq=0, m_le=0, lb_val=0.0, ub_val=1.0):
-    import torch
-    from act.back_end.solver.solver_base import BatchLPProblem
-
-    def _empty(N, m, nv):
-        return torch.sparse_coo_tensor(
-            torch.zeros((2, 0), dtype=torch.long),
-            torch.zeros(0),
-            (N * m, N * nv),
-        )
-
-    return BatchLPProblem(
-        nvars=nvars,
-        m_eq=m_eq,
-        m_le=m_le,
-        lb=torch.full((1, nvars), lb_val),
-        ub=torch.full((1, nvars), ub_val),
-        A_eq_blockdiag=_empty(1, m_eq, nvars),
-        b_eq=torch.zeros(1, m_eq),
-        A_le_blockdiag=_empty(1, m_le, nvars),
-        b_le=torch.zeros(1, m_le),
-        obj_c=torch.zeros(1, nvars),
-        obj_const=torch.zeros(1),
-    )
-
-
 def _test_solve_batch_n1_sat():
     if not _HAS_GUROBI:
         print("SKIP  _test_solve_batch_n1_sat (no gurobipy)")
@@ -229,21 +209,14 @@ def _test_solve_batch_n1_sat():
     import torch
     from act.back_end.solver.solver_base import BatchLPProblem
 
-    def _empty(N, m, nv):
-        return torch.sparse_coo_tensor(
-            torch.zeros((2, 0), dtype=torch.long),
-            torch.zeros(0),
-            (N * m, N * nv),
-        )
-
     nvars = 2
     p = BatchLPProblem(
         nvars=nvars, m_eq=0, m_le=0,
         lb=torch.tensor([[0.0, 0.0]]),
         ub=torch.tensor([[1.0, 1.0]]),
-        A_eq_blockdiag=_empty(1, 0, nvars),
+        A_eq_blockdiag=_empty_blockdiag(1, 0, nvars),
         b_eq=torch.zeros(1, 0),
-        A_le_blockdiag=_empty(1, 0, nvars),
+        A_le_blockdiag=_empty_blockdiag(1, 0, nvars),
         b_le=torch.zeros(1, 0),
         obj_c=torch.tensor([[1.0, 0.0]]),
         obj_const=torch.zeros(1),
@@ -267,18 +240,11 @@ def _test_solve_batch_n1_infeasible():
     A_le_idx = torch.tensor([[0], [0]], dtype=torch.long)
     A_le_sp = torch.sparse_coo_tensor(A_le_idx, A_le_vals, (1, 1))
 
-    def _empty(N, m, nv):
-        return torch.sparse_coo_tensor(
-            torch.zeros((2, 0), dtype=torch.long),
-            torch.zeros(0),
-            (N * m, N * nv),
-        )
-
     p = BatchLPProblem(
         nvars=nvars, m_eq=0, m_le=1,
         lb=torch.tensor([[0.0]]),
         ub=torch.tensor([[1.0]]),
-        A_eq_blockdiag=_empty(1, 0, nvars),
+        A_eq_blockdiag=_empty_blockdiag(1, 0, nvars),
         b_eq=torch.zeros(1, 0),
         A_le_blockdiag=A_le_sp,
         b_le=torch.tensor([[-3.0]]),
@@ -293,28 +259,7 @@ def _test_solve_batch_n_greater_than_1_raises():
     if not _HAS_GUROBI:
         print("SKIP  _test_solve_batch_n_greater_than_1_raises (no gurobipy)")
         return
-    import torch
-    from act.back_end.solver.solver_base import BatchLPProblem
-
-    def _empty(N, m, nv):
-        return torch.sparse_coo_tensor(
-            torch.zeros((2, 0), dtype=torch.long),
-            torch.zeros(0),
-            (N * m, N * nv),
-        )
-
-    N, nvars = 2, 3
-    p = BatchLPProblem(
-        nvars=nvars, m_eq=0, m_le=0,
-        lb=torch.zeros(N, nvars),
-        ub=torch.ones(N, nvars),
-        A_eq_blockdiag=_empty(N, 0, nvars),
-        b_eq=torch.zeros(N, 0),
-        A_le_blockdiag=_empty(N, 0, nvars),
-        b_le=torch.zeros(N, 0),
-        obj_c=torch.zeros(N, nvars),
-        obj_const=torch.zeros(N),
-    )
+    p = _problem(N=2, nvars=3)
     try:
         GurobiSolver().solve_batch(p)
         raise AssertionError("expected NotImplementedError for N=2")

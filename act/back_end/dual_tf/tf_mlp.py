@@ -24,7 +24,7 @@ from typing import Tuple, Optional, Dict, Any, List
 from act.back_end.core import Bounds
 
 from .tf_forward import (
-    LinearBound, Frame,
+    LinearBound, Frame, _align,
     _fwd_dense, _fwd_relu, _fwd_bias, _fwd_scale, _fwd_bn, _fwd_lrelu,
     _concretize, _box_dense, _box_bias, _box_scale, _box_bn, _box_relu,
     _box_lrelu, _intersect_boxes, _reset_forward_box,
@@ -60,14 +60,6 @@ def _repair_degenerate_interval(l: torch.Tensor, u: torch.Tensor, where: str) ->
 #   Each pred_nus[i] is the ν routed to predecessor preds[i]. Unary layers
 #   (DENSE, RELU, BIAS, SCALE, BN) return [nu_out]. backward_identity handles
 #   both 0-pred (pure INPUT) and 1-pred (FLATTEN/RESHAPE/…) cases.
-
-
-# ---- HELPERS ----
-def _align(a: torch.Tensor, n: int) -> torch.Tensor:
-    """Align 1-D parameter tensor to size n by truncating or tiling."""
-    if a.numel() == n: return a.flatten()
-    elif a.numel() > n: return a.flatten()[:n]
-    else: return a.flatten().repeat((n + a.numel() - 1) // a.numel())[:n]
 
 
 # ---- IDENTITY ----
