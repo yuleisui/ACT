@@ -25,7 +25,10 @@ from act.back_end.transfer_functions import TransferFunction
 from act.back_end.layer_schema import LayerKind
 from act.back_end.solver.solver_hz import (
     HZono,
+    SparseHZono,
     hz_from_bounds,
+    sparse_hz_fast_bounds,
+    sparse_hz_from_bounds,
 )
 
 import act.back_end.hybridz_tf.tf_mlp as hz_mlp
@@ -39,10 +42,13 @@ import act.back_end.interval_tf.tf_cnn as interval_cnn
 class HybridzTF(TransferFunction):
     def __init__(self):
         self._hz_cache: Dict[int, HZono] = {}
+        self._sparse_hz_cache: Dict[int, SparseHZono] = {}
+        self._sparse_drop_reasons: Dict[int, str] = {}
         self._cache_net_id: Optional[int] = None
         self._tanh_K: int = 2
         self._sigmoid_K: int = 2
         self._var_id_stride: int = 1
+        self._sparse_next_frame_id: int = 0
 
     @staticmethod
     def _net_var_id_stride(net: Net) -> int:
@@ -154,6 +160,9 @@ class HybridzTF(TransferFunction):
     def get_hz(self, layer_id: int) -> Optional[HZono]:
         return self._hz_cache.get(int(layer_id))
 
+    def get_sparse_hz(self, layer_id: int) -> Optional[SparseHZono]:
+        return self._sparse_hz_cache.get(int(layer_id))
+
     @staticmethod
     def _id_sig(ids: Optional[torch.Tensor]):
         if ids is None:
@@ -183,10 +192,39 @@ class HybridzTF(TransferFunction):
             cls._id_sig(hz.bcol_ids),
         )
 
+    @staticmethod
+    def _csr_sig(mat):
+        return (tuple(mat.shape), int(mat.nnz))
+
+    @classmethod
+    def _sparse_hz_sig(cls, hz: Optional[SparseHZono]):
+        if hz is None:
+            return None
+        return (
+            int(hz.n_out),
+            int(hz.n_cont),
+            int(hz.n_bin),
+            int(hz.n_eq),
+            int(hz.n_ineq),
+            cls._csr_sig(hz.Gc),
+            cls._csr_sig(hz.Gb),
+            cls._csr_sig(hz.Ac),
+            cls._csr_sig(hz.Ab),
+            cls._csr_sig(hz.Auc),
+            cls._csr_sig(hz.Aub),
+            hz.frame_id,
+        )
+
     def side_state_signature(self, layer_id: int):
-        return self._hz_sig(self._hz_cache.get(int(layer_id)))
+        lid = int(layer_id)
+        return (
+            self._hz_sig(self._hz_cache.get(lid)),
+            self._sparse_hz_sig(self._sparse_hz_cache.get(lid)),
+            self._sparse_drop_reasons.get(lid),
+        )
 
     _HZ_MAX_INPUT_DIM = 1024
+    _SPARSE_MAX_AFFINE_CELLS = 8_000_000
 
     def _col_ids_from_vars(self, bounds: Bounds, var_ids) -> Optional[torch.Tensor]:
         if not var_ids:
@@ -224,6 +262,80 @@ class HybridzTF(TransferFunction):
             col_ids=ids,
         )
 
+    def _sparse_from_bounds(self, bounds: Bounds) -> SparseHZono:
+        frame_id = self._sparse_next_frame_id
+        self._sparse_next_frame_id += 1
+        return sparse_hz_from_bounds(bounds, frame_id=frame_id)
+
+    @staticmethod
+    def _sparse_fact(fact: Fact, hz: SparseHZono) -> Fact:
+        hb = sparse_hz_fast_bounds(hz)
+        lb = hb.lb.to(dtype=fact.bounds.lb.dtype, device=fact.bounds.lb.device)
+        ub = hb.ub.to(dtype=fact.bounds.ub.dtype, device=fact.bounds.ub.device)
+        return Fact(
+            bounds=Bounds(
+                lb=torch.maximum(lb.reshape_as(fact.bounds.lb), fact.bounds.lb),
+                ub=torch.minimum(ub.reshape_as(fact.bounds.ub), fact.bounds.ub),
+            ),
+            cons=fact.cons,
+        )
+
+    def _seed_sparse_cache(self, L: Layer, input_bounds: Bounds) -> None:
+        k = L.kind.upper()
+        try:
+            if k in ("INPUT", "INPUT_SPEC"):
+                self._sparse_hz_cache[L.id] = self._sparse_from_bounds(input_bounds)
+                self._sparse_drop_reasons.pop(L.id, None)
+            elif k != "ASSERT":
+                preds = self._net.preds.get(L.id, [])
+                if preds and preds[0] in self._sparse_hz_cache:
+                    self._sparse_hz_cache[L.id] = self._sparse_hz_cache[preds[0]]
+                    self._sparse_drop_reasons.pop(L.id, None)
+                elif not preds:
+                    self._sparse_hz_cache[L.id] = self._sparse_from_bounds(input_bounds)
+                    self._sparse_drop_reasons.pop(L.id, None)
+        except Exception as exc:
+            self._drop_sparse_hz(L.id, f"sparse_seed_failed:{type(exc).__name__}")
+
+    def _drop_sparse_hz(self, layer_id: int, reason: str) -> None:
+        lid = int(layer_id)
+        self._sparse_hz_cache.pop(lid, None)
+        self._sparse_drop_reasons[lid] = reason
+
+    def _sparse_exceeds_limit(self, hz: SparseHZono, out_dim: int) -> bool:
+        gen = int(hz.n_cont + hz.n_bin)
+        return gen > 0 and int(out_dim) * gen > self._SPARSE_MAX_AFFINE_CELLS
+
+    def _propagate_sparse_hz(self, L: Layer, input_bounds: Bounds, result: Fact) -> Fact:
+        k = L.kind.upper()
+        if k in ("INPUT", "INPUT_SPEC", "ASSERT"):
+            hz = self._sparse_hz_cache.get(L.id)
+            return self._sparse_fact(result, hz) if hz is not None else result
+        hz = self._sparse_hz_cache.get(L.id)
+        if hz is None:
+            return result
+        if self._sparse_exceeds_limit(hz, result.bounds.lb.numel()):
+            self._drop_sparse_hz(L.id, f"sparse_size_limit:{k}")
+            return result
+        try:
+            for apply_sparse in (
+                hz_mlp.sparse_hz_apply_layer,
+                hz_cnn.sparse_hz_apply_layer,
+            ):
+                handled, out, drop_reason = apply_sparse(L, hz, input_bounds, result, self)
+                if not handled:
+                    continue
+                if out is None:
+                    self._drop_sparse_hz(L.id, drop_reason or f"unsupported_sparse_op:{k}")
+                    return result
+                self._sparse_hz_cache[L.id] = out
+                self._sparse_drop_reasons.pop(L.id, None)
+                return self._sparse_fact(result, out)
+            self._drop_sparse_hz(L.id, f"unsupported_sparse_op:{k}")
+        except Exception as exc:
+            self._drop_sparse_hz(L.id, f"sparse_op_failed:{k}:{type(exc).__name__}")
+        return result
+
     def apply(
         self,
         L: Layer,
@@ -239,12 +351,16 @@ class HybridzTF(TransferFunction):
         net_id = id(net)
         if self._cache_net_id != net_id:
             self._hz_cache.clear()
+            self._sparse_hz_cache.clear()
+            self._sparse_drop_reasons.clear()
             self._cache_net_id = net_id
             self._var_id_stride = self._net_var_id_stride(net)
+            self._sparse_next_frame_id = 0
 
         self._net = net
         self._before = before
         self._after = after
+        self._seed_sparse_cache(L, input_bounds)
 
         if k in ("INPUT", "INPUT_SPEC"):
             hz_init = self._hz_from_bounds(
@@ -281,6 +397,7 @@ class HybridzTF(TransferFunction):
 
         hz_before = self._hz_cache.get(L.id)
         result = self._LAYER_REGISTRY[k](L, input_bounds, self)
+        result = self._propagate_sparse_hz(L, input_bounds, result)
 
         if (
             hz_before is not None
