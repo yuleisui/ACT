@@ -40,8 +40,8 @@ class HybridzTF(TransferFunction):
     def __init__(self):
         self._hz_cache: Dict[int, HZono] = {}
         self._cache_net_id: Optional[int] = None
-        self._tanh_K: int = 1
-        self._sigmoid_K: int = 1
+        self._tanh_K: int = 2
+        self._sigmoid_K: int = 2
         self._var_id_stride: int = 1
 
     @staticmethod
