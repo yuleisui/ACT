@@ -14,9 +14,16 @@
 
 import torch
 import torch.nn.functional as F
+try:
+    import numpy as np
+    import scipy.sparse as sp
+except ImportError:
+    np = None
+    sp = None
 from act.back_end.core import Bounds, Fact
 from act.back_end.solver.solver_hz import (
     HZono,
+    SparseHZono,
     hz_multiply,
     hz_add_const,
     hz_from_bounds,
@@ -25,6 +32,16 @@ from act.back_end.solver.solver_hz import (
     hz_concat,
     hz_sgm_add,
     hz_sub,
+    sparse_hz_add_const,
+    sparse_hz_add_same_frame,
+    sparse_hz_concat,
+    sparse_hz_from_bounds,
+    sparse_hz_gather_rows,
+    sparse_hz_is_point,
+    sparse_hz_linear,
+    sparse_hz_reduce_sum_rows,
+    sparse_hz_scale,
+    sparse_hz_sub_same_frame,
 )
 import act.back_end.interval_tf.tf_mlp as interval
 import act.back_end.interval_tf.tf_cnn as interval_cnn
@@ -170,6 +187,168 @@ def _hz_matmul_const(L, hz: HZono, const: torch.Tensor, *, variable_is_left: boo
         eye = torch.eye(in_dim, dtype=dtype, device=device).view(in_dim, *y_shape)
         out = torch.matmul(W, eye).reshape(in_dim, -1)
     return _hz_apply_per_batch_linear(hz, out.t().contiguous(), B)
+
+
+def _sparse_available() -> bool:
+    return np is not None and sp is not None
+
+
+def _to_numpy(value):
+    if isinstance(value, torch.Tensor):
+        return value.detach().cpu().double().numpy()
+    return np.asarray(value, dtype=np.float64)
+
+
+def _sparse_param_vector(value, n: int):
+    arr = _to_numpy(value).reshape(-1)
+    if arr.size == n:
+        return arr
+    if arr.size == 1:
+        return np.full(n, float(arr[0]), dtype=np.float64)
+    if n % arr.size == 0:
+        return np.tile(arr, n // arr.size)
+    raise ValueError(f"cannot broadcast {arr.size} sparse values to {n}")
+
+
+def _sparse_apply_per_batch_linear(hz: SparseHZono, W, bias=None) -> SparseHZono:
+    Wsp = W.tocsr().astype(np.float64) if sp.issparse(W) else sp.csr_matrix(_to_numpy(W))
+    in_dim = int(Wsp.shape[1])
+    if in_dim == 0 or hz.n_out % in_dim != 0:
+        raise ValueError(f"sparse batch linear shape mismatch: {hz.n_out} vs {Wsp.shape}")
+    B = hz.n_out // in_dim
+    M = sp.kron(sp.eye(B, format="csr"), Wsp, format="csr") if B != 1 else Wsp
+    b = None
+    if bias is not None:
+        b0 = _to_numpy(bias).reshape(-1)
+        b = np.tile(b0, B) if B > 1 else b0
+    return sparse_hz_linear(hz, M, b)
+
+
+def _sparse_matmul_const(L, hz: SparseHZono, const, *, variable_is_left: bool):
+    x_shape = tuple(int(d) for d in L.params["x_shape"])
+    y_shape = tuple(int(d) for d in L.params["y_shape"])
+    in_shape = x_shape if variable_is_left else y_shape
+    in_dim = _prod(in_shape)
+    if in_dim == 0 or hz.n_out % in_dim != 0:
+        return None
+    B = hz.n_out // in_dim
+    C = torch.as_tensor(_to_numpy(const), dtype=torch.float64).flatten()
+    if variable_is_left:
+        W = _shared_const_block(C, y_shape, B)
+        if W is None:
+            return None
+        eye = torch.eye(in_dim, dtype=torch.float64).view(in_dim, *x_shape)
+        out = torch.matmul(eye, W).reshape(in_dim, -1)
+    else:
+        W = _shared_const_block(C, x_shape, B)
+        if W is None:
+            return None
+        eye = torch.eye(in_dim, dtype=torch.float64).view(in_dim, *y_shape)
+        out = torch.matmul(W, eye).reshape(in_dim, -1)
+    return _sparse_apply_per_batch_linear(hz, sp.csr_matrix(out.t().numpy()))
+
+
+def sparse_hz_apply_layer(L, hz: SparseHZono, input_bounds: Bounds, result: Fact, tf):
+    if not _sparse_available():
+        return True, None, "scipy_unavailable"
+    k = L.kind.upper()
+    if k == "DENSE":
+        out = _sparse_apply_per_batch_linear(hz, L.params["weight"], L.params.get("bias"))
+        return True, out, None
+    if k == "BIAS":
+        return True, sparse_hz_add_const(hz, _sparse_param_vector(L.params["c"], hz.n_out)), None
+    if k == "SCALE":
+        return True, sparse_hz_scale(hz, _sparse_param_vector(L.params["a"], hz.n_out)), None
+    if k == "BN":
+        out = sparse_hz_scale(hz, _sparse_param_vector(L.params["A"], hz.n_out))
+        return True, sparse_hz_add_const(out, _sparse_param_vector(L.params["c"], hz.n_out)), None
+    if k == "MUL":
+        preds = tf._net.preds.get(L.id, [])
+        other = tf._sparse_hz_cache.get(preds[1]) if len(preds) > 1 else None
+        if other is None:
+            return True, None, "missing_sparse_mul_input"
+        if sparse_hz_is_point(other):
+            return True, sparse_hz_scale(hz, other.c), None
+        if sparse_hz_is_point(hz):
+            return True, sparse_hz_scale(other, hz.c), None
+        return True, None, "unsupported_sparse_mul_var_var"
+    if k == "MATMUL":
+        preds = tf._net.preds.get(L.id, [])
+        other = tf._sparse_hz_cache.get(preds[1]) if len(preds) > 1 else None
+        if other is None:
+            return True, None, "missing_sparse_matmul_input"
+        out = None
+        if sparse_hz_is_point(other):
+            out = _sparse_matmul_const(L, hz, other.c, variable_is_left=True)
+        elif sparse_hz_is_point(hz):
+            out = _sparse_matmul_const(L, other, hz.c, variable_is_left=False)
+        return (True, out, None) if out is not None else (True, None, "unsupported_sparse_matmul")
+    if k in {"FLATTEN", "RESHAPE", "SQUEEZE", "UNSQUEEZE", "TRANSPOSE"}:
+        return True, hz, None
+    if k == "UPSAMPLE":
+        rows = _row_indices_upsample_nearest(L, hz.n_out, result.bounds.lb.numel())
+        return (
+            (True, sparse_hz_gather_rows(hz, rows.detach().cpu().numpy()), None)
+            if rows is not None
+            else (True, None, "unsupported_sparse_upsample")
+        )
+    if k == "SLICE":
+        rows = _row_indices_slice(L, hz.n_out)
+        return (
+            (True, sparse_hz_gather_rows(hz, rows.detach().cpu().numpy()), None)
+            if rows is not None and rows.numel() == result.bounds.lb.numel()
+            else (True, None, "unsupported_sparse_slice")
+        )
+    if k == "GATHER":
+        rows = _row_indices_gather(L, hz.n_out)
+        return (
+            (True, sparse_hz_gather_rows(hz, rows.detach().cpu().numpy()), None)
+            if rows is not None and rows.numel() == result.bounds.lb.numel()
+            else (True, None, "unsupported_sparse_gather")
+        )
+    if k == "EXPAND":
+        rows = _row_indices_expand(L, hz.n_out)
+        return (
+            (True, sparse_hz_gather_rows(hz, rows.detach().cpu().numpy()), None)
+            if rows is not None and rows.numel() == result.bounds.lb.numel()
+            else (True, None, "unsupported_sparse_expand")
+        )
+    if k == "REDUCE_SUM":
+        rows = _row_indices_reduce_sum(L, hz.n_out, result.bounds.lb.numel())
+        return (
+            (True, sparse_hz_reduce_sum_rows(hz, rows.detach().cpu().numpy(), result.bounds.lb.numel()), None)
+            if rows is not None
+            else (True, None, "unsupported_sparse_reduce_sum")
+        )
+    if k == "ADD":
+        preds = tf._net.preds.get(L.id, [])
+        other = tf._sparse_hz_cache.get(preds[1]) if len(preds) > 1 else None
+        return (
+            (True, sparse_hz_add_same_frame(hz, other), None)
+            if other is not None
+            else (True, None, "missing_sparse_add_input")
+        )
+    if k == "SUB":
+        preds = tf._net.preds.get(L.id, [])
+        other = tf._sparse_hz_cache.get(preds[1]) if len(preds) > 1 else None
+        return (
+            (True, sparse_hz_sub_same_frame(hz, other), None)
+            if other is not None
+            else (True, None, "missing_sparse_sub_input")
+        )
+    if k == "CONCAT":
+        preds = tf._net.preds.get(L.id, [])
+        parts = [tf._sparse_hz_cache.get(pid) for pid in preds]
+        return (
+            (True, sparse_hz_concat(parts), None)
+            if parts and all(p is not None for p in parts)
+            else (True, None, "missing_sparse_concat_input")
+        )
+    if k == "CONSTANT":
+        return True, sparse_hz_from_bounds(result.bounds, frame_id=hz.frame_id), None
+    if k in {"RELU", "LRELU", "SIGMOID", "TANH", "MAXPOOL2D"}:
+        return True, None, f"unsupported_sparse_nonlinear:{k}"
+    return False, None, None
 
 
 # ============================================================================

@@ -22,10 +22,13 @@ except ImportError:
 
 try:
     import numpy as np
+    import scipy.sparse as sp
     from scipy.optimize import linprog
 
     _HAS_SCIPY = True
 except ImportError:
+    np = None
+    sp = None
     _HAS_SCIPY = False
 
 
@@ -48,6 +51,84 @@ class HZono:
     eq_mask: Optional[torch.Tensor] = None
     col_ids: Optional[torch.Tensor] = None
     bcol_ids: Optional[torch.Tensor] = None
+
+
+@dataclass
+class SparseHZono:
+    c: "np.ndarray"
+    Gc: "sp.csr_matrix"
+    Gb: "sp.csr_matrix"
+    Ac: "sp.csr_matrix"
+    Ab: "sp.csr_matrix"
+    b: "np.ndarray"
+    Auc: Optional["sp.csr_matrix"] = None
+    Aub: Optional["sp.csr_matrix"] = None
+    ub: Optional["np.ndarray"] = None
+    frame_id: Optional[int] = None
+
+    def __post_init__(self) -> None:
+        _require_sparse()
+        self.c = np.asarray(self.c, dtype=np.float64).reshape(-1)
+        self.b = np.asarray(self.b, dtype=np.float64).reshape(-1)
+        self.Gc = _as_csr(self.Gc)
+        self.Gb = _as_csr(self.Gb)
+        self.Ac = _as_csr(self.Ac)
+        self.Ab = _as_csr(self.Ab)
+
+        n_out = int(self.c.size)
+        n_cont = int(self.Gc.shape[1])
+        n_bin = int(self.Gb.shape[1])
+        if self.Gc.shape[0] != n_out or self.Gb.shape[0] != n_out:
+            raise ValueError(
+                "SparseHZono value shape mismatch: "
+                f"c={n_out}, Gc={self.Gc.shape}, Gb={self.Gb.shape}"
+            )
+        if self.Ac.shape[1] != n_cont or self.Ab.shape[1] != n_bin:
+            raise ValueError(
+                "SparseHZono equality column mismatch: "
+                f"Gc_cols={n_cont}, Gb_cols={n_bin}, Ac={self.Ac.shape}, Ab={self.Ab.shape}"
+            )
+        if self.Ac.shape[0] != self.Ab.shape[0] or self.Ac.shape[0] != self.b.size:
+            raise ValueError(
+                "SparseHZono equality row mismatch: "
+                f"Ac={self.Ac.shape}, Ab={self.Ab.shape}, b={self.b.size}"
+            )
+
+        if self.Auc is None and self.Aub is None and self.ub is None:
+            self.Auc = sparse_empty(0, n_cont)
+            self.Aub = sparse_empty(0, n_bin)
+            self.ub = np.zeros(0, dtype=np.float64)
+        elif self.Auc is None or self.Aub is None or self.ub is None:
+            raise ValueError("upper constraints require Auc, Aub, and ub together")
+        else:
+            self.Auc = _as_csr(self.Auc, shape=(self.Auc.shape[0], n_cont))
+            self.Aub = _as_csr(self.Aub, shape=(self.Aub.shape[0], n_bin))
+            self.ub = np.asarray(self.ub, dtype=np.float64).reshape(-1)
+            if self.Auc.shape[0] != self.Aub.shape[0] or self.Auc.shape[0] != self.ub.size:
+                raise ValueError(
+                    "SparseHZono upper row mismatch: "
+                    f"Auc={self.Auc.shape}, Aub={self.Aub.shape}, ub={self.ub.size}"
+                )
+
+    @property
+    def n_out(self) -> int:
+        return int(self.c.size)
+
+    @property
+    def n_cont(self) -> int:
+        return int(self.Gc.shape[1])
+
+    @property
+    def n_bin(self) -> int:
+        return int(self.Gb.shape[1])
+
+    @property
+    def n_eq(self) -> int:
+        return int(self.Ac.shape[0])
+
+    @property
+    def n_ineq(self) -> int:
+        return int(self.Auc.shape[0])
 
 
 _NEXT_COL_ID = [-1]
@@ -211,6 +292,276 @@ def hz_from_bounds(
     elif track_ids:
         hz.full_col_ids = full_ids
     return hz
+
+
+def _require_sparse() -> None:
+    if not _HAS_SCIPY:
+        raise RuntimeError("Sparse HybridZ requires scipy")
+
+
+def _as_csr(mat, *, shape=None):
+    _require_sparse()
+    out = mat if sp.issparse(mat) else sp.csr_matrix(mat, dtype=np.float64)
+    out = out.tocsr().astype(np.float64)
+    if shape is not None and out.shape != shape:
+        if out.shape[0] != shape[0] or out.shape[1] > shape[1]:
+            raise ValueError(f"CSR shape mismatch: {out.shape} vs {shape}")
+        out = sp.hstack(
+            [out, sp.csr_matrix((out.shape[0], shape[1] - out.shape[1]))],
+            format="csr",
+        )
+    out.eliminate_zeros()
+    return out
+
+
+def _torch_to_csr(t: torch.Tensor):
+    arr = t.detach().cpu().numpy().astype(np.float64)
+    return sp.csr_matrix(arr)
+
+
+def sparse_empty(rows: int, cols: int):
+    _require_sparse()
+    return sp.csr_matrix((int(rows), int(cols)), dtype=np.float64)
+
+
+def sparse_pad_cols(mat, cols: int):
+    mat = _as_csr(mat)
+    cols = int(cols)
+    if mat.shape[1] == cols:
+        return mat
+    if mat.shape[1] > cols:
+        raise ValueError(f"cannot shrink sparse matrix from {mat.shape[1]} to {cols}")
+    return sp.hstack([mat, sparse_empty(mat.shape[0], cols - mat.shape[1])], format="csr")
+
+
+def sparse_hz_pad_frame(hz: SparseHZono, n_cont: int, n_bin: int) -> SparseHZono:
+    return SparseHZono(
+        c=hz.c,
+        Gc=sparse_pad_cols(hz.Gc, n_cont),
+        Gb=sparse_pad_cols(hz.Gb, n_bin),
+        Ac=sparse_pad_cols(hz.Ac, n_cont),
+        Ab=sparse_pad_cols(hz.Ab, n_bin),
+        b=hz.b,
+        Auc=sparse_pad_cols(hz.Auc, n_cont),
+        Aub=sparse_pad_cols(hz.Aub, n_bin),
+        ub=hz.ub,
+        frame_id=hz.frame_id,
+    )
+
+
+def sparse_hz_from_bounds(
+    bounds: Bounds,
+    *,
+    frame_id: Optional[int] = None,
+    drop_zero_radius: bool = True,
+) -> SparseHZono:
+    _require_sparse()
+    lb = bounds.lb.detach().cpu().numpy().astype(np.float64).reshape(-1)
+    ub = bounds.ub.detach().cpu().numpy().astype(np.float64).reshape(-1)
+    center = (lb + ub) * 0.5
+    rad = (ub - lb) * 0.5
+    rows = (
+        np.nonzero(np.abs(rad) > 1e-12)[0].astype(np.int32)
+        if drop_zero_radius
+        else np.arange(rad.size, dtype=np.int32)
+    )
+    cols = np.arange(rows.size, dtype=np.int32)
+    Gc = sp.csr_matrix(
+        (rad[rows], (rows, cols)),
+        shape=(rad.size, rows.size),
+        dtype=np.float64,
+    )
+    return SparseHZono(
+        c=center,
+        Gc=Gc,
+        Gb=sparse_empty(rad.size, 0),
+        Ac=sparse_empty(0, rows.size),
+        Ab=sparse_empty(0, 0),
+        b=np.zeros(0, dtype=np.float64),
+        Auc=sparse_empty(0, rows.size),
+        Aub=sparse_empty(0, 0),
+        ub=np.zeros(0, dtype=np.float64),
+        frame_id=frame_id,
+    )
+
+
+def sparse_hz_linear(hz: SparseHZono, W, bias=None) -> SparseHZono:
+    Wsp = _as_csr(W)
+    if Wsp.shape[1] != hz.n_out:
+        raise ValueError(f"linear shape mismatch: W={Wsp.shape}, n_out={hz.n_out}")
+    b = (
+        np.zeros(Wsp.shape[0], dtype=np.float64)
+        if bias is None
+        else np.asarray(bias, dtype=np.float64).reshape(-1)
+    )
+    if b.size != Wsp.shape[0]:
+        raise ValueError(f"bias shape mismatch: bias={b.size}, rows={Wsp.shape[0]}")
+    Gc = (Wsp @ hz.Gc).tocsr()
+    Gb = (Wsp @ hz.Gb).tocsr() if hz.n_bin else sparse_empty(Wsp.shape[0], 0)
+    Gc.eliminate_zeros()
+    Gb.eliminate_zeros()
+    return SparseHZono(
+        c=np.asarray(Wsp @ hz.c).reshape(-1) + b,
+        Gc=Gc,
+        Gb=Gb,
+        Ac=hz.Ac,
+        Ab=hz.Ab,
+        b=hz.b,
+        Auc=hz.Auc,
+        Aub=hz.Aub,
+        ub=hz.ub,
+        frame_id=hz.frame_id,
+    )
+
+
+def sparse_hz_add_const(hz: SparseHZono, bias) -> SparseHZono:
+    b = np.asarray(
+        bias.detach().cpu().double().numpy() if isinstance(bias, torch.Tensor) else bias,
+        dtype=np.float64,
+    ).reshape(-1)
+    if b.size == 1:
+        b = np.full(hz.n_out, float(b[0]), dtype=np.float64)
+    if b.size != hz.n_out:
+        raise ValueError(f"bias shape mismatch: bias={b.size}, n_out={hz.n_out}")
+    return SparseHZono(
+        c=hz.c + b,
+        Gc=hz.Gc,
+        Gb=hz.Gb,
+        Ac=hz.Ac,
+        Ab=hz.Ab,
+        b=hz.b,
+        Auc=hz.Auc,
+        Aub=hz.Aub,
+        ub=hz.ub,
+        frame_id=hz.frame_id,
+    )
+
+
+def sparse_hz_scale(hz: SparseHZono, scale) -> SparseHZono:
+    s = np.asarray(
+        scale.detach().cpu().double().numpy() if isinstance(scale, torch.Tensor) else scale,
+        dtype=np.float64,
+    ).reshape(-1)
+    if s.size == 1:
+        s = np.full(hz.n_out, float(s[0]), dtype=np.float64)
+    if s.size != hz.n_out:
+        raise ValueError(f"scale shape mismatch: scale={s.size}, n_out={hz.n_out}")
+    D = sp.diags(s, offsets=0, shape=(hz.n_out, hz.n_out), format="csr")
+    return sparse_hz_linear(hz, D, None)
+
+
+def sparse_hz_gather_rows(hz: SparseHZono, rows) -> SparseHZono:
+    idx = np.asarray(rows, dtype=np.int64).reshape(-1)
+    return SparseHZono(
+        c=hz.c[idx],
+        Gc=hz.Gc[idx].tocsr(),
+        Gb=hz.Gb[idx].tocsr() if hz.n_bin else sparse_empty(idx.size, 0),
+        Ac=hz.Ac,
+        Ab=hz.Ab,
+        b=hz.b,
+        Auc=hz.Auc,
+        Aub=hz.Aub,
+        ub=hz.ub,
+        frame_id=hz.frame_id,
+    )
+
+
+def sparse_hz_reduce_sum_rows(hz: SparseHZono, rows, n_out: int) -> SparseHZono:
+    rows = np.asarray(rows, dtype=np.int64).reshape(-1)
+    if rows.size != hz.n_out:
+        raise ValueError(f"reduce rows mismatch: rows={rows.size}, n_out={hz.n_out}")
+    src = np.arange(rows.size, dtype=np.int64)
+    R = sp.csr_matrix(
+        (np.ones(rows.size, dtype=np.float64), (rows, src)),
+        shape=(int(n_out), hz.n_out),
+    )
+    return sparse_hz_linear(hz, R, None)
+
+
+def _sparse_same_frame(parts) -> bool:
+    frames = [p.frame_id for p in parts]
+    return all(f is not None for f in frames) and all(f == frames[0] for f in frames)
+
+
+def _sparse_vstack(mats, cols: int):
+    mats = [sparse_pad_cols(m, cols) for m in mats if m.shape[0]]
+    return sp.vstack(mats, format="csr") if mats else sparse_empty(0, cols)
+
+
+def _sparse_concat_arrays(arrs):
+    arrs = [np.asarray(a, dtype=np.float64).reshape(-1) for a in arrs if np.asarray(a).size]
+    return np.concatenate(arrs) if arrs else np.zeros(0, dtype=np.float64)
+
+
+def sparse_hz_concat(parts) -> SparseHZono:
+    parts = list(parts)
+    if not parts:
+        raise ValueError("sparse_hz_concat requires at least one part")
+    if not _sparse_same_frame(parts):
+        raise ValueError("sparse concat requires one shared frame")
+    n_cont = max(p.n_cont for p in parts)
+    n_bin = max(p.n_bin for p in parts)
+    padded = [sparse_hz_pad_frame(p, n_cont, n_bin) for p in parts]
+    return SparseHZono(
+        c=np.concatenate([p.c for p in padded]),
+        Gc=sp.vstack([p.Gc for p in padded], format="csr"),
+        Gb=sp.vstack([p.Gb for p in padded], format="csr"),
+        Ac=_sparse_vstack([p.Ac for p in padded], n_cont),
+        Ab=_sparse_vstack([p.Ab for p in padded], n_bin),
+        b=_sparse_concat_arrays([p.b for p in padded]),
+        Auc=_sparse_vstack([p.Auc for p in padded], n_cont),
+        Aub=_sparse_vstack([p.Aub for p in padded], n_bin),
+        ub=_sparse_concat_arrays([p.ub for p in padded]),
+        frame_id=padded[0].frame_id,
+    )
+
+
+def sparse_hz_add_same_frame(x: SparseHZono, y: SparseHZono) -> SparseHZono:
+    if not _sparse_same_frame([x, y]):
+        raise ValueError("sparse add requires one shared frame")
+    if x.n_out != y.n_out:
+        raise ValueError(f"sparse add shape mismatch: {x.n_out} vs {y.n_out}")
+    n_cont = max(x.n_cont, y.n_cont)
+    n_bin = max(x.n_bin, y.n_bin)
+    xp = sparse_hz_pad_frame(x, n_cont, n_bin)
+    yp = sparse_hz_pad_frame(y, n_cont, n_bin)
+    Gc = (xp.Gc + yp.Gc).tocsr()
+    Gb = (xp.Gb + yp.Gb).tocsr()
+    Gc.eliminate_zeros()
+    Gb.eliminate_zeros()
+    return SparseHZono(
+        c=xp.c + yp.c,
+        Gc=Gc,
+        Gb=Gb,
+        Ac=_sparse_vstack([xp.Ac, yp.Ac], n_cont),
+        Ab=_sparse_vstack([xp.Ab, yp.Ab], n_bin),
+        b=_sparse_concat_arrays([xp.b, yp.b]),
+        Auc=_sparse_vstack([xp.Auc, yp.Auc], n_cont),
+        Aub=_sparse_vstack([xp.Aub, yp.Aub], n_bin),
+        ub=_sparse_concat_arrays([xp.ub, yp.ub]),
+        frame_id=xp.frame_id,
+    )
+
+
+def sparse_hz_sub_same_frame(x: SparseHZono, y: SparseHZono) -> SparseHZono:
+    return sparse_hz_add_same_frame(x, sparse_hz_scale(y, -1.0))
+
+
+def sparse_hz_is_point(hz: SparseHZono, tol: float = 1e-12) -> bool:
+    return (
+        (hz.Gc.nnz == 0 or bool(np.all(np.abs(hz.Gc.data) <= tol)))
+        and (hz.Gb.nnz == 0 or bool(np.all(np.abs(hz.Gb.data) <= tol)))
+    )
+
+
+def sparse_hz_fast_bounds(hz: SparseHZono) -> Bounds:
+    abs_gc = np.asarray(np.abs(hz.Gc).sum(axis=1)).reshape(-1)
+    abs_gb = np.asarray(np.abs(hz.Gb).sum(axis=1)).reshape(-1) if hz.n_bin else 0.0
+    rad = abs_gc + abs_gb
+    return Bounds(
+        lb=torch.from_numpy(hz.c - rad).reshape(1, -1),
+        ub=torch.from_numpy(hz.c + rad).reshape(1, -1),
+    )
 
 
 def _clone_ids(t: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
