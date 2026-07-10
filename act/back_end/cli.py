@@ -196,7 +196,11 @@ def _verify_one_net(
     """
     from act.back_end.bab.bab import clear_violation_check_module_cache
     from act.back_end.serialization.serialization import load_net_from_file
-    from act.back_end.transfer_functions import ensure_active_tf, is_dual_solver_active
+    from act.back_end.transfer_functions import (
+        ensure_active_tf,
+        is_dual_solver_active,
+        is_hybridz_solver_active,
+    )
     from act.back_end.verifier import verify_once, verify_lp_batched
     from act.util.stats import VerifyStatus
 
@@ -208,6 +212,7 @@ def _verify_one_net(
 
         active_tf = ensure_active_tf("interval")
         is_dual = is_dual_solver_active()
+        is_hybridz = is_hybridz_solver_active()
 
         # Pre-filter helper: DualTF is the registry holder for dual backward
         # kernels; under --solver dual the kind-support check must go through
@@ -242,17 +247,16 @@ def _verify_one_net(
         if blocking:
             return [], _SkipUnsupported(tf_name=authority_name, kinds=blocking), n_layers
 
-        results: List[Any] = list(verify_once(net=net))
+        hz_timeout = None
+        if is_hybridz:
+            hz_timeout = backend_cfg.hybridz.timeout or backend_cfg.timeout
+        results: List[Any] = list(verify_once(net=net, timelimit=hz_timeout))
 
         any_unknown = any(r.status == VerifyStatus.UNKNOWN for r in results)
 
-        # SOUNDNESS-CRITICAL: under --solver dual, verify_once already ran
-        # DualSolver.evaluate_spec (linear-relaxation dual backward) — Tier-2 LP and Tier-3 BaB
-        # would build under-constrained LPs (DualSolver does not produce LP-feed
-        # ConSet entries; the forward analyze() pipeline is bypassed) and emit
-        # spurious FALSIFIED. Do not remove this gate without first switching
-        # back to an LP-feeding forward TF (interval / hybridz).
-        if any_unknown and backend_cfg.lp_enabled and not is_dual:
+        # Dual does not produce LP-feed constraints; HybridZ UNKNOWN is the
+        # final result of the selected pure solver and must not be rescued.
+        if any_unknown and backend_cfg.lp_enabled and not (is_dual or is_hybridz):
             try:
                 lp_results = verify_lp_batched(
                     net,
@@ -275,7 +279,7 @@ def _verify_one_net(
                 if "export_to_batch_problem" not in str(e):
                     raise
 
-        if any_unknown and backend_cfg.bab_enabled:
+        if any_unknown and backend_cfg.bab_enabled and not is_hybridz:
             # verify_bab_batched operates on a single-instance (B=1) net and
             # returns one VerifyResult. For multi-sample nets we slice per-lane
             # and dispatch one BaB call per still-UNKNOWN sample.

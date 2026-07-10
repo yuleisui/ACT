@@ -1,29 +1,27 @@
 from __future__ import annotations
 
 import logging
+import time
 
 import torch
 from dataclasses import dataclass
 from typing import Optional, TYPE_CHECKING
 from act.back_end.core import Bounds
 from act.back_end.solver.solver_base import Solver, SolverCaps
+from act.front_end.specs import OutKind
+from act.util.stats import VerifyResult, VerifyStatus
 
 if TYPE_CHECKING:
     from act.back_end.solver.solver_base import BatchLPProblem, BatchLPSolution
+    from act.front_end.specs import OutputSpec
 
 logger = logging.getLogger(__name__)
 
 try:
-    from act.back_end.solver.solver_gurobi import GurobiSolver, is_gurobi_available
-
-    _HAS_GUROBI = is_gurobi_available()
-except ImportError:
-    _HAS_GUROBI = False
-
-try:
     import numpy as np
     import scipy.sparse as sp
-    from scipy.optimize import linprog
+    from scipy.optimize import Bounds as SciPyBounds
+    from scipy.optimize import LinearConstraint, milp
 
     _HAS_SCIPY = True
 except ImportError:
@@ -842,79 +840,39 @@ def _hz_bounds_unconstrained(hz: HZono) -> Bounds:
     return Bounds(lb=(hz.c - rad).reshape(1, -1), ub=(hz.c + rad).reshape(1, -1))
 
 
-def _hz_compute_bounds_gurobi(hz: HZono) -> Bounds:
-    return GurobiSolver.compute_bounds(hz)
-
-
-def _hz_has_inequality_constraints(hz: HZono) -> bool:
-    return hz.eq_mask is not None and not bool(torch.all(hz.eq_mask).item())
-
-
-def _hz_constraint_split(hz: HZono):
-    Ac_np = hz.Ac.detach().cpu().numpy().astype("float64")
-    Ab_np = hz.Ab.detach().cpu().numpy().astype("float64")
-    b_np = hz.b.detach().cpu().numpy().astype("float64").reshape(-1)
-    if Ac_np.shape[0] == 0:
-        return None, None, None, None
-
-    A = np.concatenate([Ac_np, Ab_np], axis=1)
-    if hz.eq_mask is None:
-        return A, b_np, None, None
-
-    mask = hz.eq_mask.detach().cpu().numpy().astype(bool).reshape(-1)
-    if mask.shape[0] != A.shape[0]:
-        raise ValueError("HZ eq_mask length does not match constraint rows")
-
-    A_eq = A[mask] if mask.any() else None
-    b_eq = b_np[mask] if mask.any() else None
-    ineq = ~mask
-    A_ub = A[ineq] if ineq.any() else None
-    b_ub = b_np[ineq] if ineq.any() else None
-    return A_eq, b_eq, A_ub, b_ub
-
-
 def _hz_compute_bounds_scipy(hz: HZono) -> Bounds:
-    n = int(hz.c.shape[0])
-    p = int(hz.Gc.shape[1])
-    q = int(hz.Gb.shape[1])
-    c_np = hz.c.detach().cpu().numpy().astype("float64").reshape(-1)
-    Gc_np = hz.Gc.detach().cpu().numpy().astype("float64")
-    Gb_np = hz.Gb.detach().cpu().numpy().astype("float64")
-    A_eq, b_eq, A_ub, b_ub = _hz_constraint_split(hz)
-    var_bounds = [(-1.0, 1.0)] * (p + q)
-
-    LB = np.empty((n,), dtype=np.float64)
-    UB = np.empty((n,), dtype=np.float64)
-    for i in range(n):
-        obj = np.concatenate([Gc_np[i], Gb_np[i]], axis=0)
-        res_min = linprog(
-            c=obj,
-            A_eq=A_eq,
-            b_eq=b_eq,
-            A_ub=A_ub,
-            b_ub=b_ub,
-            bounds=var_bounds,
-            method="highs",
+    model = _lower_hz_milp(hz)
+    if model.n_var == 0:
+        LB = UB = model.value_center.copy()
+    else:
+        constraints = (
+            LinearConstraint(model.A, model.row_lb, model.row_ub)
+            if model.A.shape[0] else None
         )
-        if not res_min.success:
-            raise RuntimeError(
-                f"[linprog] MIN infeasible at dim {i}: {res_min.message}"
+        bounds = SciPyBounds(model.var_lb, model.var_ub)
+        LB = np.empty(model.value_center.size, dtype=np.float64)
+        UB = np.empty(model.value_center.size, dtype=np.float64)
+        for i in range(model.value_center.size):
+            obj = model.value_matrix.getrow(i).toarray().reshape(-1)
+            options = {"presolve": True, "mip_rel_gap": 0.0}
+            res_min = milp(
+                obj,
+                integrality=model.integrality,
+                bounds=bounds,
+                constraints=constraints,
+                options=options,
             )
-        LB[i] = c_np[i] + res_min.fun
-        res_max = linprog(
-            c=-obj,
-            A_eq=A_eq,
-            b_eq=b_eq,
-            A_ub=A_ub,
-            b_ub=b_ub,
-            bounds=var_bounds,
-            method="highs",
-        )
-        if not res_max.success:
-            raise RuntimeError(
-                f"[linprog] MAX infeasible at dim {i}: {res_max.message}"
+            res_max = milp(
+                -obj,
+                integrality=model.integrality,
+                bounds=bounds,
+                constraints=constraints,
+                options=options,
             )
-        UB[i] = c_np[i] - res_max.fun
+            if not res_min.success or not res_max.success:
+                raise RuntimeError(f"HybridZ bound MILP failed at output {i}")
+            LB[i] = model.value_center[i] + res_min.fun
+            UB[i] = model.value_center[i] - res_max.fun
 
     dtype, device = hz.c.dtype, hz.c.device
     return Bounds(
@@ -942,12 +900,6 @@ def hz_compute_bounds(hz: HZono, *, exact: bool = False) -> Bounds:
         return _hz_bounds_unconstrained(hz)
     if not exact:
         return _hz_bounds_unconstrained(hz)
-    if _HAS_GUROBI and not _hz_has_inequality_constraints(hz):
-        try:
-            return _hz_compute_bounds_gurobi(hz)
-        except Exception as e:
-            # Intentional: Gurobi failures (license/timeout/numerical) fall back to scipy/unconstrained.
-            logger.debug("suppressed: %s", e)
     if _HAS_SCIPY:
         try:
             return _hz_compute_bounds_scipy(hz)
@@ -962,15 +914,191 @@ def hz_compute_bounds(hz: HZono, *, exact: bool = False) -> Bounds:
 # ============================================================================
 
 
+@dataclass(frozen=True)
+class _HZMILP:
+    value_center: "np.ndarray"
+    value_matrix: "sp.csr_matrix"
+    A: "sp.csr_matrix"
+    row_lb: "np.ndarray"
+    row_ub: "np.ndarray"
+    var_lb: "np.ndarray"
+    var_ub: "np.ndarray"
+    integrality: "np.ndarray"
+    n_cont: int
+    n_bin: int
+
+    @property
+    def n_var(self) -> int:
+        return self.n_cont + self.n_bin
+
+
+@dataclass(frozen=True)
+class _MILPResult:
+    status: str
+    x: Optional["np.ndarray"]
+    nodes: int = 0
+
+
+def _row_sum(mat) -> "np.ndarray":
+    return np.asarray(mat.sum(axis=1), dtype=np.float64).reshape(-1)
+
+
+def _lower_hz_milp(hz: "HZono | SparseHZono") -> _HZMILP:
+    _require_sparse()
+    if isinstance(hz, SparseHZono):
+        c, Gc, Gb = hz.c, hz.Gc, hz.Gb
+        n_cont, n_bin = hz.n_cont, hz.n_bin
+        eq_Ac, eq_Ab, eq_b = hz.Ac, hz.Ab, hz.b
+        le_Ac, le_Ab, le_b = hz.Auc, hz.Aub, hz.ub
+    elif isinstance(hz, HZono):
+        c = hz.c.detach().cpu().double().numpy().reshape(-1)
+        Gc, Gb = _torch_to_csr(hz.Gc), _torch_to_csr(hz.Gb)
+        n_cont, n_bin = Gc.shape[1], Gb.shape[1]
+        Ac, Ab = _torch_to_csr(hz.Ac), _torch_to_csr(hz.Ab)
+        b = hz.b.detach().cpu().double().numpy().reshape(-1)
+        mask = (
+            np.ones(Ac.shape[0], dtype=bool)
+            if hz.eq_mask is None
+            else hz.eq_mask.detach().cpu().numpy().astype(bool).reshape(-1)
+        )
+        if mask.size != Ac.shape[0]:
+            raise ValueError("HZ eq_mask length does not match constraint rows")
+        eq_Ac, eq_Ab, eq_b = Ac[mask], Ab[mask], b[mask]
+        le_Ac, le_Ab, le_b = Ac[~mask], Ab[~mask], b[~mask]
+    else:
+        raise TypeError(f"unsupported HZ representation: {type(hz).__name__}")
+
+    value_center = np.asarray(c, dtype=np.float64).reshape(-1) - _row_sum(Gb)
+    value_matrix = sp.hstack([Gc, 2.0 * Gb], format="csr")
+    blocks, lowers, uppers = [], [], []
+    if eq_Ac.shape[0]:
+        blocks.append(sp.hstack([eq_Ac, 2.0 * eq_Ab], format="csr"))
+        rhs = np.asarray(eq_b, dtype=np.float64).reshape(-1) + _row_sum(eq_Ab)
+        lowers.append(rhs)
+        uppers.append(rhs)
+    if le_Ac.shape[0]:
+        blocks.append(sp.hstack([le_Ac, 2.0 * le_Ab], format="csr"))
+        rhs = np.asarray(le_b, dtype=np.float64).reshape(-1) + _row_sum(le_Ab)
+        lowers.append(np.full(rhs.size, -np.inf, dtype=np.float64))
+        uppers.append(rhs)
+    A = sp.vstack(blocks, format="csr") if blocks else sparse_empty(0, n_cont + n_bin)
+    row_lb = np.concatenate(lowers) if lowers else np.zeros(0, dtype=np.float64)
+    row_ub = np.concatenate(uppers) if uppers else np.zeros(0, dtype=np.float64)
+    return _HZMILP(
+        value_center=value_center,
+        value_matrix=value_matrix,
+        A=A,
+        row_lb=row_lb,
+        row_ub=row_ub,
+        var_lb=np.concatenate([
+            -np.ones(n_cont, dtype=np.float64),
+            np.zeros(n_bin, dtype=np.float64),
+        ]),
+        var_ub=np.ones(n_cont + n_bin, dtype=np.float64),
+        integrality=np.concatenate([
+            np.zeros(n_cont, dtype=np.int32),
+            np.ones(n_bin, dtype=np.int32),
+        ]),
+        n_cont=n_cont,
+        n_bin=n_bin,
+    )
+
+
+def _combined_constraints(model: _HZMILP, extra_A, extra_lb, extra_ub):
+    if extra_A is None or extra_A.shape[0] == 0:
+        return model.A, model.row_lb, model.row_ub
+    A = sp.vstack([model.A, extra_A], format="csr")
+    return (
+        A,
+        np.concatenate([model.row_lb, np.asarray(extra_lb, dtype=np.float64)]),
+        np.concatenate([model.row_ub, np.asarray(extra_ub, dtype=np.float64)]),
+    )
+
+
+def _valid_milp_point(
+    model: _HZMILP,
+    x: "np.ndarray",
+    A,
+    row_lb,
+    row_ub,
+    tol: float,
+) -> bool:
+    x = np.asarray(x, dtype=np.float64).reshape(-1)
+    if x.size != model.n_var or not np.all(np.isfinite(x)):
+        return False
+    if np.any(x < model.var_lb - tol) or np.any(x > model.var_ub + tol):
+        return False
+    if model.n_bin:
+        z = x[model.n_cont:]
+        if np.any(np.abs(z - np.rint(z)) > tol):
+            return False
+    if A.shape[0]:
+        values = np.asarray(A @ x, dtype=np.float64).reshape(-1)
+        finite_lb = np.isfinite(row_lb)
+        finite_ub = np.isfinite(row_ub)
+        if np.any(values[finite_lb] < row_lb[finite_lb] - tol):
+            return False
+        if np.any(values[finite_ub] > row_ub[finite_ub] + tol):
+            return False
+    return True
+
+
+def _solve_hz_feasibility(
+    model: _HZMILP,
+    deadline: float,
+    *,
+    extra_A=None,
+    extra_lb=None,
+    extra_ub=None,
+    feasibility_tol: float = 1e-7,
+) -> _MILPResult:
+    A, row_lb, row_ub = _combined_constraints(model, extra_A, extra_lb, extra_ub)
+    if model.n_var == 0:
+        x = np.zeros(0, dtype=np.float64)
+        status = "feasible" if _valid_milp_point(
+            model, x, A, row_lb, row_ub, feasibility_tol
+        ) else "infeasible"
+        return _MILPResult(status, x if status == "feasible" else None)
+    remaining = deadline - time.monotonic()
+    if remaining <= 0.0:
+        return _MILPResult("unknown", None)
+    constraints = (
+        LinearConstraint(A, row_lb, row_ub) if A.shape[0] else None
+    )
+    try:
+        result = milp(
+            c=np.zeros(model.n_var, dtype=np.float64),
+            integrality=model.integrality,
+            bounds=SciPyBounds(model.var_lb, model.var_ub),
+            constraints=constraints,
+            options={
+                "presolve": True,
+                "time_limit": max(1e-3, remaining),
+                "mip_rel_gap": 0.0,
+            },
+        )
+    except Exception as exc:
+        logger.debug("HybridZ MILP failed: %s", exc)
+        return _MILPResult("unknown", None)
+    nodes = int(getattr(result, "mip_node_count", 0) or 0)
+    x = getattr(result, "x", None)
+    if x is not None and _valid_milp_point(
+        model, x, A, row_lb, row_ub, feasibility_tol
+    ):
+        return _MILPResult("feasible", np.asarray(x, dtype=np.float64), nodes)
+    if int(getattr(result, "status", -1)) == 2:
+        return _MILPResult("infeasible", None, nodes)
+    return _MILPResult("unknown", None, nodes)
+
+
 class HZSolver(Solver):
-    """Hybrid Zonotope bounds solver.
+    """Open-source Hybrid Zonotope bounds and verdict solver."""
 
-    Precision hierarchy:
-      GurobiSolver (MILP, exact) > HZSolver (HZ, tight) > TorchLPSolver (box, fast)
-    """
-
-    def __init__(self):
+    def __init__(self, time_limit: float = 30.0, tolerance: float = 1e-7):
         self._last_bounds: Optional[Bounds] = None
+        self.time_limit = float(time_limit)
+        self.tolerance = float(tolerance)
+        self.last_stats: dict[str, object] = {}
 
     def capabilities(self) -> SolverCaps:
         return SolverCaps(supports_gpu=False, supports_csp=False, supports_hz=True)
@@ -979,6 +1107,232 @@ class HZSolver(Solver):
         self._last_bounds = hz_compute_bounds(hz, exact=exact)
         return self._last_bounds
 
+    def _unknown_results(self, batch_size: int, reason: str) -> list[VerifyResult]:
+        return [
+            VerifyResult(
+                VerifyStatus.UNKNOWN,
+                metadata={"lane": lane, "source": "hybridz", "reason": reason},
+            )
+            for lane in range(batch_size)
+        ]
+
+    @staticmethod
+    def _recover_input(
+        model: _HZMILP,
+        x: "np.ndarray",
+        input_hz: Optional[SparseHZono],
+        input_shape: tuple[int, ...],
+        lane: int,
+    ) -> Optional[torch.Tensor]:
+        if input_hz is None or input_hz.n_out != int(np.prod(input_shape)):
+            return None
+        if input_hz.n_cont > model.n_cont or input_hz.n_bin > model.n_bin:
+            return None
+        xi_c = x[:model.n_cont][:input_hz.n_cont]
+        z = x[model.n_cont:model.n_cont + model.n_bin][:input_hz.n_bin]
+        xi_b = 2.0 * z - 1.0
+        value = input_hz.c.copy()
+        if input_hz.n_cont:
+            value += np.asarray(input_hz.Gc @ xi_c).reshape(-1)
+        if input_hz.n_bin:
+            value += np.asarray(input_hz.Gb @ xi_b).reshape(-1)
+        full = torch.from_numpy(value.reshape(input_shape).copy())
+        return full[lane].clone()
+
+    def evaluate_spec(
+        self,
+        output_hz: "HZono | SparseHZono | None",
+        out_spec: "OutputSpec",
+        *,
+        batch_size: int,
+        n_out: int,
+        input_hz: Optional[SparseHZono] = None,
+        input_shape: Optional[tuple[int, ...]] = None,
+        timelimit: Optional[float] = None,
+    ) -> list[VerifyResult]:
+        """Decide an output specification over a propagated Hybrid Zonotope."""
+        B = int(batch_size)
+        if output_hz is None:
+            return self._unknown_results(B, "missing_hz_state")
+        if not _HAS_SCIPY:
+            return self._unknown_results(B, "scipy_unavailable")
+        try:
+            model = _lower_hz_milp(output_hz)
+        except Exception as exc:
+            return self._unknown_results(B, f"lowering_failed:{type(exc).__name__}")
+        if model.value_center.size != B * int(n_out):
+            return self._unknown_results(B, "output_shape_mismatch")
+
+        encoded = out_spec.encode_linear(
+            B=B,
+            n_out=int(n_out),
+            device=torch.device("cpu"),
+            dtype=torch.float64,
+        )
+        C = encoded["C"].detach().cpu().double().numpy()
+        thresholds = encoded["thresholds"].detach().cpu().double().numpy()
+        M = int(encoded["M"])
+        is_unsafe_linear = encoded["kind"] == OutKind.UNSAFE_LINEAR
+        started = time.monotonic()
+        deadline = started + float(
+            self.time_limit if timelimit is None else timelimit
+        )
+        solves = 0
+        nodes = 0
+
+        def solve(extra_A=None, extra_lb=None, extra_ub=None) -> _MILPResult:
+            nonlocal solves, nodes
+            result = _solve_hz_feasibility(
+                model,
+                deadline,
+                extra_A=extra_A,
+                extra_lb=extra_lb,
+                extra_ub=extra_ub,
+                feasibility_tol=max(self.tolerance, 1e-7),
+            )
+            solves += 1
+            nodes += result.nodes
+            return result
+
+        base = solve()
+        if base.status != "feasible":
+            reason = "empty_hz" if base.status == "infeasible" else "base_unknown"
+            return self._unknown_results(B, reason)
+
+        exact_witness = (
+            isinstance(output_hz, SparseHZono)
+            and input_hz is not None
+            and output_hz.frame_id is not None
+            and output_hz.frame_id == input_hz.frame_id
+            and input_shape is not None
+        )
+        representation = "sparse" if isinstance(output_hz, SparseHZono) else "dense"
+        results: list[VerifyResult] = []
+
+        def metadata(lane: int, reason: str) -> dict[str, object]:
+            return {
+                "lane": lane,
+                "source": "hybridz_milp",
+                "representation": representation,
+                "reason": reason,
+            }
+
+        for lane in range(B):
+            start, stop = lane * n_out, (lane + 1) * n_out
+            C_lane = C[lane * M:(lane + 1) * M]
+            t_lane = thresholds[lane]
+            value_matrix = model.value_matrix[start:stop]
+            coeff = (sp.csr_matrix(C_lane) @ value_matrix).tocsr()
+            const = C_lane @ model.value_center[start:stop]
+            lane_result: Optional[VerifyResult] = None
+
+            if is_unsafe_linear:
+                expanded = solve(
+                    coeff,
+                    np.full(M, -np.inf, dtype=np.float64),
+                    t_lane + self.tolerance - const,
+                )
+                if expanded.status == "infeasible":
+                    lane_result = VerifyResult(
+                        VerifyStatus.CERTIFIED,
+                        metadata=metadata(lane, "expanded_unsafe_infeasible"),
+                    )
+                elif expanded.status == "feasible" and exact_witness:
+                    values = const + np.asarray(coeff @ expanded.x).reshape(-1)
+                    witness = expanded.x if np.all(values <= t_lane - self.tolerance) else None
+                    if witness is None:
+                        contracted = solve(
+                            coeff,
+                            np.full(M, -np.inf, dtype=np.float64),
+                            t_lane - self.tolerance - const,
+                        )
+                        if contracted.status == "feasible":
+                            values = const + np.asarray(coeff @ contracted.x).reshape(-1)
+                            if np.all(values <= t_lane - self.tolerance):
+                                witness = contracted.x
+                    if witness is not None:
+                        counterexample = self._recover_input(
+                            model, witness, input_hz, input_shape, lane
+                        )
+                        if counterexample is not None:
+                            lane_result = VerifyResult(
+                                VerifyStatus.FALSIFIED,
+                                counterexample=counterexample,
+                                metadata=metadata(lane, "exact_unsafe_witness"),
+                            )
+                if lane_result is None:
+                    lane_result = VerifyResult(
+                        VerifyStatus.UNKNOWN,
+                        metadata=metadata(lane, "unsafe_region_undecided"),
+                    )
+            else:
+                undecided = False
+                for row in range(M):
+                    expanded = solve(
+                        coeff[row],
+                        np.array([t_lane[row] - self.tolerance - const[row]]),
+                        np.array([np.inf]),
+                    )
+                    if expanded.status == "infeasible":
+                        continue
+                    if not exact_witness:
+                        undecided = True
+                        break
+                    witness = None
+                    if expanded.status == "feasible":
+                        value = const[row] + float((coeff[row] @ expanded.x).item())
+                        if value >= t_lane[row] + self.tolerance:
+                            witness = expanded.x
+                        else:
+                            contracted = solve(
+                                coeff[row],
+                                np.array([t_lane[row] + self.tolerance - const[row]]),
+                                np.array([np.inf]),
+                            )
+                            if contracted.status == "feasible":
+                                value = const[row] + float(
+                                    (coeff[row] @ contracted.x).item()
+                                )
+                                if value >= t_lane[row] + self.tolerance:
+                                    witness = contracted.x
+                    if witness is not None:
+                        counterexample = self._recover_input(
+                            model, witness, input_hz, input_shape, lane
+                        )
+                        if counterexample is not None:
+                            lane_result = VerifyResult(
+                                VerifyStatus.FALSIFIED,
+                                counterexample=counterexample,
+                                metadata=metadata(lane, "exact_violation_witness"),
+                            )
+                            break
+                    undecided = True
+                    if time.monotonic() >= deadline:
+                        break
+                if lane_result is None:
+                    lane_result = VerifyResult(
+                        VerifyStatus.UNKNOWN if undecided else VerifyStatus.CERTIFIED,
+                        metadata=metadata(
+                            lane,
+                            "violation_region_undecided" if undecided
+                            else "expanded_violations_infeasible",
+                        ),
+                    )
+            results.append(lane_result)
+
+        self.last_stats = {
+            "elapsed": time.monotonic() - started,
+            "solves": solves,
+            "nodes": nodes,
+            "n_cont": model.n_cont,
+            "n_bin": model.n_bin,
+            "n_rows": int(model.A.shape[0]),
+            "representation": representation,
+        }
+        for result in results:
+            result.metadata.update(self.last_stats)
+        return results
+
     def solve_batch(
         self,
         problem: "BatchLPProblem",
@@ -986,10 +1340,10 @@ class HZSolver(Solver):
     ) -> "BatchLPSolution":
         """HZSolver does not accept BatchLPProblem inputs.
 
-        HZSolver operates on HZono (hybrid zonotope) domains via
-        compute_bounds(), not on LP/CSP batch problems.  Callers that
+        HZSolver operates on HZono domains via compute_bounds() and
+        evaluate_spec(), not on LP/CSP batch problems. Callers that
         need batch LP solving should use TorchLPSolver or GurobiSolver.
         """
         raise NotImplementedError(
-            "HZSolver does not solve CSPs; use compute_bounds() for HZ domain analysis."
+            "HZSolver does not accept BatchLPProblem; use evaluate_spec()."
         )
