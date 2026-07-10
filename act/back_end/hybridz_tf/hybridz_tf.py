@@ -49,6 +49,8 @@ class HybridzTF(TransferFunction):
         self._sigmoid_K: int = 2
         self._var_id_stride: int = 1
         self._sparse_next_frame_id: int = 0
+        self._sparse_frame_widths: Dict[int, tuple[int, int]] = {}
+        self._sparse_relu_slots: Dict[tuple[int, int, int], tuple[int, int, int]] = {}
 
     @staticmethod
     def _net_var_id_stride(net: Net) -> int:
@@ -265,7 +267,42 @@ class HybridzTF(TransferFunction):
     def _sparse_from_bounds(self, bounds: Bounds) -> SparseHZono:
         frame_id = self._sparse_next_frame_id
         self._sparse_next_frame_id += 1
-        return sparse_hz_from_bounds(bounds, frame_id=frame_id)
+        hz = sparse_hz_from_bounds(bounds, frame_id=frame_id)
+        self._sparse_frame_widths[frame_id] = (hz.n_cont, hz.n_bin)
+        return hz
+
+    def _sparse_relu_slots_for(
+        self,
+        hz: SparseHZono,
+        layer_id: int,
+        neurons,
+    ) -> Optional[tuple[list[tuple[int, int, int]], int, int]]:
+        if hz.frame_id is None:
+            raise ValueError("sparse ReLU requires a generator frame")
+        frame_id = int(hz.frame_id)
+        n_cont, n_bin = self._sparse_frame_widths.get(
+            frame_id, (hz.n_cont, hz.n_bin)
+        )
+        n_cont = max(n_cont, hz.n_cont)
+        n_bin = max(n_bin, hz.n_bin)
+        missing = sum(
+            (frame_id, int(layer_id), int(neuron)) not in self._sparse_relu_slots
+            for neuron in neurons
+        )
+        if hz.n_out * (n_cont + n_bin + 3 * missing) > self._SPARSE_MAX_AFFINE_CELLS:
+            return None
+        slots = []
+        for neuron in neurons:
+            key = (frame_id, int(layer_id), int(neuron))
+            slot = self._sparse_relu_slots.get(key)
+            if slot is None:
+                slot = (n_cont, n_cont + 1, n_bin)
+                self._sparse_relu_slots[key] = slot
+                n_cont += 2
+                n_bin += 1
+            slots.append(slot)
+        self._sparse_frame_widths[frame_id] = (n_cont, n_bin)
+        return slots, n_cont, n_bin
 
     @staticmethod
     def _sparse_fact(fact: Fact, hz: SparseHZono) -> Fact:
@@ -353,6 +390,8 @@ class HybridzTF(TransferFunction):
             self._hz_cache.clear()
             self._sparse_hz_cache.clear()
             self._sparse_drop_reasons.clear()
+            self._sparse_frame_widths.clear()
+            self._sparse_relu_slots.clear()
             self._cache_net_id = net_id
             self._var_id_stride = self._net_var_id_stride(net)
             self._sparse_next_frame_id = 0

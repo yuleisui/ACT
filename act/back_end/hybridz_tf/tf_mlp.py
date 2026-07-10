@@ -35,10 +35,12 @@ from act.back_end.solver.solver_hz import (
     sparse_hz_add_const,
     sparse_hz_add_same_frame,
     sparse_hz_concat,
+    sparse_hz_fast_bounds,
     sparse_hz_from_bounds,
     sparse_hz_gather_rows,
     sparse_hz_is_point,
     sparse_hz_linear,
+    sparse_hz_pad_frame,
     sparse_hz_reduce_sum_rows,
     sparse_hz_scale,
     sparse_hz_sub_same_frame,
@@ -248,6 +250,152 @@ def _sparse_matmul_const(L, hz: SparseHZono, const, *, variable_is_left: bool):
     return _sparse_apply_per_batch_linear(hz, sp.csr_matrix(out.t().numpy()))
 
 
+def _sparse_triplets(parts, shape):
+    parts = [
+        (
+            np.asarray(rows, dtype=np.int64).reshape(-1),
+            np.asarray(cols, dtype=np.int64).reshape(-1),
+            np.asarray(data, dtype=np.float64).reshape(-1),
+        )
+        for rows, cols, data in parts
+        if np.asarray(data).size
+    ]
+    if not parts:
+        return sp.csr_matrix(shape, dtype=np.float64)
+    return sp.coo_matrix(
+        (
+            np.concatenate([part[2] for part in parts]),
+            (
+                np.concatenate([part[0] for part in parts]),
+                np.concatenate([part[1] for part in parts]),
+            ),
+        ),
+        shape=shape,
+        dtype=np.float64,
+    ).tocsr()
+
+
+def _sparse_relu_bounds(hz: SparseHZono, input_bounds: Bounds):
+    hb = sparse_hz_fast_bounds(hz)
+    fact_lb = _to_numpy(input_bounds.lb).reshape(-1)
+    fact_ub = _to_numpy(input_bounds.ub).reshape(-1)
+    hz_lb = _to_numpy(hb.lb).reshape(-1)
+    hz_ub = _to_numpy(hb.ub).reshape(-1)
+    if fact_lb.size != hz.n_out or hz_lb.size != hz.n_out:
+        raise ValueError("sparse ReLU bounds shape mismatch")
+    lb = np.maximum(fact_lb, hz_lb)
+    ub = np.minimum(fact_ub, hz_ub)
+    if np.any(lb > ub):
+        raise ValueError("sparse ReLU received inconsistent bounds")
+    return lb, ub
+
+
+def sparse_hz_apply_relu_exact(
+    hz: SparseHZono,
+    lb,
+    ub,
+    slots,
+    n_cont: int,
+    n_bin: int,
+) -> SparseHZono:
+    """Apply the compressed exact ReLU graph in one shared sparse frame."""
+    lb = np.asarray(lb, dtype=np.float64).reshape(-1)
+    ub = np.asarray(ub, dtype=np.float64).reshape(-1)
+    active_idx = np.flatnonzero(lb >= 0.0).astype(np.int64)
+    unstable_idx = np.flatnonzero((lb < 0.0) & (ub > 0.0)).astype(np.int64)
+    k = int(unstable_idx.size)
+    if len(slots) != k:
+        raise ValueError("sparse ReLU slot count mismatch")
+
+    padded = sparse_hz_pad_frame(hz, n_cont, n_bin)
+    out_c = np.zeros(hz.n_out, dtype=np.float64)
+    gc_parts = []
+    gb_parts = []
+    if active_idx.size:
+        out_c[active_idx] = hz.c[active_idx]
+        active_gc = padded.Gc[active_idx].tocoo()
+        gc_parts.append(
+            (active_idx[active_gc.row], active_gc.col, active_gc.data)
+        )
+        active_gb = padded.Gb[active_idx].tocoo()
+        gb_parts.append(
+            (active_idx[active_gb.row], active_gb.col, active_gb.data)
+        )
+
+    eq_c_parts = []
+    eq_b_parts = []
+    ineq_c_parts = []
+    ineq_b_parts = []
+    if k:
+        slot_array = np.asarray(slots, dtype=np.int64)
+        xi1_cols = slot_array[:, 0]
+        xi2_cols = slot_array[:, 1]
+        z_cols = slot_array[:, 2]
+        rows = np.arange(k, dtype=np.int64)
+        alpha = lb[unstable_idx]
+        beta = ub[unstable_idx]
+
+        out_c[unstable_idx] = beta / 2.0
+        gc_parts.append((unstable_idx, xi2_cols, -beta / 2.0))
+
+        eq_c_parts.extend(
+            [
+                (rows, xi1_cols, alpha / 2.0),
+                (rows, xi2_cols, -beta / 2.0),
+            ]
+        )
+        pre_gc = hz.Gc[unstable_idx].tocoo()
+        eq_c_parts.append((pre_gc.row, pre_gc.col, -pre_gc.data))
+        eq_b_parts.append((rows, z_cols, alpha / 2.0))
+        pre_gb = hz.Gb[unstable_idx].tocoo()
+        eq_b_parts.append((pre_gb.row, pre_gb.col, -pre_gb.data))
+
+        ineq_c_parts.extend(
+            [
+                (rows, xi1_cols, -np.ones(k, dtype=np.float64)),
+                (k + rows, xi2_cols, -np.ones(k, dtype=np.float64)),
+            ]
+        )
+        ineq_b_parts.extend(
+            [
+                (rows, z_cols, -np.ones(k, dtype=np.float64)),
+                (k + rows, z_cols, np.ones(k, dtype=np.float64)),
+            ]
+        )
+        eq_rhs = hz.c[unstable_idx] - beta / 2.0
+    else:
+        eq_rhs = np.zeros(0, dtype=np.float64)
+
+    out_Gc = _sparse_triplets(gc_parts, (hz.n_out, n_cont))
+    out_Gb = _sparse_triplets(gb_parts, (hz.n_out, n_bin))
+    eq_Ac = _sparse_triplets(eq_c_parts, (k, n_cont))
+    eq_Ab = _sparse_triplets(eq_b_parts, (k, n_bin))
+    ineq_Ac = _sparse_triplets(ineq_c_parts, (2 * k, n_cont))
+    ineq_Ab = _sparse_triplets(ineq_b_parts, (2 * k, n_bin))
+    return SparseHZono(
+        c=out_c,
+        Gc=out_Gc,
+        Gb=out_Gb,
+        Ac=sp.vstack([padded.Ac, eq_Ac], format="csr"),
+        Ab=sp.vstack([padded.Ab, eq_Ab], format="csr"),
+        b=np.concatenate([padded.b, eq_rhs]),
+        Auc=sp.vstack([padded.Auc, ineq_Ac], format="csr"),
+        Aub=sp.vstack([padded.Aub, ineq_Ab], format="csr"),
+        ub=np.concatenate([padded.ub, np.zeros(2 * k, dtype=np.float64)]),
+        frame_id=hz.frame_id,
+    )
+
+
+def _sparse_apply_relu(L, hz: SparseHZono, input_bounds: Bounds, tf):
+    lb, ub = _sparse_relu_bounds(hz, input_bounds)
+    unstable_idx = np.flatnonzero((lb < 0.0) & (ub > 0.0)).astype(np.int64)
+    reservation = tf._sparse_relu_slots_for(hz, L.id, unstable_idx)
+    if reservation is None:
+        return None, "sparse_relu_size_limit"
+    slots, n_cont, n_bin = reservation
+    return sparse_hz_apply_relu_exact(hz, lb, ub, slots, n_cont, n_bin), None
+
+
 def sparse_hz_apply_layer(L, hz: SparseHZono, input_bounds: Bounds, result: Fact, tf):
     if not _sparse_available():
         return True, None, "scipy_unavailable"
@@ -262,6 +410,9 @@ def sparse_hz_apply_layer(L, hz: SparseHZono, input_bounds: Bounds, result: Fact
     if k == "BN":
         out = sparse_hz_scale(hz, _sparse_param_vector(L.params["A"], hz.n_out))
         return True, sparse_hz_add_const(out, _sparse_param_vector(L.params["c"], hz.n_out)), None
+    if k == "RELU":
+        out, reason = _sparse_apply_relu(L, hz, input_bounds, tf)
+        return True, out, reason
     if k == "MUL":
         preds = tf._net.preds.get(L.id, [])
         other = tf._sparse_hz_cache.get(preds[1]) if len(preds) > 1 else None
@@ -346,7 +497,7 @@ def sparse_hz_apply_layer(L, hz: SparseHZono, input_bounds: Bounds, result: Fact
         )
     if k == "CONSTANT":
         return True, sparse_hz_from_bounds(result.bounds, frame_id=hz.frame_id), None
-    if k in {"RELU", "LRELU", "SIGMOID", "TANH", "MAXPOOL2D"}:
+    if k in {"LRELU", "SIGMOID", "TANH", "MAXPOOL2D"}:
         return True, None, f"unsupported_sparse_nonlinear:{k}"
     return False, None, None
 
