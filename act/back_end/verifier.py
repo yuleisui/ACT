@@ -60,7 +60,7 @@ if TYPE_CHECKING:
     from act.back_end.analyze import AnalyzeCache
 
 # Front-end enums (kinds)
-from act.front_end.specs import InKind, OutKind, normalize_position_mask
+from act.front_end.specs import InKind, OutKind, OutputSpec, normalize_position_mask
 
 # Verification types (canonical location: act/util/stats.py)
 from act.util.stats import VerifyStatus, VerifyResult
@@ -465,6 +465,7 @@ def verify_once(
     net,
     *,
     model_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
+    timelimit: Optional[float] = None,
 ) -> List[VerifyResult]:
     ...
 
@@ -475,6 +476,7 @@ def verify_once(
     *,
     model_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
     collect_facts: Literal[False],
+    timelimit: Optional[float] = None,
 ) -> List[VerifyResult]:
     ...
 
@@ -485,6 +487,7 @@ def verify_once(
     *,
     model_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
     collect_facts: Literal[True],
+    timelimit: Optional[float] = None,
 ) -> Tuple[List[VerifyResult], Optional[Dict[int, Any]]]:
     ...
 
@@ -495,6 +498,7 @@ def verify_once(
     *,
     model_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
     collect_facts: bool = False,
+    timelimit: Optional[float] = None,
 ) -> List[VerifyResult] | Tuple[List[VerifyResult], Optional[Dict[int, Any]]]:
     """Single-shot, pure-tensor batched verifier.
 
@@ -525,6 +529,7 @@ def verify_once(
             the fact map used by validation: analyze() ``after`` facts for the
             interval/hybridz path, or dual pre-activation forward bounds for the
             dual path.
+        timelimit: optional HybridZ verdict-solver wall-clock limit in seconds.
 
     Returns:
         ``List[VerifyResult]`` of length ``B`` (one per input lane), or
@@ -553,24 +558,22 @@ def verify_once(
         )
     B = seed_bounds.lb.shape[0]
 
-    # Dual standalone dispatch: when ``--solver dual`` is set (dual moved
-    # dual from the --tf-mode axis to the --solver axis), route through
-    # DualSolver.evaluate_spec instead of analyze() + interval cert. LP/Gurobi
-    # path remains authoritative for the LP-feeding TFs (interval/hybridz).
-    # ``ensure_active_tf`` still self-heals the TF default for interval/hybridz
-    # callers; ``is_dual_solver_active`` reads the orthogonal solver-mode global.
-    from act.back_end.transfer_functions import ensure_active_tf, is_dual_solver_active
+    # Standalone solver modes own their verdict logic; the interval/LP path
+    # below remains authoritative for non-standalone solver modes.
+    from act.back_end.transfer_functions import (
+        ensure_active_tf,
+        is_dual_solver_active,
+        is_hybridz_solver_active,
+    )
     active_tf = ensure_active_tf("interval")
+    is_dual = is_dual_solver_active()
+    is_hybridz = is_hybridz_solver_active()
 
-    if is_dual_solver_active():
-        from act.back_end.solver.solver_dual import DualSolver
-        from act.front_end.specs import OutputSpec
-
+    out_spec = None
+    if is_dual or is_hybridz:
         def _unbatch(val: Any) -> Any:
-            # ASSERT params are pre-batchified ([B, ...]) by FE; OutputSpec
-            # constructor expects unbroadcasted scalar/1-D form. Single-property
-            # batch verification: all rows share the same spec, so row 0 is the
-            # canonical form. Per-sample-varying spec support is a future task.
+            # ASSERT params are pre-batchified; OutputSpec expects the
+            # canonical unbroadcasted property while y_true remains per lane.
             if isinstance(val, torch.Tensor) and val.dim() >= 1 and val.shape[0] == B:
                 return val[0]
             return val
@@ -584,6 +587,9 @@ def verify_once(
             lb=_unbatch(assert_layer.params.get("lb")),
             ub=_unbatch(assert_layer.params.get("ub")),
         )
+
+    if is_dual:
+        from act.back_end.solver.solver_dual import DualSolver
         num_classes = len(output_ids)
         # DualSolver is now self-contained: no tf parameter, evaluate_spec
         # computes its own pre-activation forward bounds internally from the net.
@@ -622,6 +628,51 @@ def verify_once(
         )
     device = output_lb.device
     dtype = output_lb.dtype
+
+    if is_hybridz:
+        from act.back_end.hybridz_tf import HybridzTF
+        from act.back_end.solver.solver_hz import HZSolver
+
+        output_layer_id = net.preds[assert_layer.id][0]
+        output_hz = None
+        input_hz = None
+        exact_box_input = (
+            len(spec_layers) == 1
+            and spec_layers[0].params.get("kind") in (InKind.BOX, InKind.LINF_BALL)
+        )
+        if isinstance(active_tf, HybridzTF):
+            sparse_output = active_tf.get_sparse_hz(output_layer_id)
+            output_hz = sparse_output
+            if sparse_output is None:
+                output_hz = active_tf.get_hz(output_layer_id)
+            if exact_box_input and sparse_output is not None:
+                output_frame = sparse_output.frame_id
+                for layer in reversed(spec_layers):
+                    candidate = active_tf.get_sparse_hz(layer.id)
+                    if (
+                        candidate is not None
+                        and candidate.frame_id == output_frame
+                        and candidate.n_out == seed_bounds.lb.numel()
+                    ):
+                        input_hz = candidate
+                        break
+        solver = HZSolver()
+        results = solver.evaluate_spec(
+            output_hz,
+            out_spec,
+            batch_size=B,
+            n_out=n_out,
+            input_hz=input_hz,
+            input_shape=tuple(seed_bounds.lb.shape),
+            timelimit=timelimit,
+        )
+        for result in results:
+            if result.counterexample is not None:
+                result.counterexample = result.counterexample.to(
+                    device=seed_bounds.lb.device,
+                    dtype=seed_bounds.lb.dtype,
+                )
+        return (results, after) if collect_facts else results
 
     # 4. Read pre-encoded ASSERT params (produced by OutputSpec.encode_linear
     # at FE construction time). Dispatch on ``kind`` because UNSAFE_LINEAR
