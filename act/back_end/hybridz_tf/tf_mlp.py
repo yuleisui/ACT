@@ -21,6 +21,7 @@ except ImportError:
     np = None
     sp = None
 from act.back_end.core import Bounds, Fact
+from act.back_end.utils import LRELU_ALPHA_DEFAULT
 from act.back_end.solver.solver_hz import (
     HZono,
     SparseHZono,
@@ -573,7 +574,7 @@ def tf_lrelu(L, bounds, tf):
     fact = interval.tf_lrelu(L, bounds)
     if hz_in is not None:
         hz_out = hz_apply_leaky_relu(
-            hz_in, float(L.params.get("negative_slope", 0.01))
+            hz_in, float(L.params.get("negative_slope", LRELU_ALPHA_DEFAULT))
         )
         if _hz_exceeds_limit(tf, L, hz_out):
             tf._hz_cache.pop(L.id, None)

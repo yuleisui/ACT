@@ -20,8 +20,9 @@
 
 import torch
 from typing import Dict, Optional
+from act.config.config import HybridZConfig
 from act.back_end.core import Bounds, Fact, Layer, Net, ConSet
-from act.back_end.transfer_functions import TransferFunction
+from act.back_end.transfer_functions import RegistryTF
 from act.back_end.layer_schema import LayerKind
 from act.back_end.solver.solver_hz import (
     HZono,
@@ -39,8 +40,10 @@ import act.back_end.interval_tf.tf_mlp as interval_mlp
 import act.back_end.interval_tf.tf_cnn as interval_cnn
 
 
-class HybridzTF(TransferFunction):
-    def __init__(self):
+class HybridzTF(RegistryTF):
+    def __init__(self, config: Optional[HybridZConfig] = None):
+        super().__init__("HybridzTF")
+        cfg = config or HybridZConfig()
         self._hz_cache: Dict[int, HZono] = {}
         self._sparse_hz_cache: Dict[int, SparseHZono] = {}
         self._sparse_drop_reasons: Dict[int, str] = {}
@@ -48,6 +51,7 @@ class HybridzTF(TransferFunction):
         self._tanh_K: int = 2
         self._sigmoid_K: int = 2
         self._var_id_stride: int = 1
+        setattr(self, "_HZ_MAX_INPUT_DIM", cfg.max_input_dim)
         self._sparse_next_frame_id: int = 0
         self._sparse_frame_widths: Dict[int, tuple[int, int]] = {}
         self._sparse_relu_slots: Dict[tuple[int, int, int], tuple[int, int, int]] = {}
@@ -151,13 +155,6 @@ class HybridzTF(TransferFunction):
         LayerKind.MHA_JOIN.value: lambda L, b, tf: hz_transformer.tf_mha_join(L, b, tf),
         LayerKind.MASK_ADD.value: lambda L, b, tf: hz_transformer.tf_mask_add(L, b, tf),
     }
-
-    @property
-    def name(self) -> str:
-        return "HybridzTF"
-
-    def supports_layer(self, layer_kind: str) -> bool:
-        return layer_kind.upper() in self._LAYER_REGISTRY
 
     def get_hz(self, layer_id: int) -> Optional[HZono]:
         return self._hz_cache.get(int(layer_id))
@@ -381,9 +378,7 @@ class HybridzTF(TransferFunction):
         before: Dict[int, Fact],
         after: Dict[int, Fact],
     ) -> Fact:
-        k = L.kind.upper()
-        if k not in self._LAYER_REGISTRY:
-            raise NotImplementedError(f"HybridzTF: Unsupported layer kind '{k}'")
+        k = self._check_supported(L.kind)
 
         net_id = id(net)
         if self._cache_net_id != net_id:
@@ -396,9 +391,7 @@ class HybridzTF(TransferFunction):
             self._var_id_stride = self._net_var_id_stride(net)
             self._sparse_next_frame_id = 0
 
-        self._net = net
-        self._before = before
-        self._after = after
+        self._set_context(net, before, after)
         self._seed_sparse_cache(L, input_bounds)
 
         if k in ("INPUT", "INPUT_SPEC"):

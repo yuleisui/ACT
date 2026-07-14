@@ -60,7 +60,7 @@ consistent exploration across different problem scales.
 
 ### Configuration
 
-Set in `act/pipeline/fuzzing/config.yaml`:
+Set in `act/config/pipeline.yaml`:
 ```yaml
 perturb_mode: "adaptive_scalar"  # Options: "adaptive_scalar", "adaptive_perdim", "fixed"
 perturb_scale: 0.1               # Fraction of range per step (default: 0.1 = 10 steps)
@@ -72,7 +72,7 @@ License: AGPLv3+
 
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Union, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -93,7 +93,7 @@ class MutationStrategy(ABC):
                input_tensor: torch.Tensor,
                model: nn.Module,
                activations: Optional[Dict[str, torch.Tensor]] = None,
-               label: Optional[int] = None
+               label: Optional[torch.Tensor] = None
               ) -> torch.Tensor:
         """
         Apply mutation to input tensor.
@@ -246,8 +246,9 @@ class PGDMutation(MutationStrategy):
 
             # Loss selection based on label availability
             # label is a Tensor[B] int64, -1 = no label
-            has_labels = label is not None and (label >= 0).any()
-            if has_labels:
+            label_tensor = label if isinstance(label, torch.Tensor) else None
+            has_labels = label_tensor is not None and bool((label_tensor >= 0).any().item())
+            if has_labels and label_tensor is not None:
                 # CW-style margin loss: maximize (max_{j != target} z_j - z_target).
                 # More directed than cross-entropy for TOP1/MARGIN robustness - its
                 # gradient does not vanish once the target probability is small, so
@@ -257,7 +258,7 @@ class PGDMutation(MutationStrategy):
                     f"Model output should have batch dimension, got shape {output.shape}. "
                     f"Ensure model outputs include batch dimension."
                 )
-                target = label.clamp(min=0).to(output.device).view(-1, 1)
+                target = label_tensor.clamp(min=0).to(output.device).view(-1, 1)
                 tgt_logit = output.gather(1, target).squeeze(1)
                 other = output.scatter(1, target, float("-inf"))
                 loss = (other.max(dim=1).values - tgt_logit).sum()
@@ -500,7 +501,7 @@ class MutationEngine:
             # The feasible region is all points x such that ||x - center||_∞ <= eps
             assert self.input_spec.center is not None and self.input_spec.eps is not None
             center = self.input_spec.center
-            eps = self.input_spec.eps.to(device=center.device, dtype=center.dtype)
+            eps = torch.as_tensor(self.input_spec.eps, device=center.device, dtype=center.dtype)
             lb = center - eps
             ub = center + eps
         elif self.input_spec.kind == InKind.LP_EMBEDDING:
@@ -602,7 +603,7 @@ class MutationEngine:
             if self.input_spec.kind == InKind.LINF_BALL:
                 assert self.input_spec.eps is not None
                 _orig = seeds.original_tensor.to(self.device)
-                _eps = self.input_spec.eps.to(device=_orig.device, dtype=_orig.dtype)
+                _eps = torch.as_tensor(self.input_spec.eps, device=_orig.device, dtype=_orig.dtype)
                 _lb = _orig - _eps
                 _ub = _orig + _eps
             else:
@@ -708,7 +709,7 @@ class MutationEngine:
             
             # Use original_tensor as center to maintain L∞ distance from original
             center = seeds.original_tensor.to(tensor.device)
-            eps = eps.to(device=tensor.device, dtype=tensor.dtype)
+            eps = torch.as_tensor(eps, device=tensor.device, dtype=tensor.dtype)
             
             delta = tensor - center
             delta = torch.clamp(delta, -eps, eps)
@@ -733,7 +734,7 @@ class MutationEngine:
         """Get loss value from last mutation (Level 3 tracing only)."""
         return self.last_loss
     
-    def get_stats(self) -> Dict:
+    def get_stats(self) -> Dict[str, Any]:
         """Get mutation statistics."""
         perturb_size_info = {}
         for strategy_name, strategy in self.strategies.items():

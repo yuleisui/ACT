@@ -13,6 +13,7 @@ import argparse
 from typing import Optional
 
 from act.util.cli_utils import add_device_args, initialize_from_args
+from act.util.format_utils import rule
 
 from act.front_end.vnnlib_loader.category_mapping import (
     CATEGORY_MAPPING,
@@ -39,14 +40,14 @@ def print_category_list(category_type: Optional[str] = None):
     """
     if category_type:
         categories = list_categories_by_type(category_type)
-        print(f"\n{'='*100}")
+        print(f"\n{rule(100)}")
         print(f"VNNLIB CATEGORIES - TYPE: {category_type}")
-        print(f"{'='*100}")
+        print(f"{rule(100)}")
     else:
         categories = list_categories()
-        print(f"\n{'='*100}")
+        print(f"\n{rule(100)}")
         print(f"ALL VNNLIB CATEGORIES ({len(categories)})")
-        print(f"{'='*100}")
+        print(f"{rule(100)}")
     
     if not categories:
         print(f"No categories found for type: {category_type}")
@@ -65,7 +66,7 @@ def print_category_list(category_type: Optional[str] = None):
     for cat_type in sorted(by_type.keys()):
         items = by_type[cat_type]
         print(f"\n{cat_type.upper()} ({len(items)} categories)")
-        print('-' * 100)
+        print(rule(100, "-"))
         
         for cat_name, info in sorted(items, key=lambda x: x[0]):
             print(f"  {cat_name:30s} ({info['year']}) - {info['description']}")
@@ -82,9 +83,9 @@ def print_category_detail(category_name: str):
         actual_name = find_category_name(category_name)
         info = get_category_info(actual_name)
         
-        print(f"\n{'='*100}")
+        print(f"\n{rule(100)}")
         print(f"CATEGORY: {actual_name}")
-        print(f"{'='*100}")
+        print(f"{rule(100)}")
         print(f"Type: {info['type']}")
         print(f"Year: {info['year']}")
         print(f"Description: {info['description']}")
@@ -97,7 +98,7 @@ def print_category_detail(category_name: str):
         print(f"  • Input: {info['input_dim']}")
         print(f"  • Output: {info['output_dim']}")
         
-        print(f"{'='*100}\n")
+        print(f"{rule(100)}\n")
         
     except ValueError as e:
         print(f"Error: {e}")
@@ -107,9 +108,9 @@ def print_summary_statistics():
     """Print summary statistics about VNNLIB categories."""
     stats = get_summary_statistics()
     
-    print(f"\n{'='*100}")
+    print(f"\n{rule(100)}")
     print(f"VNNLIB CATEGORIES SUMMARY")
-    print(f"{'='*100}")
+    print(f"{rule(100)}")
     print(f"Total Categories: {stats['total_categories']}")
     print(f"Category Types: {stats['total_types']}")
     print(f"Year Range: {stats['oldest_year']} - {stats['newest_year']}")
@@ -118,7 +119,7 @@ def print_summary_statistics():
     for cat_type, count in sorted(stats['categories_by_type'].items()):
         print(f"  • {cat_type:30s}: {count:2d} categories")
     
-    print(f"{'='*100}\n")
+    print(f"{rule(100)}\n")
 
 
 def main():
@@ -239,9 +240,9 @@ def main():
             actual_name = find_category_name(category)
             info = get_category_info(actual_name)
             
-            print(f"\n{'='*100}")
+            print(f"\n{rule(100)}")
             print(f"DOWNLOADING VNNLIB CATEGORY: {actual_name}")
-            print(f"{'='*100}")
+            print(f"{rule(100)}")
             print(f"Type: {info['type']}")
             print(f"Description: {info['description']}")
             print(f"Year: {info['year']}")
@@ -252,7 +253,7 @@ def main():
                 print(f"Force re-download: Yes")
             
             print(f"\nDownloading from VNN-COMP GitHub repository...")
-            print(f"{'='*100}\n")
+            print(f"{rule(100)}\n")
             
             # Download the category
             result = download_vnnlib_category(
@@ -261,9 +262,9 @@ def main():
             )
             
             if result['status'] == 'success':
-                print(f"\n{'='*100}")
+                print(f"\n{rule(100)}")
                 print(f"✓ DOWNLOAD SUCCESSFUL")
-                print(f"{'='*100}")
+                print(f"{rule(100)}")
                 print(f"Category: {actual_name}")
                 print(f"Path: {result['category_path']}")
                 print(f"Instances: {result['num_instances']}")
@@ -271,27 +272,27 @@ def main():
                     print(f"ONNX models: {result['num_onnx_models']}")
                 if 'num_vnnlib_specs' in result:
                     print(f"VNNLIB specs: {result['num_vnnlib_specs']}")
-                print(f"{'='*100}\n")
+                print(f"{rule(100)}\n")
             else:
-                print(f"\n{'='*100}")
+                print(f"\n{rule(100)}")
                 print(f"⚠️  DOWNLOAD FAILED")
-                print(f"{'='*100}")
+                print(f"{rule(100)}")
                 print(f"Error: {result.get('message', 'Unknown error')}")
-                print(f"{'='*100}\n")
+                print(f"{rule(100)}\n")
                 
         except ValueError as e:
-            print(f"\n{'='*100}")
+            print(f"\n{rule(100)}")
             print(f"⚠️  INVALID CATEGORY")
-            print(f"{'='*100}")
+            print(f"{rule(100)}")
             print(f"Error: {e}")
             print(f"\nUse --list to see available categories")
-            print(f"{'='*100}\n")
+            print(f"{rule(100)}\n")
         except Exception as e:
-            print(f"\n{'='*100}")
+            print(f"\n{rule(100)}")
             print(f"⚠️  DOWNLOAD ERROR")
-            print(f"{'='*100}")
+            print(f"{rule(100)}")
             print(f"Error: {e}")
-            print(f"{'='*100}\n")
+            print(f"{rule(100)}\n")
     
     elif args.list_downloads:
         # List downloaded categories
@@ -311,9 +312,9 @@ def main():
                     by_category[cat] = []
                 by_category[cat].append(pair)
             
-            print(f"\n{'='*100}")
+            print(f"\n{rule(100)}")
             print(f"DOWNLOADED VNNLIB CATEGORIES ({len(by_category)})")
-            print(f"{'='*100}")
+            print(f"{rule(100)}")
             
             for category in sorted(by_category.keys()):
                 instances = by_category[category]
@@ -325,9 +326,9 @@ def main():
                     print(f"  Description: {info.get('description', 'N/A')}")
                 print(f"  Path: {instances[0]['category_path']}")
             
-            print(f"\n{'='*100}")
+            print(f"\n{rule(100)}")
             print(f"Total instances: {len(downloaded)}")
-            print(f"{'='*100}\n")
+            print(f"{rule(100)}\n")
             
         except Exception as e:
             print(f"Error listing downloads: {e}")

@@ -91,7 +91,7 @@ def backward_conv2d(L: Any, nu: torch.Tensor, bounds_dict: Dict[int, Bounds],
 def dual_conv2d_backward(
     nu: torch.Tensor, weight: torch.Tensor, bias: Optional[torch.Tensor] = None,
     stride: int = 1, padding: int = 0,
-    input_shape: Optional[tuple] = None, output_shape: Optional[tuple] = None,
+    input_shape: Optional[tuple[int, ...]] = None, output_shape: Optional[tuple[int, ...]] = None,
     channel_chunk_size: int = _CONV_CHANNEL_CHUNK_SIZE,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Conv2D backward via F.conv_transpose2d (naturally batched).

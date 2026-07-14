@@ -33,8 +33,17 @@ This directory contains the core verification framework for the Abstract Constra
 act/
 ├── __init__.py                     # Package initialization
 │
+├── config/                         # Centralized Configuration
+│   ├── config.py                   # Global configuration dataclasses
+│   ├── backend.yaml         # Back-end specific scalar configuration
+│   ├── gen_act_net.yaml      # NetFactory architecture-sampling DSL
+│   ├── pipeline.yaml        # Pipeline specific configuration
+│   ├── frontend.yaml        # Front-end specific configuration
+│   ├── backend_cli.py              # Back-end CLI implementation
+│   ├── pipeline_cli.py             # Pipeline CLI implementation
+│   └── frontend_cli.py             # Front-end CLI implementation
+│
 ├── front_end/                      # Front-End: User-facing data processing
-│   ├── cli.py                      # Main front-end CLI with unified device/dtype args
 │   ├── torchvision_loader/         # TorchVision integration
 │   │   ├── cli.py                  # TorchVision-specific CLI
 │   │   ├── create_specs.py         # TorchVisionSpecCreator for dataset-model pairs
@@ -51,7 +60,6 @@ act/
 │   └── README.md                   # Front-end documentation
 │
 ├── back_end/                       # Back-End: Core verification engine
-│   ├── cli.py                      # Back-end CLI (generate, verify, info, test)
 │   ├── __main__.py                 # Entry point for python -m act.back_end
 │   ├── core.py                     # Net, Layer, Bounds, Con, ConSet data structures
 │   ├── verifier.py                 # Spec-free verification: verify_once(), verify_lp_batched()
@@ -90,13 +98,11 @@ act/
 │   │   ├── serialization.py        # NetSerializer with tensor encoding
 │   │   └── test_serialization.py   # Serialization correctness tests
 │   ├── examples/                   # Example networks and configurations
-│   │   ├── config_gen_act_net.yaml # YAML network definitions
 │   │   ├── nets/                   # Generated ACT Net JSON files
 │   │   └── README.md               # Examples documentation
 │   └── README.md                   # Back-end documentation
 │
 ├── pipeline/                       # Pipeline: Testing framework and integration
-│   ├── cli.py                      # Pipeline CLI with unified device/dtype args
 │   ├── verification/               # Verification utilities submodule
 │   │   ├── __init__.py             # Verification module initialization
 │   │   ├── torch2act.py            # Automatic PyTorch→ACT Net conversion
@@ -124,7 +130,7 @@ act/
 All ACT modules now have unified CLI architecture with consistent device/dtype handling:
 
 #### **Front-End CLIs**
-- **`front_end/cli.py`**: Main front-end CLI
+- **`act/config/frontend_cli.py`**: Main front-end CLI
   - Commands: `--list`, `--synthesis`, `--list-creators`
   - Unified device/dtype arguments via `cli_utils`
   - Usage: `python -m act.front_end [options]`
@@ -138,15 +144,15 @@ All ACT modules now have unified CLI architecture with consistent device/dtype h
   - Usage: `python -m act.front_end.vnnlib_loader [options]`
 
 #### **Pipeline CLI**
-- **`pipeline/cli.py`**: Pipeline testing and integration CLI
+- **`act/config/pipeline_cli.py`**: Pipeline testing and integration CLI
   - Commands: Testing, validation, regression, reporting
   - Unified device/dtype arguments via `cli_utils`
   - Usage: `python -m act.pipeline [options]`
 
 #### **Back-End CLI**
-- **`back_end/cli.py`**: Comprehensive back-end verification CLI
+- **`act/config/backend_cli.py`**: Comprehensive back-end verification CLI
   - Commands:
-    - `--generate`: Generate example networks from YAML config
+    - `--generate`: Generate example networks from YAML config (default: `backend.yaml`)
     - `--list-examples`: List all available example networks
     - `--info`: Display network structure and details
     - `--verify`: Run verification (single-shot or branch-and-bound)
@@ -241,8 +247,8 @@ All ACT modules now have unified CLI architecture with consistent device/dtype h
   - **`test_serialization.py`**: Serialization correctness validation
 
 - **`examples/`**: Example networks and test cases
-  - **`config_gen_act_net.yaml`**: YAML definitions for example networks
-  - **`nets/`**: Generated ACT Net JSON files (MNIST, CIFAR, control, reachability)
+- **`../config/gen_act_net.yaml`**: network-generation DSL for example networks
+- **`nets/`**: Generated ACT Net JSON files (MNIST, CIFAR, control, reachability)
   - Networks include embedded INPUT_SPEC and ASSERT layers for spec-free verification
 
 ### **`pipeline/` - Testing Framework and Integration**
@@ -263,7 +269,7 @@ All ACT modules now have unified CLI architecture with consistent device/dtype h
   - PyTorch model generation from ACT Nets
   - Integration with VerifiableModel wrapper layers
 
-- **`cli.py`**: Main pipeline CLI (`python -m act.pipeline`)
+- **`act/config/pipeline_cli.py`**: Main pipeline CLI (`python -m act.pipeline`)
 - **`verification/`**: Conversion + validation utilities — `torch2act.py`, `act2torch.py`, `validate_verifier.py`, `model_factory.py`, `per_neuron_bounds.py`, `utils.py` (performance profiling), `llm_probe.py`
 - **`fuzzing/`**: Whitebox fuzzing framework — `actfuzzer.py`, `tracer.py`, `trace_storage.py`, `trace_reader.py`, `coverage.py`, `mutations.py`, `checker.py`, `corpus.py`
 - **`log/`**: Centralized execution logs (`act_debug_tf.log`, validation/test output)
@@ -283,6 +289,13 @@ All ACT modules now have unified CLI architecture with consistent device/dtype h
   - `initialize_device(device_str, dtype_str)`: Main initialization function
 
 - **`path_config.py`**: Project path configuration and management
+- **`config/`**: Centralized configuration and CLIs
+  - **`config.py`**: PerformanceOptions, BackendConfig, TorchLPConfig, etc.
+  - **`backend.yaml`**: Back-end runtime and generation scalar defaults
+  - **`gen_act_net.yaml`**: NetFactory architecture-sampling DSL
+  - **`pipeline.yaml`**: Pipeline testing and fuzzing defaults
+  - **`frontend.yaml`**: Loader and spec creation defaults
+  - **`backend_cli.py`**, **`pipeline_cli.py`**, **`frontend_cli.py`**: Implementation of tier CLIs
   - `get_project_root()`, `get_data_root()`, `get_config_root()`
   - `get_pipeline_log_dir()`: Returns absolute path to `act/pipeline/log/`
   - `ensure_gurobi_license()`: Automatic Gurobi license detection
@@ -426,15 +439,16 @@ python -m act.back_end --test-serialization --device cpu --dtype float64
 
 ## Examples and Network Generation
 Example ACT networks are stored as JSON under `act/back_end/examples/nets/`.
-These files are generated from the YAML configuration `act/back_end/examples/config_gen_act_net.yaml`
-using the YAML-driven network factory. The test suite and serializer load networks
-from the `examples/nets` directory. When authoring new example networks prefer the
+These files are generated from the architecture-sampling DSL in `act/config/gen_act_net.yaml`
+using the YAML-driven network factory; scalar generation knobs remain in
+`act/config/backend.yaml`. The test suite and serializer load networks from the
+`examples/nets` directory. When authoring new example networks prefer the
 YAML configuration and the factory rather than hand-editing the JSON files.
 
 ### Using the Back-End CLI for Network Generation
 The back-end CLI provides comprehensive tools for working with ACT networks:
 
-1. **Generate Networks**: `--generate` creates all networks defined in `config_gen_act_net.yaml`
+1. **Generate Networks**: `--generate` creates all networks defined in `gen_act_net.yaml`
 2. **List Networks**: `--list-examples` shows all available networks organized by category
 3. **Inspect Networks**: `--info` displays structure, use `--verbose` for detailed layer information
 4. **Verify Networks**: `--verify` runs verification with optional `--bab` for branch-and-bound

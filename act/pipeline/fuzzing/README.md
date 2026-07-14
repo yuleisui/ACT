@@ -67,7 +67,7 @@ initial_seeds = []
 for _, _, _, labeled_tensors, _ in spec_results:
     initial_seeds.extend(labeled_tensors)
 
-# Fuzz (loads config from config.yaml with optional overrides)
+# Fuzz (loads config from act/config/pipeline.yaml with optional overrides)
 config = FuzzingConfig.from_yaml(max_iterations=5000, device="cuda")
 fuzzer = ACTFuzzer(
     wrapped_model=list(wrapped_models.values())[0],
@@ -81,7 +81,7 @@ print(f"Found {len(report.counterexamples)} counterexamples")
 
 ## Configuration
 
-Edit `config.yaml` to customize:
+Edit `act/config/pipeline.yaml` to customize:
 
 ```yaml
 fuzzing:
@@ -179,7 +179,7 @@ range / perturb_size = range / (range * perturb_scale) = 1 / perturb_scale
 
 ### Configuration
 
-Set in `config.yaml`:
+Set in `act/config/pipeline.yaml`:
 ```yaml
 perturb_mode: "adaptive_scalar"  # Options: "adaptive_scalar", "adaptive_perdim", "fixed"
 perturb_scale: 0.1               # Fraction of range per perturbation (default: 0.1 = 10 steps)
@@ -414,7 +414,7 @@ from pathlib import Path
 from act.pipeline.fuzzing import ACTFuzzer, FuzzingConfig
 from act.pipeline.fuzzing.trace_reader import create_reader
 
-# Enable tracing during fuzzing (loads config.yaml with overrides)
+# Enable tracing during fuzzing (loads act/config/pipeline.yaml with overrides)
 config = FuzzingConfig.from_yaml(
     max_iterations=5000,
     trace_level=1,              # Enable basic tracing

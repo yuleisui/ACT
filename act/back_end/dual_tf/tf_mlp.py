@@ -22,6 +22,7 @@
 import torch
 from typing import Tuple, Optional, Dict, Any, List
 from act.back_end.core import Bounds
+from act.back_end.utils import LRELU_ALPHA_DEFAULT
 
 from .tf_forward import (
     LinearBound, Frame, _align,
@@ -365,7 +366,7 @@ def forward_lrelu(
     parent_frame = parent_frames[0]
     x_L, x_U = parent_frame
     pre_lb, pre_ub = parent_box.lb, parent_box.ub
-    alpha = L.params.get("alpha", 0.01)
+    alpha = L.params.get("alpha", LRELU_ALPHA_DEFAULT)
     lin = _fwd_lrelu(parent_lin, pre_lb, pre_ub, alpha)
     int_lb, int_ub = _box_lrelu(pre_lb, pre_ub, alpha)
     if lin is None:

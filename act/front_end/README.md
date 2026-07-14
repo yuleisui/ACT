@@ -154,11 +154,11 @@ The CLI automatically determines whether a name refers to:
 ### Smart Downloads
 ```bash
 # TorchVision: Downloads dataset + ALL recommended models
-python -m act.front_end.cli --download MNIST
+python -m act.front_end --download MNIST
 # ✓ Downloads: MNIST dataset + simple_cnn, lenet5, resnet18, efficientnet_b0
 
 # VNNLIB: Downloads category with ONNX + VNNLIB files
-python -m act.front_end.cli --download acasxu_2023
+python -m act.front_end --download acasxu_2023
 # ✓ Downloads: 45 ONNX models + 100s of VNNLIB properties
 ```
 
@@ -236,7 +236,6 @@ creator = get_creator('torchvision')  # or 'vnnlib'
 ```
 front_end/
 ├── __main__.py                  # 🆕 Entry point: python -m act.front_end
-├── cli.py                       # 🆕 Unified CLI with auto-detection
 ├── creator_registry.py          # 🆕 Factory + auto-detection
 ├── spec_creator_base.py         # Base interface
 ├── specs.py                     # InputSpec/OutputSpec

@@ -45,6 +45,8 @@ import json
 import sys
 import torch
 
+from act.util.format_utils import rule
+
 
 class TraceReader:
     """Base class for reading trace files."""
@@ -234,9 +236,9 @@ def print_summary(reader: TraceReader):
     """Print trace summary statistics."""
     summary = reader.get_summary()
 
-    print(f"\n{'=' * 80}")
+    print(f"\n{rule()}")
     print(f"TRACE SUMMARY: {reader.path.name}")
-    print(f"{'=' * 80}\n")
+    print(f"{rule()}\n")
 
     print(f"📊 General Statistics:")
     print(f"   Total traces: {summary['total_traces']}")
@@ -257,14 +259,14 @@ def print_summary(reader: TraceReader):
         pct = 100 * count / total if total > 0 else 0
         print(f"   {strat:15s}: {count:5d} ({pct:5.1f}%)")
 
-    print(f"\n{'=' * 80}\n")
+    print(f"\n{rule()}\n")
 
 
 def print_trace_detail(trace: Dict[str, Any], idx: int):
     """Print detailed information about a single trace."""
-    print(f"\n{'=' * 80}")
+    print(f"\n{rule()}")
     print(f"TRACE #{idx} (Iteration {trace.get('iteration', '?')})")
-    print(f"{'=' * 80}\n")
+    print(f"{rule()}\n")
 
     # Basic info
     print(f"⏱️  Timestamp: {trace.get('timestamp', 'N/A')}")
@@ -320,7 +322,7 @@ def print_trace_detail(trace: Dict[str, Any], idx: int):
     if "loss_value" in trace:
         print(f"\n📉 Loss: {trace['loss_value']:.6f}")
 
-    print(f"\n{'=' * 80}\n")
+    print(f"\n{rule()}\n")
 
 
 # ============================================================================
@@ -418,7 +420,7 @@ Note: For visual analysis with charts and interactive widgets, use:
             print(
                 f"\n{'Idx':>5s} {'Iter':>6s} {'Strategy':>12s} {'Coverage':>10s} {'Violation':>10s}"
             )
-            print(f"{'-' * 50}")
+            print(f"{rule(50, "-")}")
             for i in range(start, min(end, len(reader))):
                 trace = reader[i]
                 print(
@@ -564,9 +566,9 @@ class TraceAnalyzer:
 
         trace = self.traces[trace_idx]
 
-        print(f"\n{'=' * 60}")
+        print(f"\n{rule(60)}")
         print(f"Trace #{trace_idx} Details")
-        print(f"{'=' * 60}")
+        print(f"{rule(60)}")
         print(f"Iteration:           {trace.get('iteration', 'N/A')}")
         print(f"Mutation Strategy:   {trace.get('mutation_strategy', 'N/A')}")
         print(f"Coverage:            {trace.get('coverage', 0):.2%}", end="")

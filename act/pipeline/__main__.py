@@ -21,7 +21,7 @@ Copyright (C) 2025 SVF-tools/ACT
 License: AGPLv3+
 """
 
-from act.pipeline.cli import main
+from act.config.pipeline_cli import main
 
 if __name__ == "__main__":
     main()

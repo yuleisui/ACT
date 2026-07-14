@@ -20,6 +20,7 @@ import torch
 
 from act.pipeline.fuzzing.trace_storage import create_storage, TraceStorage
 from act.pipeline.fuzzing.checker import Counterexample
+from act.util.format_utils import rule
 
 
 class ExecutionTracer:
@@ -276,14 +277,14 @@ class ExecutionTracer:
         """Finalize tracing and close storage."""
         # Print statistics
         stats = self.get_stats()
-        print(f"\n{'=' * 80}")
+        print(f"\n{rule()}")
         print(f"📊 Tracing Statistics")
-        print(f"{'=' * 80}")
+        print(f"{rule()}")
         print(f"Level: {stats['level']}")
         print(f"Traces captured: {stats['traces_captured']}")
         print(f"Sample rate: 1/{stats['sample_rate']}")
         print(f"Output: {os.path.relpath(stats['output_path'])}")
-        print(f"{'=' * 80}\n")
+        print(f"{rule()}\n")
 
         # Close storage (waits for async writes to complete)
         self.storage.close()

@@ -16,8 +16,12 @@ import torch
 from typing import Dict, Any, Tuple, Optional
 from act.back_end.core import Bounds, ConSet
 from act.util.options import PerformanceOptions
+from act.util.format_utils import rule
 
 EPS = 1e-12
+
+# Default LRELU/LeakyReLU negative slope when a layer omits negative_slope.
+LRELU_ALPHA_DEFAULT = 0.01
 
 def split_weight(W):
     return W.clamp(min=0), W.clamp(max=0)
@@ -118,7 +122,7 @@ def scale_interval(cx_lo, cx_hi, inv_lo, inv_hi):
     return four_corner_envelope(cx_lo, cx_hi, inv_lo, inv_hi)
 
 
-def validate_constraints(globalC, after: Dict, net) -> bool:
+def validate_constraints(globalC, after: Dict[int, Any], net) -> bool:
     """Validate constraint set for common errors (targeted validation).
     
     This function performs targeted validation by:
@@ -191,9 +195,9 @@ def validate_constraints(globalC, after: Dict, net) -> bool:
     # Write to debug file (GUARDED - only if debug_tf is also enabled)
     if PerformanceOptions.debug_tf:
         with open(PerformanceOptions.debug_output_file, 'a') as f:
-            f.write(f"\n{'='*80}\n")
+            f.write(f"\n{rule()}\n")
             f.write(f"CONSTRAINT VALIDATION (Targeted)\n")
-            f.write(f"{'='*80}\n")
+            f.write(f"{rule()}\n")
             f.write(f"Total constraints: {len(globalC)}\n")
             f.write(f"Unique variables referenced: {len(var_ids_used)}\n")
             f.write(f"Variables with bounds found: {len(var_bounds)}\n")

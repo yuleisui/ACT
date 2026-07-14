@@ -20,7 +20,8 @@ import sys
 import torch
 
 from act.util.cli_utils import add_device_args, initialize_from_args
-from act.back_end.config import VALID_SOLVER_TIERS
+from act.util.format_utils import rule
+from act.config.config import VALID_SOLVER_TIERS
 
 logger = logging.getLogger(__name__)
 from act.front_end.specs import OutputSpec
@@ -33,6 +34,7 @@ from act.front_end.torchvision_loader import data_model_mapping as tv_mapping
 from act.front_end.model_synthesis import synthesize_models_from_specs
 from act.pipeline.fuzzing.actfuzzer import ACTFuzzer, FuzzingConfig
 from act.pipeline.verification.per_neuron_bounds import PerNeuronCheckConfig
+from act.config.config import PipelineConfig
 
 
 _FUZZ_MUTATION_WEIGHT_KEYS = frozenset(
@@ -169,13 +171,94 @@ def _collect_fuzzing_overrides(args: Any) -> dict[str, Any]:
     return overrides
 
 
+_PIPELINE_BAB_ATTR_MAP: dict[str, str] = {
+    "solver_tier": "bab_solver_tier",
+    "max_depth": "bab_max_depth",
+    "max_nodes": "bab_max_nodes",
+    "branching_method": "bab_branching_method",
+    "bounding_method": "bab_bounding_method",
+    "bounding_order": "bab_bounding_order",
+    "sa_cooling_rate": "bab_sa_cooling_rate",
+    "frontier_cap": "bab_frontier_cap",
+    "input_split_fanout": "bab_input_split_fanout",
+    "provenance_enabled": "bab_provenance",
+}
+_PIPELINE_VAL_ATTR_MAP: dict[str, str] = {
+    "solvers": "solvers",
+    "tf_modes": "tf_modes",
+    "samples": "samples",
+    "per_neuron_topk": "per_neuron_topk",
+    "bounds_tolerance": "bounds_tolerance",
+    "batch_sizes": "batch_sizes",
+}
+# BaBConfig fields the pipeline CLI can override: the attr-map keys plus the two
+# special-cased flags (--bab-per-class-alpha, --bab-no-incremental-start). Kept
+# module-level so the CLI<->YAML parity checker can introspect the surface.
+_PIPELINE_BAB_OVERRIDE_FIELDS: tuple[str, ...] = tuple(_PIPELINE_BAB_ATTR_MAP)
+_PIPELINE_DUAL_OVERRIDE_FIELDS: tuple[str, ...] = (
+    "per_class_alpha",
+    "incremental_start_enabled",
+)
+
+
+def _collect_pipeline_config_overrides(args: Any) -> dict[str, Any]:
+    overrides: dict[str, Any] = {}
+    for key, _flag, attr, _cast_fn in _FUZZ_OVERRIDE_SPEC:
+        value = getattr(args, attr, None)
+        if value is None:
+            continue
+        if key == "save_counterexamples":
+            value = False
+        elif key == "mutation_weights":
+            value = _parse_mutation_weights(value)
+        overrides[f"fuzz_{key}"] = value
+
+    for key, attr in _PIPELINE_BAB_ATTR_MAP.items():
+        value = getattr(args, attr, None)
+        if value is not None:
+            overrides[f"bab_{key}"] = value
+    if getattr(args, "bab_per_class_alpha", None) is not None:
+        overrides["dual_per_class_alpha"] = str(args.bab_per_class_alpha).lower() == "true"
+    if getattr(args, "bab_no_incremental_start", None) is not None:
+        overrides["dual_incremental_start_enabled"] = not args.bab_no_incremental_start
+
+    for key, attr in _PIPELINE_VAL_ATTR_MAP.items():
+        value = getattr(args, attr, None)
+        if value is not None:
+            overrides[f"val_{key}"] = value
+    return overrides
+
+
+def _apply_pipeline_config_defaults(args: Any) -> PipelineConfig:
+    config = PipelineConfig.from_yaml(**_collect_pipeline_config_overrides(args))
+    args.bab_solver_tier = config.bab.solver_tier
+    args.bab_max_depth = config.bab.max_depth
+    args.bab_max_nodes = config.bab.max_nodes
+    args.bab_branching_method = config.bab.branching_method
+    args.bab_bounding_method = config.bab.bounding_method
+    args.bab_bounding_order = config.bab.bounding_order
+    args.bab_sa_cooling_rate = config.bab.sa_cooling_rate
+    args.bab_frontier_cap = config.bab.frontier_cap
+    args.bab_input_split_fanout = config.bab.input_split_fanout
+    args.bab_per_class_alpha = "true" if config.dual.per_class_alpha else "false"
+    args.bab_no_incremental_start = not config.dual.incremental_start_enabled
+    args.bab_provenance = config.bab.provenance_enabled
+    args.solvers = config.validation.solvers
+    args.tf_modes = config.validation.tf_modes
+    args.samples = config.validation.samples
+    args.per_neuron_topk = config.validation.per_neuron_topk
+    args.bounds_tolerance = config.validation.bounds_tolerance
+    args.batch_sizes = config.validation.batch_sizes
+    return config
+
+
 
 def print_header():
     """Print simple header."""
-    print(f"\n{'=' * 80}")
+    print(f"\n{rule()}")
     print(f"ACT: Abstract Constraint Transformer")
     print(f"Inference-based whitebox fuzzing for neural network verification")
-    print(f"{'=' * 80}\n")
+    print(f"{rule()}\n")
 
 
 # ============================================================================
@@ -185,14 +268,14 @@ def print_header():
 
 def cmd_list_available(creator: str):
     """List available datasets/categories."""
-    print(f"\n{'=' * 80}")
+    print(f"\n{rule()}")
     print(f"AVAILABLE DATA-MODEL PAIRS ({creator.upper()})")
-    print(f"{'=' * 80}\n")
+    print(f"{rule()}\n")
 
     if creator == "vnnlib":
         categories = vnnlib_mapping.list_categories()
         print(f"VNNLIB Categories ({len(categories)}):")
-        print("-" * 80)
+        print(rule(80, "-"))
         for cat_name in sorted(categories):
             info = vnnlib_mapping.get_category_info(cat_name)
             print(f"  {cat_name:30s} ({info['type']}) - {info['description']}")
@@ -201,7 +284,7 @@ def cmd_list_available(creator: str):
     elif creator == "torchvision":
         datasets = sorted(tv_mapping.DATASET_MODEL_MAPPING.keys())
         print(f"TorchVision Datasets ({len(datasets)}):")
-        print("-" * 80)
+        print(rule(80, "-"))
         for ds_name in datasets:
             info = tv_mapping.DATASET_MODEL_MAPPING[ds_name]
             models = info.get("models", [])
@@ -211,20 +294,20 @@ def cmd_list_available(creator: str):
                     f"    └─ Models: {', '.join(models[:5])}{'...' if len(models) > 5 else ''}"
                 )
 
-    print(f"\n{'=' * 80}\n")
+    print(f"\n{rule()}\n")
 
 
 def cmd_search(query: str, creator: str):
     """Search for datasets/categories."""
-    print(f"\n{'=' * 80}")
+    print(f"\n{rule()}")
     print(f"SEARCH RESULTS: '{query}' ({creator.upper()})")
-    print(f"{'=' * 80}\n")
+    print(f"{rule()}\n")
 
     if creator == "vnnlib":
         matches = vnnlib_mapping.search_categories(query)
         if matches:
             print(f"Found {len(matches)} VNNLIB categories:")
-            print("-" * 80)
+            print(rule(80, "-"))
             for cat_name in sorted(matches):
                 info = vnnlib_mapping.get_category_info(cat_name)
                 print(f"  {cat_name:30s} ({info['type']}) - {info['description']}")
@@ -235,21 +318,21 @@ def cmd_search(query: str, creator: str):
         matches = tv_mapping.search_datasets(query)
         if matches:
             print(f"Found {len(matches)} TorchVision datasets:")
-            print("-" * 80)
+            print(rule(80, "-"))
             for ds_name in sorted(matches):
                 info = tv_mapping.DATASET_MODEL_MAPPING[ds_name]
                 print(f"  {ds_name:30s} [{info.get('category', 'N/A')}]")
         else:
             print(f"No TorchVision datasets found for '{query}'")
 
-    print(f"\n{'=' * 80}\n")
+    print(f"\n{rule()}\n")
 
 
 def cmd_info(name: str, creator: str):
     """Show detailed information about dataset/category."""
-    print(f"\n{'=' * 80}")
+    print(f"\n{rule()}")
     print(f"INFO: {name} ({creator.upper()})")
-    print(f"{'=' * 80}\n")
+    print(f"{rule()}\n")
 
     if creator == "vnnlib":
         try:
@@ -300,14 +383,14 @@ def cmd_info(name: str, creator: str):
         except ValueError as e:
             print(f"Error: {e}")
 
-    print(f"\n{'=' * 80}\n")
+    print(f"\n{rule()}\n")
 
 
 def cmd_download(name: str, creator: str):
     """Download dataset/category."""
-    print(f"\n{'=' * 80}")
+    print(f"\n{rule()}")
     print(f"DOWNLOADING: {name} ({creator.upper()})")
-    print(f"{'=' * 80}\n")
+    print(f"{rule()}\n")
 
     if creator == "vnnlib":
         try:
@@ -356,9 +439,9 @@ def cmd_download(name: str, creator: str):
                 else:
                     print(f"✗ {name} + {model} - {result['message']}")
 
-            print(f"\n{'=' * 80}")
+            print(f"\n{rule()}")
             print(f"Downloaded {success_count}/{len(models)} model pairs")
-            print(f"{'=' * 80}")
+            print(f"{rule()}")
         except Exception as e:
             print(f"✗ Download error: {e}")
 
@@ -367,9 +450,9 @@ def cmd_download(name: str, creator: str):
 
 def cmd_list_downloaded(creator: str):
     """List downloaded data-model pairs."""
-    print(f"\n{'=' * 80}")
+    print(f"\n{rule()}")
     print(f"DOWNLOADED DATA-MODEL PAIRS ({creator.upper()})")
-    print(f"{'=' * 80}\n")
+    print(f"{rule()}\n")
 
     if creator == "vnnlib":
         downloaded = vnnlib_loader.list_downloaded_pairs()
@@ -383,7 +466,7 @@ def cmd_list_downloaded(creator: str):
                 categories[cat].append(item)
 
             print(f"VNNLIB Downloads ({len(downloaded)} instances):")
-            print("-" * 80)
+            print(rule(80, "-"))
             for cat in sorted(categories.keys()):
                 instances = categories[cat]
                 print(f"  {cat:30s} ({len(instances)} instances)")
@@ -408,7 +491,7 @@ def cmd_list_downloaded(creator: str):
                 datasets[ds].append(item["model"])
 
             print(f"TorchVision Downloads ({len(downloaded)} pairs):")
-            print("-" * 80)
+            print(rule(80, "-"))
             for ds in sorted(datasets.keys()):
                 models = datasets[ds]
                 print(f"  {ds:30s} ({len(models)} models)")
@@ -420,7 +503,7 @@ def cmd_list_downloaded(creator: str):
                 "Use --download <dataset> --creator torchvision to download data-model pairs"
             )
 
-    print(f"\n{'=' * 80}\n")
+    print(f"\n{rule()}\n")
 
 
 # ============================================================================
@@ -442,12 +525,13 @@ def cmd_fuzz(args):
     # Load configuration from YAML with CLI overrides. Unset CLI options remain
     # None sentinels and therefore do not clobber config.yaml values.
     overrides = _collect_fuzzing_overrides(args)
-    config = FuzzingConfig.from_yaml(**overrides)
+    pipeline_overrides = {f"fuzz_{key}": value for key, value in overrides.items()}
+    config = PipelineConfig.from_yaml(**pipeline_overrides).fuzzing
 
     # Create spec creator and load data-model pairs
-    print(f"{'=' * 80}")
+    print(f"{rule()}")
     print(f"STEP 1: Loading Data-Model Pairs")
-    print(f"{'=' * 80}\n")
+    print(f"{rule()}\n")
 
     spec_results = []
     initial_seeds = []
@@ -552,9 +636,9 @@ def cmd_fuzz(args):
     print(f"✓ Generated {len(spec_results)} spec result(s)\n")
 
     # Synthesize models
-    print(f"{'=' * 80}")
+    print(f"{rule()}")
     print(f"STEP 2: Model Synthesis")
-    print(f"{'=' * 80}\n")
+    print(f"{rule()}\n")
 
     # Set strict mode for all VerifiableModel instances
     from act.front_end.verifiable_model import VerifiableModel
@@ -577,9 +661,9 @@ def cmd_fuzz(args):
     print(f"✓ Synthesized {len(wrapped_models)} wrapped model(s)\n")
 
     # Extract initial seeds
-    print(f"{'=' * 80}")
+    print(f"{rule()}")
     print(f"STEP 3: Seed Extraction")
-    print(f"{'=' * 80}\n")
+    print(f"{rule()}\n")
 
     # Single model only; mixing seeds across spec_results breaks SeedCorpus(torch.cat).
     _, _, _, labeled_tensors, _ = spec_results[0]
@@ -592,9 +676,9 @@ def cmd_fuzz(args):
     print(f"✓ Extracted {len(initial_seeds)} initial seeds\n")
 
     # Run fuzzing on first model
-    print(f"{'=' * 80}")
+    print(f"{rule()}")
     print(f"STEP 4: Fuzzing")
-    print(f"{'=' * 80}\n")
+    print(f"{rule()}\n")
 
     model_id = list(wrapped_models.keys())[0]
     wrapped_model = wrapped_models[model_id]
@@ -609,15 +693,15 @@ def cmd_fuzz(args):
         report = fuzzer.fuzz()
 
         # Print final results
-        print(f"\n{'=' * 80}")
+        print(f"\n{rule()}")
         print(f"FUZZING COMPLETE")
-        print(f"{'=' * 80}")
+        print(f"{rule()}")
         print(f"Iterations: {report.total_iterations}")
         print(f"Time: {report.total_time:.1f}s")
         print(f"Counterexamples: {len(report.counterexamples)}")
         print(f"Coverage: {report.neuron_coverage:.2%}")
         print(f"Seeds explored: {report.seeds_explored}")
-        print(f"{'=' * 80}\n")
+        print(f"{rule()}\n")
 
         if report.counterexamples and config.save_counterexamples:
             import os
@@ -650,6 +734,11 @@ def cmd_fuzz(args):
 # ============================================================================
 # Verification Commands
 # ============================================================================
+
+
+def _effective_tf_modes(solver: str, requested_modes) -> list[str]:
+    modes = list(requested_modes or ["interval"])
+    return ["hybridz"] if solver == "hybridz" else modes
 
 
 def _build_validator(args):
@@ -703,9 +792,24 @@ def _verify_and_validate_cell(
     from act.back_end.verifier import verify_once
 
     if args.validate_soundness:
-        results, facts = verify_once(net, collect_facts=True)
+        if solver == "hybridz":
+            results, facts = verify_once(
+                net,
+                collect_facts=True,
+                timelimit=getattr(args, "timeout", None),
+                hybridz_tolerance=1e-7,
+            )
+        else:
+            results, facts = verify_once(net, collect_facts=True)
     else:
-        results = verify_once(net)
+        if solver == "hybridz":
+            results = verify_once(
+                net,
+                timelimit=getattr(args, "timeout", None),
+                hybridz_tolerance=1e-7,
+            )
+        else:
+            results = verify_once(net)
         facts = None
     statuses = [r.status.name for r in results]
     print(f"  {cell_label if cell_label is not None else tag}: {statuses}")
@@ -733,10 +837,8 @@ def _run_vnnlib_verify(args) -> bool:
     ``synthesize_models_from_specs`` → ``TorchToACT`` → ``verify_once``.
 
     Single-mode per invocation, matching the ``act.back_end --verify`` CLI
-    contract: uses the first element of ``--tf-modes`` (default
-    ``"interval"``) and ``--solvers`` (default ``"torchlp"``).  Multi-mode
-    sweeps are the caller's job — invoke once per (tf-mode, solver) cell.
-    Dual ignores ``--tf-modes`` because it's a backward Solver.
+    contract. Multi-mode sweeps are the caller's job. Dual ignores
+    ``--tf-modes``; the standalone HybridZ solver selects HybridzTF.
     """
     from act.front_end.vnnlib_loader.create_specs import VNNLibSpecCreator
     from act.front_end.model_synthesis import synthesize_models_from_specs
@@ -749,8 +851,8 @@ def _run_vnnlib_verify(args) -> bool:
     if not args.category:
         raise ValueError("--verify vnnlib requires --category (e.g. --category acasxu_2023)")
 
-    tf_mode = (args.tf_modes or ["interval"])[0]
     solver = (args.solvers or ["torchlp"])[0]
+    tf_mode = _effective_tf_modes(solver, args.tf_modes)[0]
 
     set_solver_mode(solver)
     if solver != "dual":
@@ -878,29 +980,15 @@ def _run_bab_on_net(net, args, bab_first_sample_only: bool = False):
                 returning a list of status strings.
     """
     from act.back_end.bab.bab import verify_bab_batched
-    from act.back_end.config import BaBConfig
     from act.back_end.solver.solver_torchlp import TorchLPSolver
     from act.back_end.verifier import (
         gather_input_spec_layers,
         seed_from_input_specs,
     )
 
-    config = BaBConfig(
-        solver_tier=args.bab_solver_tier,
-        max_depth=args.bab_max_depth,
-        max_nodes=args.bab_max_nodes,
-        branching_method=getattr(args, "bab_branching_method", "random"),
-        bounding_method=getattr(args, "bab_bounding_method", "random"),
-        bounding_order=getattr(args, "bab_bounding_order", "depth_lb"),
-        sa_cooling_rate=getattr(args, "bab_sa_cooling_rate", 0.99),
-        frontier_cap=getattr(args, "bab_frontier_cap", 0),
-        input_split_fanout=getattr(args, "bab_input_split_fanout", 2),
-        per_class_alpha=(
-            str(getattr(args, "bab_per_class_alpha", "true")).lower() == "true"
-        ),
-        incremental_start_enabled=not getattr(args, "bab_no_incremental_start", False),
-        provenance_enabled=getattr(args, "bab_provenance", False),
-    )
+    pipeline_config = PipelineConfig.from_yaml(**_collect_pipeline_config_overrides(args))
+    config = pipeline_config.bab
+    dual_config = pipeline_config.dual
     budget = float(getattr(args, "timeout", 60.0) or 60.0)
 
     spec_layers = gather_input_spec_layers(net)
@@ -914,6 +1002,7 @@ def _run_bab_on_net(net, args, bab_first_sample_only: bool = False):
             config=config,
             max_batch_size=None,
             time_budget_s=budget,
+            dual_config=dual_config,
         )
         return result.status.name
 
@@ -928,6 +1017,7 @@ def _run_bab_on_net(net, args, bab_first_sample_only: bool = False):
                 config=config,
                 max_batch_size=None,
                 time_budget_s=budget,
+                dual_config=dual_config,
             )
             statuses.append(result.status.name)
     return statuses[0] if bab_first_sample_only and statuses else statuses
@@ -959,8 +1049,8 @@ def _run_torchvision_verify(args) -> bool:
     if not args.dataset:
         raise ValueError("--verify torchvision requires --dataset (e.g. --dataset MNIST)")
 
-    tf_mode = (args.tf_modes or ["interval"])[0]
     solver = (args.solvers or ["torchlp"])[0]
+    tf_mode = _effective_tf_modes(solver, args.tf_modes)[0]
 
     set_solver_mode(solver)
     if solver != "dual":
@@ -1036,14 +1126,13 @@ def _run_netfactory_verify(args) -> bool:
     if "gurobi" in solvers and not is_gurobi_available():
         logger.warning("Skipping gurobi solver: gurobipy is not available.")
         solvers = [s for s in solvers if s != "gurobi"]
-    tf_modes = args.tf_modes or ["interval"]
     batch_sizes = _resolve_batch_sizes(getattr(args, "batch_sizes", None))
     per_neuron_config = _per_neuron_config(args)
     errors_seen = False
 
     for name in networks:
         for solver in solvers:
-            for tf_mode in tf_modes:
+            for tf_mode in _effective_tf_modes(solver, args.tf_modes):
                 for batch_size in batch_sizes:
                     try:
                         set_solver_mode(solver)
@@ -1116,10 +1205,10 @@ def cmd_verify(target: str, args):
     results = {}
 
     for test_name in tests_to_run:
-        print(f"\n{'=' * 80}")
+        print(f"\n{rule()}")
         if test_name == "act2torch":
             print(f"VERIFICATION TEST: ACT→PyTorch Conversion")
-            print(f"{'=' * 80}\n")
+            print(f"{rule()}\n")
             try:
                 model_factory.main()
                 results[test_name] = "PASSED"
@@ -1132,7 +1221,7 @@ def cmd_verify(target: str, args):
 
         elif test_name == "torch2act":
             print(f"VERIFICATION TEST: PyTorch→ACT Conversion")
-            print(f"{'=' * 80}\n")
+            print(f"{rule()}\n")
             try:
                 torch2act.main()
                 results[test_name] = "PASSED"
@@ -1145,7 +1234,7 @@ def cmd_verify(target: str, args):
 
         elif test_name == "netfactory":
             print(f"VERIFICATION TEST: ModelFactory → verify_once")
-            print(f"{'=' * 80}\n")
+            print(f"{rule()}\n")
             try:
                 validation_failed = _run_netfactory_verify(args)
                 results[test_name] = "FAILED" if validation_failed else "PASSED"
@@ -1158,7 +1247,7 @@ def cmd_verify(target: str, args):
 
         elif test_name == "vnnlib":
             print(f"VERIFICATION TEST: VNNLIB → VerifiableModel → verify_once")
-            print(f"{'=' * 80}\n")
+            print(f"{rule()}\n")
             try:
                 soundness_failed = _run_vnnlib_verify(args)
                 results[test_name] = "FAILED" if soundness_failed else "PASSED"
@@ -1171,7 +1260,7 @@ def cmd_verify(target: str, args):
 
         elif test_name == "torchvision":
             print(f"VERIFICATION TEST: TorchVision → VerifiableModel → verify_once")
-            print(f"{'=' * 80}\n")
+            print(f"{rule()}\n")
             try:
                 soundness_failed = _run_torchvision_verify(args)
                 results[test_name] = "FAILED" if soundness_failed else "PASSED"
@@ -1183,13 +1272,13 @@ def cmd_verify(target: str, args):
                 results[test_name] = "FAILED"
 
     # Print summary
-    print(f"\n{'=' * 80}")
+    print(f"\n{rule()}")
     print(f"VERIFICATION TEST SUMMARY")
-    print(f"{'=' * 80}")
+    print(f"{rule()}")
     for test_name, result in results.items():
         status = "✅" if result == "PASSED" else "❌"
         print(f"  {status} {test_name:25s} {result}")
-    print(f"{'=' * 80}\n")
+    print(f"{rule()}\n")
 
     # Exit with error if any test failed
     if any(r == "FAILED" for r in results.values()):
@@ -1205,17 +1294,11 @@ def _resolve_batch_sizes(cli_value):
     if cli_value:
         return cli_value
     try:
-        import yaml
-        from act.util.path_config import get_project_root
-        cfg_path = (
-            Path(get_project_root())
-            / "act/back_end/examples/config_gen_act_net.yaml"
-        )
-        if cfg_path.exists():
-            cfg = yaml.safe_load(cfg_path.read_text()) or {}
-            yaml_val = (cfg.get("validate") or {}).get("batch_sizes")
-            if yaml_val:
-                return yaml_val
+        from act.config.config import BackendConfig
+        net_factory = BackendConfig.from_yaml().generation.net_factory
+        yaml_val = (net_factory.get("validate") or {}).get("batch_sizes")
+        if yaml_val:
+            return yaml_val
     except Exception as e:
         # Intentional: optional YAML override; missing/malformed files fall through to default [None].
         logger.debug("suppressed: %s", e)
@@ -1261,11 +1344,13 @@ Examples:
   # Single (tf, solver) per invocation; matrix sweeps by repeated calls.
   python -m act.pipeline --verify vnnlib --category acasxu_2023 --max-instances 3 --tf-modes interval --solvers torchlp
   python -m act.pipeline --verify vnnlib --category acasxu_2023 --max-instances 3 --tf-modes hybridz --solvers torchlp
+  python -m act.pipeline --verify vnnlib --category acasxu_2023 --max-instances 3                          --solvers hybridz
   python -m act.pipeline --verify vnnlib --category acasxu_2023 --max-instances 3                          --solvers dual
 
   # Run verifier on a TorchVision dataset-model pair end-to-end.
   python -m act.pipeline --verify torchvision --dataset MNIST --model simple_cnn --num-samples 2 --tf-modes interval --solvers torchlp
   python -m act.pipeline --verify torchvision --dataset MNIST --model simple_cnn --num-samples 2 --tf-modes hybridz  --solvers torchlp
+  python -m act.pipeline --verify torchvision --dataset MNIST --model simple_cnn --num-samples 2                     --solvers hybridz
   python -m act.pipeline --verify torchvision --dataset MNIST --model simple_cnn --num-samples 2                     --solvers dual
 
   # Run unified two-level verifier validation after verification.
@@ -1360,10 +1445,10 @@ Examples:
     bab_group.add_argument(
         "--bab-solver-tier",
         type=str,
-        default="dual_alpha_eta",
+        default=None,
         choices=list(VALID_SOLVER_TIERS),
         help=(
-            "BaB solver tier when --bab is set (default: dual_alpha_eta). "
+            "BaB solver tier when --bab is set (default: from config.yaml). "
             "'lp' uses the existing LP/MILP backend; 'dual' uses DualSolver "
             "single-pass; 'dual_alpha' adds Lagrange-relaxed lower-slope "
             "optimization; 'dual_alpha_eta' adds joint slope + split-constraint "
@@ -1373,75 +1458,77 @@ Examples:
     bab_group.add_argument(
         "--bab-max-depth",
         type=int,
-        default=8,
-        help="Maximum BaB tree depth (default: 8)",
+        default=None,
+        help="Maximum BaB tree depth (default: from config.yaml)",
     )
     bab_group.add_argument(
         "--bab-max-nodes",
         type=int,
-        default=100,
-        help="Maximum BaB nodes to expand (default: 100)",
+        default=None,
+        help="Maximum BaB nodes to expand (default: from config.yaml)",
     )
     bab_group.add_argument(
         "--bab-branching-method",
         type=str,
-        default="random",
+        default=None,
         choices=["random", "babsr", "fsb", "gain", "width"],
-        help="BaB branching strategy when --bab is set (default: random)",
+        help="BaB branching strategy when --bab is set (default: from config.yaml)",
     )
     bab_group.add_argument(
         "--bab-bounding-method",
         type=str,
-        default="random",
+        default=None,
         choices=["random", "topk"],
         help=(
             "Pool selection when subproblems exceed the batch size: 'random' or "
-            "'topk' (keep the top-k by depth + lower-bound). Default: random."
+            "'topk' (keep the top-k by depth + lower-bound). Default: from config.yaml."
         ),
     )
     bab_group.add_argument(
         "--bab-bounding-order",
         type=str,
-        default="depth_lb",
+        default=None,
         choices=["depth_lb", "greedy", "sa"],
-        help="TopKBounding order policy (default: depth_lb)",
+        help="TopKBounding order policy (default: from config.yaml)",
     )
     bab_group.add_argument(
         "--bab-sa-cooling-rate",
         type=float,
-        default=0.99,
-        help="Cooling rate for --bab-bounding-order sa (default: 0.99)",
+        default=None,
+        help="Cooling rate for --bab-bounding-order sa (default: from config.yaml)",
     )
     bab_group.add_argument(
         "--bab-per-class-alpha",
         type=str,
-        default="true",
+        default=None,
         choices=["true", "false"],
         help=(
             "Per-spec α tensor (True; tighter bounds, M× memory) vs shared α "
-            "across specs (False; looser, 1× memory). Default: true."
+            "across specs (False; looser, 1× memory). Default: from config.yaml."
         ),
     )
     bab_group.add_argument(
         "--bab-no-incremental-start",
         action="store_true",
+        default=None,
         help="Disable parent→child α/η incremental-start propagation (debugging / ablation).",
     )
     bab_group.add_argument(
         "--bab-frontier-cap",
         type=int,
-        default=0,
-        help="Maximum pending BaB frontier leaves to retain; 0 disables eviction (default: 0)",
+        default=None,
+        help="Maximum pending BaB frontier leaves to retain; 0 disables eviction (default: from config.yaml)",
     )
     bab_group.add_argument(
         "--bab-input-split-fanout",
         type=int,
-        default=2,
-        help="Uniform fanout for input splits; 2 preserves binary splitting (default: 2)",
+        default=None,
+        help="Uniform fanout for input splits; 2 preserves binary splitting (default: from config.yaml)",
     )
     bab_group.add_argument(
         "--bab-provenance",
         action="store_true",
+        default=None,
         help="Enable node_id/parent_id provenance sidecar (requires --bab-bounding-method topk).",
     )
 
@@ -1457,7 +1544,10 @@ Examples:
         "--timeout",
         type=float,
         default=None,
-        help="Timeout in seconds (default: from config.yaml)",
+        help=(
+            "Time budget in seconds for fuzzing, BaB, or standalone HybridZ "
+            "verification (default: component configuration)"
+        ),
     )
     fuzz_group.add_argument(
         "--output",
@@ -1530,26 +1620,33 @@ Examples:
     validation_group.add_argument(
         "--solvers",
         nargs="+",
-        default=["gurobi", "torchlp"],
-        help="Solvers for Level 1 validation (default: gurobi torchlp)",
+        default=None,
+        help=(
+            "Verification solvers: gurobi, torchlp, hybridz, or dual "
+            "(default: from config.yaml)"
+        ),
     )
     validation_group.add_argument(
         "--tf-modes",
         nargs="+",
-        default=["interval"],
-        help="Transfer function modes for Level 2 bounds validation: interval, hybridz, dual (default: interval)",
+        default=None,
+        help=(
+            "Transfer function modes for bounds propagation: interval or "
+            "hybridz (default: from config.yaml); standalone hybridz selects "
+            "HybridzTF and dual ignores this option"
+        ),
     )
     validation_group.add_argument(
         "--input-samples",
         type=int,
-        default=10,
+        default=None,
         dest="samples",
-        help="Number of input samples for Level 2 bounds validation (default: 10)",
+        help="Number of input samples for Level 2 bounds validation (default: from config.yaml)",
     )
     validation_group.add_argument(
         "--per-neuron-topk",
         type=int,
-        default=10,
+        default=None,
         metavar="K",
         help="Number of worst per-neuron violations to report (default: 10). "
         "The bounds check itself is zero-tolerance by default — any deviation "
@@ -1558,7 +1655,7 @@ Examples:
     validation_group.add_argument(
         "--bounds-tolerance",
         type=str,
-        default="auto",
+        default=None,
         metavar="ABS[,REL]|auto",
         help="FP-noise floor for the per-neuron bounds check: violation iff "
         "gap > ABS + REL*max(|lb|,|ub|). Default 'auto' = 100 ulp of --dtype "
@@ -1576,8 +1673,8 @@ Examples:
         metavar="B1,B2,...",
         help="Batch sizes to validate at, e.g. '1,4'. Use 'none' for the "
         "network's native batch (from JSON). When omitted, falls back to "
-        "the ``validate.batch_sizes`` list in config_gen_act_net.yaml, "
-        "then to ``[None]`` (native only).",
+        "the ``validate.batch_sizes`` list in act/config/gen_act_net.yaml, then "
+        "to ``[None]`` (native only).",
     )
     validation_group.add_argument(
         "--ignore-errors",
@@ -1598,6 +1695,19 @@ Examples:
     _add_fuzz_config_args(parser)
 
     args = parser.parse_args()
+    requested_tf_modes = args.tf_modes
+
+    _apply_pipeline_config_defaults(args)
+    if (
+        requested_tf_modes is not None
+        and "hybridz" in args.solvers
+        and list(requested_tf_modes) != ["hybridz"]
+    ):
+        logger.warning(
+            "--solvers hybridz requires the hybridz transformer; overriding "
+            "--tf-modes %s",
+            " ".join(requested_tf_modes),
+        )
 
     # Initialize device manager from CLI arguments
     initialize_from_args(args)

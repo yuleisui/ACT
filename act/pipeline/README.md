@@ -14,8 +14,6 @@ The ACT Pipeline bridges the front-end data processing and back-end verification
 
 ```
 act/pipeline/
-├── cli.py                # Main pipeline CLI
-├── __main__.py           # Package entry point
 ├── verification/         # Verification utilities submodule
 │   ├── torch2act.py      # Automatic PyTorch→ACT conversion
 │   ├── act2torch.py      # ACT→PyTorch conversion utilities

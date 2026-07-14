@@ -29,6 +29,8 @@ from enum import Enum
 from dataclasses import dataclass, field
 from typing import Dict, Any, List, Tuple, Optional
 
+from act.util.format_utils import rule
+
 
 # =============================================================================
 # Verification Status and Result Types
@@ -316,7 +318,7 @@ class ACTStats:
             for status, count in verification_result_stat_dict.items():
                 print(f"  {status}: {count}")
         
-        print("-" * 50)
+        print(rule(50, "-"))
 
     @staticmethod
     def print_final_verification_summary(results: List) -> Any:
@@ -331,14 +333,14 @@ class ACTStats:
         """
         # VerifyStatus is now defined at module level in this file
         
-        print("\n" + "🏆" + "="*70 + "🏆")
+        print("\n" + "🏆" + rule(70) + "🏆")
         print("📊 Final verification results summary")
-        print("🏆" + "="*70 + "🏆")
+        print("🏆" + rule(70) + "🏆")
 
         for idx, result in enumerate(results):
             print(f"Sample {idx+1}: {result.name}")
 
-        print("-" * 60)
+        print(rule(60, "-"))
 
         certified_count = sum(1 for r in results if r == VerifyStatus.CERTIFIED)
         falsified_count = sum(1 for r in results if r == VerifyStatus.FALSIFIED)
@@ -372,7 +374,7 @@ class ACTStats:
             print(f"📊 FALSIFIED over total: {falsified_total_percentage:.2f}% ({falsified_count}/{total_count})")
             print(f"📊 MODEL_INFER_FAILURE over total: {model_infer_failure_percentage:.2f}% ({model_infer_failure_count}/{total_count})")
 
-        print("-" * 60)
+        print(rule(60, "-"))
 
         if all(r == VerifyStatus.CERTIFIED for r in results):
             final_result = VerifyStatus.CERTIFIED
@@ -384,7 +386,7 @@ class ACTStats:
             final_result = VerifyStatus.UNKNOWN
             print("❓ Final Result: UNKNOWN - inconclusive")
 
-        print("🏆" + "="*70 + "🏆")
+        print("🏆" + rule(70) + "🏆")
         return final_result
 
 

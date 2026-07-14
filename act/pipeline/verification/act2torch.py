@@ -9,8 +9,8 @@
 #
 # ACT → PyTorch Converter (Schema-Driven)
 # =======================================
-# REGISTRY (layer_schema.py) validates params; _ACT_TO_TORCH (below) maps
-# LayerKind → torch.nn.Module for restoration.
+# REGISTRY (layer_schema.py) validates params; ACT_TO_TORCH maps LayerKind →
+# torch.nn.Module for restoration.
 #
 # Layer Routing:
 #   INPUT      → InputLayer
@@ -29,87 +29,10 @@ import torch.nn as nn  # pyright: ignore[reportMissingImports]
 import logging
 
 from act.back_end.core import Net, Layer
-from act.back_end.layer_schema import LayerKind, REGISTRY
+from act.back_end.layer_schema import ACT_TO_TORCH, LayerKind, REGISTRY
 from act.util.device_manager import get_default_dtype, get_default_device
 
 logger = logging.getLogger(__name__)
-
-class _ErfModule(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.erf(x)
-
-
-class _SqrtModule(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.sqrt(torch.clamp(x, min=0.0))
-
-
-class _QuantizeModule(nn.Module):
-    def __init__(self, scale=None, zero_point=None, qmin=0, qmax=255):
-        super().__init__()
-        self.register_buffer("scale", torch.as_tensor(1.0 if scale is None else scale))
-        self.register_buffer("zero_point", torch.as_tensor(0 if zero_point is None else zero_point))
-        self.qmin = float(qmin)
-        self.qmax = float(qmax)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        scale = self.scale.to(device=x.device, dtype=x.dtype)
-        zp = self.zero_point.to(device=x.device, dtype=x.dtype)
-        return scale * torch.clamp(torch.round(x / scale), min=self.qmin - zp, max=self.qmax - zp)
-
-
-class _SinModule(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.sin(x)
-
-
-class _CosModule(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.cos(x)
-
-
-# ACT LayerKind → PyTorch nn.Module path.
-# Layers not listed are skipped during restoration (wrapper, graph ops, functional-only).
-_ACT_TO_TORCH = {
-    LayerKind.DENSE.value: nn.Linear,
-    LayerKind.CONV1D.value: nn.Conv1d,
-    LayerKind.CONV2D.value: nn.Conv2d,
-    LayerKind.CONV3D.value: nn.Conv3d,
-    LayerKind.CONVTRANSPOSE2D.value: nn.ConvTranspose2d,
-    LayerKind.MAXPOOL1D.value: nn.MaxPool1d,
-    LayerKind.MAXPOOL2D.value: nn.MaxPool2d,
-    LayerKind.MAXPOOL3D.value: nn.MaxPool3d,
-    LayerKind.AVGPOOL1D.value: nn.AvgPool1d,
-    LayerKind.AVGPOOL2D.value: nn.AvgPool2d,
-    LayerKind.AVGPOOL3D.value: nn.AvgPool3d,
-    LayerKind.ADAPTIVEAVGPOOL2D.value: nn.AdaptiveAvgPool2d,
-    LayerKind.RELU.value: nn.ReLU,
-    LayerKind.LRELU.value: nn.LeakyReLU,
-    LayerKind.PRELU.value: nn.PReLU,
-    LayerKind.SIGMOID.value: nn.Sigmoid,
-    LayerKind.TANH.value: nn.Tanh,
-    LayerKind.ERF.value: _ErfModule,
-    LayerKind.SQRT.value: _SqrtModule,
-    LayerKind.SIN.value: _SinModule,
-    LayerKind.COS.value: _CosModule,
-    LayerKind.QUANTIZE.value: _QuantizeModule,
-    LayerKind.SOFTPLUS.value: nn.Softplus,
-    LayerKind.SILU.value: nn.SiLU,
-    LayerKind.GELU.value: nn.GELU,
-    LayerKind.RELU6.value: nn.ReLU6,
-    LayerKind.HARDTANH.value: nn.Hardtanh,
-    LayerKind.HARDSIGMOID.value: nn.Hardsigmoid,
-    LayerKind.HARDSWISH.value: nn.Hardswish,
-    LayerKind.MISH.value: nn.Mish,
-    LayerKind.SOFTSIGN.value: nn.Softsign,
-    LayerKind.FLATTEN.value: nn.Flatten,
-    LayerKind.EMBEDDING.value: nn.Embedding,
-    LayerKind.RNN.value: nn.RNN,
-    LayerKind.GRU.value: nn.GRU,
-    LayerKind.LSTM.value: nn.LSTM,
-    LayerKind.SOFTMAX.value: nn.Softmax,
-    LayerKind.MHA.value: nn.MultiheadAttention,
-}
 
 
 def _axis_shift(input_shape: Any, x: torch.Tensor) -> int:
@@ -1105,7 +1028,7 @@ class ACTToTorch:
         return bn
 
     def _build_from_schema(self, act_layer: Layer) -> Optional[nn.Module]:
-        """Build PyTorch module from REGISTRY params + _ACT_TO_TORCH mapping."""
+        """Build PyTorch module from REGISTRY params + ACT_TO_TORCH mapping."""
         kind = act_layer.kind
         params = act_layer.params
 
@@ -1119,7 +1042,7 @@ class ACTToTorch:
         if kind in (LayerKind.RNN.value, LayerKind.GRU.value, LayerKind.LSTM.value):
             return self._build_rnn_family(act_layer)
 
-        cls = _ACT_TO_TORCH.get(kind)
+        cls = ACT_TO_TORCH.get(kind)
         if cls is None:
             if "requires_graph_restoration" in spec.get("params_optional", []):
                 logger.warning(
@@ -1129,7 +1052,7 @@ class ACTToTorch:
             return None
 
         if kind == LayerKind.QUANTIZE.value:
-            return _QuantizeModule(
+            return cls(
                 scale=params.get("scale"),
                 zero_point=params.get("zero_point"),
                 qmin=int(cast(Any, params.get("qmin", 0))),
@@ -1217,7 +1140,7 @@ class ACTToTorch:
         if kind == LayerKind.RNN.value:
             ctor_kwargs["nonlinearity"] = params.get("nonlinearity", "tanh")
 
-        rnn = _ACT_TO_TORCH[kind](**ctor_kwargs)
+        rnn = ACT_TO_TORCH[kind](**ctor_kwargs)
         target_dtype = next(rnn.parameters()).dtype
         sd = {k: v.detach().clone().to(dtype=target_dtype)
               for k, v in params.items() if isinstance(v, torch.Tensor)}

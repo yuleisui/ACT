@@ -14,7 +14,6 @@
 #===---------------------------------------------------------------------===#
 
 import torch
-import itertools
 import math
 from typing import List
 from act.back_end.core import Bounds, Con, ConSet, Fact, Layer
@@ -454,7 +453,7 @@ def tf_max(L: Layer, By_list: List[Bounds]) -> Fact:
     ub = torch.stack([b.ub for b in By_list], dim=0).amax(dim=0)
     B=Bounds(lb,ub)
     # Flatten list of y_vars_list efficiently
-    all_y = list(itertools.chain.from_iterable(L.params.get("y_vars_list", [])))
+    all_y = [v for sub in L.params.get("y_vars_list", []) for v in sub]
     C=ConSet(); C.replace(Con("INEQ", tuple(L.out_vars+all_y), {"tag":f"max:{L.id}","k":len(By_list),"mode":"convex"}))
     C.add_box(L.id,L.out_vars,B); return Fact(B,C)
 
@@ -463,7 +462,7 @@ def tf_min(L: Layer, By_list: List[Bounds]) -> Fact:
     ub = torch.stack([b.ub for b in By_list], dim=0).amin(dim=0)
     B=Bounds(lb,ub)
     # Flatten list of y_vars_list efficiently
-    all_y = list(itertools.chain.from_iterable(L.params.get("y_vars_list", [])))
+    all_y = [v for sub in L.params.get("y_vars_list", []) for v in sub]
     C=ConSet(); C.replace(Con("INEQ", tuple(L.out_vars+all_y), {"tag":f"min:{L.id}","k":len(By_list),"mode":"convex"}))
     C.add_box(L.id,L.out_vars,B); return Fact(B,C)
 

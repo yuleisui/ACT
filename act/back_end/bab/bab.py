@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union, ca
 
 import torch
 
-from act.back_end.config import BaBConfig, VALID_SOLVER_TIERS
+from act.config.config import BaBConfig, DualConfig, VALID_SOLVER_TIERS
 from act.back_end.bab.node import (
     BabNode,
     SubproblemBatch,
@@ -258,6 +258,7 @@ def _gain_tested_decision(
     net: Net,
     assert_layer: Layer,
     config: BaBConfig,
+    dual_config: DualConfig,
     keep_rows: Optional[torch.Tensor],
     root_bounds_dict: Optional[Dict[int, Bounds]],
     bounds_dict: Optional[Dict[int, Bounds]],
@@ -335,6 +336,7 @@ def _gain_tested_decision(
         k_actual=n_probe,
         batch=probe,
         config=config,
+        dual_config=dual_config,
         optimize=False,
         keep_rows=keep_rows,
         root_bounds_dict=root_bounds_dict,
@@ -799,8 +801,14 @@ def _check_input_specs_batched(x_batch: torch.Tensor, spec_layers: List[Layer]) 
         else:
             result &= torch.zeros_like(result)
             continue
+        positions_raw = layer.params.get("perturbed_positions")
+        positions = (
+            positions_raw
+            if positions_raw is None or isinstance(positions_raw, (torch.Tensor, list, tuple))
+            else None
+        )
         mask = normalize_position_mask(
-            layer.params.get("perturbed_positions"),
+            positions,
             int(center_t.shape[-2]),
             batch_shape=tuple(center_t.shape[:-2]),
             device=x_batch.device,
@@ -892,6 +900,7 @@ def _dispatch_dual_solve(
     k_actual: int,
     batch: SubproblemBatch,
     config: BaBConfig,
+    dual_config: DualConfig,
     optimize: bool,
     keep_rows: Optional[torch.Tensor] = None,
     root_bounds_dict: Optional[Dict[int, Bounds]] = None,
@@ -1014,22 +1023,22 @@ def _dispatch_dual_solve(
                 getattr(config, "eta_only_children", False) and is_child_batch
             ),
             refresh_forward=root_bounds_dict is None,
-            n_iters=config.dual_n_iters,
-            lr_alpha=config.lr_alpha,
-            lr_beta=config.lr_beta,
-            lr_decay=config.lr_decay,
+            n_iters=dual_config.n_iters,
+            lr_alpha=dual_config.lr_alpha,
+            lr_beta=dual_config.lr_beta,
+            lr_decay=dual_config.lr_decay,
             eta=batch.incremental_eta if solver_tier == "dual_alpha_eta" else None,
-            incremental_alphas=batch.incremental_alpha if getattr(config, "incremental_start_enabled", True) else None,
+            incremental_alphas=batch.incremental_alpha if dual_config.incremental_start_enabled else None,
             incremental_etas=(
                 batch.incremental_eta
                 if solver_tier == "dual_alpha_eta"
-                and getattr(config, "incremental_start_enabled", True)
+                and dual_config.incremental_start_enabled
                 else None
             ),
             split_signs=batch.split_signs if solver_tier == "dual_alpha_eta" else None,
             return_optimized=True,
             return_sce=True,
-            per_class_alpha=config.per_class_alpha,
+            per_class_alpha=dual_config.per_class_alpha,
             **({"return_nu_per_layer": True} if return_nu and supports_return_nu else {}),
         )
         margins_flat = dual_result.margins
@@ -1128,7 +1137,7 @@ def _dispatch_dual_solve(
             split_signs=(
                 batch.split_signs if solver_tier == "dual_alpha_eta" else None
             ),
-            per_class_alpha=config.per_class_alpha,
+            per_class_alpha=dual_config.per_class_alpha,
         )
     try:
         return DualSolveResult(
@@ -1250,6 +1259,7 @@ def verify_bab_batched(
     *,
     max_batch_size: Optional[Union[int, str]] = None,
     time_budget_s: Optional[float] = None,
+    dual_config: Optional[DualConfig] = None,
     verbose: bool = False,
     _k_log: Optional[List[int]] = None,
 ) -> VerifyResult:
@@ -1287,6 +1297,8 @@ def verify_bab_batched(
     """
     if config is None:
         config = BaBConfig()
+    if dual_config is None:
+        dual_config = DualConfig()
     auto_batch = isinstance(max_batch_size, str) and max_batch_size == "auto"
     if auto_batch:
         effective_batch = (
@@ -1407,6 +1419,7 @@ def verify_bab_batched(
             k_actual=root_batch.batch_size,
             batch=root_batch,
             config=config,
+            dual_config=dual_config,
             optimize=presolve_tier in ("dual_alpha", "dual_alpha_eta"),
             root_bounds_dict=root_fwd,
         )
@@ -1518,6 +1531,7 @@ def verify_bab_batched(
                 k_actual=k_actual,
                 batch=batch,
                 config=config,
+                dual_config=dual_config,
                 optimize=False,
                 keep_rows=spec_keep_rows,
                 root_bounds_dict=node_root_fwd,
@@ -1532,6 +1546,7 @@ def verify_bab_batched(
                 k_actual=k_actual,
                 batch=batch,
                 config=config,
+                dual_config=dual_config,
                 optimize=True,
                 keep_rows=spec_keep_rows,
                 root_bounds_dict=node_root_fwd,
@@ -1738,6 +1753,7 @@ def verify_bab_batched(
                                 net,
                                 assert_layer,
                                 config,
+                                dual_config,
                                 spec_keep_rows,
                                 node_root_fwd,
                                 bd_branch,
@@ -1890,6 +1906,7 @@ def verify_bab(
     time_budget_s: Optional[float] = None,
     timelimit: Optional[float] = None,
     verbose: bool = False,
+    dual_config: Optional[DualConfig] = None,
 ) -> VerifyResult:
     """Single-solver Branch-and-Bound entry: one subproblem per iteration.
 
@@ -1920,6 +1937,7 @@ def verify_bab(
         max_batch_size=1,
         time_budget_s=budget,
         verbose=verbose,
+        dual_config=dual_config,
     )
 
 

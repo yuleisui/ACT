@@ -108,16 +108,16 @@ onnx/ACASXU_run2a_1_2_batch_2000.onnx,vnnlib/prop_1.vnnlib,60
 
 ```bash
 # Auto-detect and download VNNLIB category
-python -m act.front_end.cli --download acasxu_2023
+python -m act.front_end --download acasxu_2023
 
 # List all categories (TorchVision + VNNLIB)
-python -m act.front_end.cli --list
+python -m act.front_end --list
 
 # Show category details
-python -m act.front_end.cli --info cifar100_2024
+python -m act.front_end --info cifar100_2024
 
 # Search categories
-python -m act.front_end.cli --search yolo
+python -m act.front_end --search yolo
 ```
 
 ### Using VNNLIB-Specific CLI

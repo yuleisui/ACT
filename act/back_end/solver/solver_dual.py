@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union, cast
 
 import torch
-from act.back_end.core import Bounds, Layer, Net, topological_sort
+from act.back_end.core import Bounds, Layer, Net, get_topo_order
 from act.back_end.layer_schema import LayerKind
 from act.back_end.dual_tf.tf_forward import _intersect_boxes
 from act.back_end.solver.solver_base import Solver, SolverCaps
@@ -358,7 +358,7 @@ class DualSolver(Solver):
             nu_snapshot: Dict[int, torch.Tensor] = {}
             obj = torch.zeros(B, dtype=c.dtype, device=c.device)
 
-            topo_order = topological_sort(net, reverse=True)
+            topo_order = get_topo_order(net, reverse=True)
             registry = self.tf._BACKWARD_REGISTRY
 
             for lid in topo_order:

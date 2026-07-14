@@ -6,7 +6,7 @@
 # Distributed without any warranty; see <http://www.gnu.org/licenses/>.
 # ===---------------------------------------------------------------------===#
 #
-# Generates ACT networks from a YAML config (config_gen_act_net.yaml).
+# Generates ACT networks from the DSL in act/config/gen_act_net.yaml.
 #
 # Usage:
 #   python -m act.back_end --generate                   # default 15 nets
@@ -31,13 +31,13 @@ from pathlib import Path
 from typing import Any, Dict, FrozenSet, List, Optional, Tuple
 
 import torch  # pyright: ignore[reportMissingImports]
-import yaml
 
 from act.back_end.core import Layer, Net
 from act.back_end.layer_schema import LayerKind, REGISTRY
 from act.back_end.serialization.serialization import NetSerializer
 from act.front_end.specs import InKind, OutKind, OutputSpec
 from act.util.device_manager import get_default_device, get_default_dtype
+from act.util.format_utils import rule
 
 logger = logging.getLogger(__name__)
 
@@ -222,36 +222,41 @@ def append_pool_nd(
 # ============================================================================
 
 
+def _append_layer(layers, kind: str, *, params: Optional[Dict[str, Any]] = None, **extra) -> None:
+    # params key order is preserved verbatim (flows into Layer.params via
+    # dict(ls["params"]) in create_network) -> generated JSON stays byte-identical.
+    layer: Dict[str, Any] = {"kind": kind, "params": params if params is not None else {}}
+    layer.update(extra)
+    layers.append(layer)
+
+
 def append_dense(
     layers, *, in_features: int, out_features: int, use_bias: bool
 ) -> None:
-    layers.append(
-        {
-            "kind": LayerKind.DENSE.value,
-            "params": {
-                "in_features": int(in_features),
-                "out_features": int(out_features),
-                "use_bias": bool(use_bias),
-            },
-        }
+    _append_layer(
+        layers,
+        LayerKind.DENSE.value,
+        params={
+            "in_features": int(in_features),
+            "out_features": int(out_features),
+            "use_bias": bool(use_bias),
+        },
     )
 
 
 def append_bias(layers, **meta_kw) -> None:
-    layers.append(
-        {
-            "kind": LayerKind.BIAS.value,
-            "params": {k: v for k, v in meta_kw.items() if v is not None},
-        }
+    _append_layer(
+        layers,
+        LayerKind.BIAS.value,
+        params={k: v for k, v in meta_kw.items() if v is not None},
     )
 
 
 def append_scale(layers, **meta_kw) -> None:
-    layers.append(
-        {
-            "kind": LayerKind.SCALE.value,
-            "params": {k: v for k, v in meta_kw.items() if v is not None},
-        }
+    _append_layer(
+        layers,
+        LayerKind.SCALE.value,
+        params={k: v for k, v in meta_kw.items() if v is not None},
     )
 
 
@@ -270,7 +275,7 @@ def append_act(
             params["negative_slope"] = float(act_params["lrelu_alpha"])
         elif act_kind == LayerKind.POW.value and "power_exponent" in act_params:
             params["exponent"] = float(act_params["power_exponent"])
-    layers.append({"kind": act_kind, "params": params})
+    _append_layer(layers, act_kind, params=params)
 
 
 def append_add(layers, *, skip_idx: int, main_idx: int) -> None:
@@ -280,28 +285,26 @@ def append_add(layers, *, skip_idx: int, main_idx: int) -> None:
 
 
 def append_binary_op(layers, *, op_kind: str, x_idx: int, y_idx: int) -> None:
-    layers.append(
-        {
-            "kind": op_kind,
-            "params": {},
-            "inputs": {"x": x_idx, "y": y_idx},
-            "preds": [x_idx, y_idx],
-        }
+    _append_layer(
+        layers,
+        op_kind,
+        params={},
+        inputs={"x": x_idx, "y": y_idx},
+        preds=[x_idx, y_idx],
     )
 
 
 def append_concat(layers, *, input_indices: List[int], concat_dim: int = 0) -> None:
-    layers.append(
-        {
-            "kind": LayerKind.CONCAT.value,
-            "params": {"concat_dim": concat_dim},
-            "preds": input_indices,
-        }
+    _append_layer(
+        layers,
+        LayerKind.CONCAT.value,
+        params={"concat_dim": concat_dim},
+        preds=input_indices,
     )
 
 
 def append_flatten(layers) -> None:
-    layers.append({"kind": LayerKind.FLATTEN.value, "params": {"start_dim": 1}})
+    _append_layer(layers, LayerKind.FLATTEN.value, params={"start_dim": 1})
 
 
 def append_rnn_family(
@@ -417,6 +420,26 @@ def _inject_extra_ops(
 # ============================================================================
 
 
+def _build_residual_block(
+    layers: List[Dict[str, Any]],
+    *,
+    num_blocks: int,
+    main_op,
+    act_kind: str,
+    cfg: Dict[str, Any],
+) -> None:
+    # main_op: zero-arg callable appending one main-path layer (Dense/Conv),
+    # may mutate enclosing H, W via closure. Append order matches the prior
+    # inline loops verbatim -> byte-identical generated JSON.
+    for _ in range(num_blocks):
+        skip_idx = len(layers) - 1
+        main_op()
+        append_act(layers, act_kind, act_params=cfg)
+        main_op()
+        append_add(layers, skip_idx=skip_idx, main_idx=len(layers) - 1)
+        append_act(layers, act_kind, act_params=cfg)
+
+
 def build_mlp_layers(layers: List[Dict[str, Any]], *, cfg: Dict[str, Any]) -> None:
     shape = tuple(cfg["input_shape"])
     in_feat = int(shape[1]) if len(shape) == 2 else math.prod(shape[1:])
@@ -460,18 +483,19 @@ def build_mlp_layers(layers: List[Dict[str, Any]], *, cfg: Dict[str, Any]) -> No
             )
             append_act(layers, act_kind, act_params=cfg)
             in_feat = width
-        for _ in range(int(cfg["num_residual_blocks"])):
-            skip_idx = len(layers) - 1
+
+        def _dense_main():
             append_dense(
                 layers, in_features=in_feat, out_features=in_feat, use_bias=use_bias
             )
-            append_act(layers, act_kind, act_params=cfg)
-            append_dense(
-                layers, in_features=in_feat, out_features=in_feat, use_bias=use_bias
-            )
-            main_idx = len(layers) - 1
-            append_add(layers, skip_idx=skip_idx, main_idx=main_idx)
-            append_act(layers, act_kind, act_params=cfg)
+
+        _build_residual_block(
+            layers,
+            num_blocks=int(cfg["num_residual_blocks"]),
+            main_op=_dense_main,
+            act_kind=act_kind,
+            cfg=cfg,
+        )
     else:
         raise ValueError(f"Unsupported MLP variant '{variant}'")
 
@@ -659,13 +683,18 @@ def build_cnn_layers(
         ch = int(cfg["residual_channels"])
         H, W = _conv2d(layers, in_ch=in_ch, out_ch=ch, H=H, W=W)
         append_act(layers, act_kind, act_params=cfg)
-        for _ in range(int(cfg["num_residual_blocks"])):
-            skip_idx = len(layers) - 1
+
+        def _conv_main():
+            nonlocal H, W
             H, W = _conv2d(layers, in_ch=ch, out_ch=ch, H=H, W=W)
-            append_act(layers, act_kind, act_params=cfg)
-            H, W = _conv2d(layers, in_ch=ch, out_ch=ch, H=H, W=W)
-            append_add(layers, skip_idx=skip_idx, main_idx=len(layers) - 1)
-            append_act(layers, act_kind, act_params=cfg)
+
+        _build_residual_block(
+            layers,
+            num_blocks=int(cfg["num_residual_blocks"]),
+            main_op=_conv_main,
+            act_kind=act_kind,
+            cfg=cfg,
+        )
         while H > 1 or W > 1:
             H, W = _pool2d(layers, kind=LayerKind.AVGPOOL2D.value, in_ch=ch, H=H, W=W)
             if H <= 0 or W <= 0:
@@ -1087,7 +1116,7 @@ class ConfigSampler:
 class NetFactory:
     def __init__(
         self,
-        gen_config_path: Optional[str] = None,
+        config: Dict[str, Any],
         *,
         output_dir: Optional[str] = None,
         base_seed: Optional[int] = None,
@@ -1097,12 +1126,8 @@ class NetFactory:
         tf_targets: Optional[List[str]] = None,
         registry_mode: str = "intersection",
     ):
-        if gen_config_path is None:
-            gen_config_path = str(
-                Path(__file__).parent / "examples" / "config_gen_act_net.yaml"
-            )
-        self.config_path = str(gen_config_path)
-        self.config = self._load_config(self.config_path)
+        self.config = config
+        self.config_path = "gen_act_net.yaml"
         common = self.config["common"]
 
         self.tf_targets = tf_targets
@@ -1147,16 +1172,6 @@ class NetFactory:
         self.coverage_report = bool(common.get("coverage_report", True))
         self._init_coverage()
         self.total_generated = 0
-
-    @staticmethod
-    def _load_config(path: str) -> Dict[str, Any]:
-        p = Path(path)
-        if not p.exists():
-            raise FileNotFoundError(f"Config not found: {p}")
-        data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-        if not isinstance(data, dict):
-            raise ValueError(f"Config must be a mapping: {p}")
-        return data
 
     def _compute_allowed_layers(self, tf_targets, mode):
         try:
@@ -1547,9 +1562,9 @@ class NetFactory:
         covered = sum(1 for c in self.coverage_stats.values() if c > 0)
         total = len(self.coverage_stats)
         rate = self._coverage_rate()
-        print(f"\n{'=' * 60}")
+        print(f"\n{rule(60)}")
         print("Layer Coverage Report")
-        print(f"{'=' * 60}")
+        print(f"{rule(60)}")
         if self.tf_targets:
             print(f"TF Targets: {self.tf_targets} (mode: {self.registry_mode})")
         print(f"Allowed: {len(self.allowed_layers)}  Trackable: {total}")
@@ -1563,7 +1578,7 @@ class NetFactory:
                 print(f"  - {l}")
         else:
             print("\nAll target layers covered!")
-        print(f"{'=' * 60}\n")
+        print(f"{rule(60)}\n")
 
     def _generate_one(self, idx: int, dtype: str, names: List[str]) -> None:
         inst = self._sample_instance(idx)

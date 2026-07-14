@@ -16,7 +16,7 @@ import logging
 
 import numpy as np
 import torch
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 from act.back_end.core import Bounds, ConSet
 from act.back_end.solver.solver_base import BatchLPProblem
 from act.back_end.layer_util import validate_conset_ops
@@ -41,6 +41,17 @@ _RANGE_SLACK_CAP = 1e6
 _TANH_LIN_EPS = 1e-9
 _TANH_BAND = 0.25
 _TANH_BAND_TOL = 1e-6
+
+
+def _as_td(x: Any, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    # Exact extraction of the repeated coercion idiom: tensors move via .to
+    # (no-op when already matching), non-tensors lift via torch.as_tensor.
+    # Preserves device/dtype/contiguity semantics; adds no .clone().
+    return (
+        x.to(device=device, dtype=dtype)
+        if isinstance(x, torch.Tensor)
+        else torch.as_tensor(x, device=device, dtype=dtype)
+    )
 
 
 def _coerce_b_tensor(
@@ -298,16 +309,8 @@ def _emit_dense(
     """``y_i - sum_j W[i,j] * x_j = b[i]`` — one eq per output element."""
     W = con.meta["W"]
     b = con.meta["b"]
-    W_t = (
-        W.to(device=device, dtype=dtype)
-        if isinstance(W, torch.Tensor)
-        else torch.as_tensor(W, device=device, dtype=dtype)
-    )
-    b_t = (
-        b.to(device=device, dtype=dtype)
-        if isinstance(b, torch.Tensor)
-        else torch.as_tensor(b, device=device, dtype=dtype)
-    )
+    W_t = _as_td(W, device, dtype)
+    b_t = _as_td(b, device, dtype)
     n_out, n_in = W_t.shape
     var_ids_all = list(con.var_ids)
     y = var_ids_all[:n_out]
@@ -317,14 +320,18 @@ def _emit_dense(
             f"dense: var_ids length mismatch: {len(x)} input vars vs "
             f"W.shape[1]={n_in}"
         )
-    for i in range(n_out):
-        row_vars = [y[i]] + x
-        # vals[n, 0] = 1.0; vals[n, 1:] = -W[i, :]
-        vals = torch.empty((N, 1 + n_in), device=device, dtype=dtype)
-        vals[:, 0] = 1.0
-        vals[:, 1:] = -W_t[i].unsqueeze(0).expand(N, -1)
-        rhs = b_t[i].expand(N).contiguous()
-        eq.add(row_vars, vals, rhs)
+    m = n_out
+    col_block = torch.empty((m, 1 + n_in), device=device, dtype=torch.long)
+    col_block[:, 0] = torch.tensor(y, device=device, dtype=torch.long)
+    col_block[:, 1:] = torch.tensor(
+        x, device=device, dtype=torch.long
+    ).unsqueeze(0).expand(m, -1)
+    val_per_row = torch.empty((m, 1 + n_in), device=device, dtype=dtype)
+    val_per_row[:, 0] = 1.0
+    val_per_row[:, 1:] = -W_t
+    val_block = val_per_row.unsqueeze(0).expand(N, m, 1 + n_in).contiguous()
+    rhs_block = b_t.reshape(m).unsqueeze(0).expand(N, m).contiguous()
+    eq.add_block(col_block, val_block, rhs_block)
 
 
 def _emit_bias(
@@ -339,19 +346,20 @@ def _emit_bias(
     y = list(con.var_ids[:n])
     x = list(con.var_ids[n:])
     c_raw = con.meta["c"]
-    c_t = (
-        c_raw.to(device=device, dtype=dtype)
-        if isinstance(c_raw, torch.Tensor)
-        else torch.as_tensor(c_raw, device=device, dtype=dtype)
-    ).reshape(-1)
+    c_t = _as_td(c_raw, device, dtype).reshape(-1)
     if c_t.numel() != n:
         raise ValueError(f"bias: c length {c_t.numel()} != n {n}")
-    for i in range(n):
-        vals = torch.tensor(
-            [[1.0, -1.0]], device=device, dtype=dtype
-        ).expand(N, -1).contiguous()
-        rhs = c_t[i].expand(N).contiguous()
-        eq.add([y[i], x[i]], vals, rhs)
+    m = n
+    col_block = torch.stack([
+        torch.tensor(y, device=device, dtype=torch.long),
+        torch.tensor(x, device=device, dtype=torch.long),
+    ], dim=1)
+    val_per_row = torch.tensor(
+        [1.0, -1.0], device=device, dtype=dtype
+    ).unsqueeze(0).expand(m, -1)
+    val_block = val_per_row.unsqueeze(0).expand(N, m, 2).contiguous()
+    rhs_block = c_t.reshape(m).unsqueeze(0).expand(N, m).contiguous()
+    eq.add_block(col_block, val_block, rhs_block)
 
 
 def _emit_scale(
@@ -366,19 +374,20 @@ def _emit_scale(
     y = list(con.var_ids[:n])
     x = list(con.var_ids[n:])
     a_raw = con.meta["a"]
-    a_t = (
-        a_raw.to(device=device, dtype=dtype)
-        if isinstance(a_raw, torch.Tensor)
-        else torch.as_tensor(a_raw, device=device, dtype=dtype)
-    ).reshape(-1)
+    a_t = _as_td(a_raw, device, dtype).reshape(-1)
     if a_t.numel() != n:
         raise ValueError(f"scale: a length {a_t.numel()} != n {n}")
-    for i in range(n):
-        vals = torch.empty((N, 2), device=device, dtype=dtype)
-        vals[:, 0] = 1.0
-        vals[:, 1] = -a_t[i]
-        rhs = torch.zeros((N,), device=device, dtype=dtype)
-        eq.add([y[i], x[i]], vals, rhs)
+    m = n
+    col_block = torch.stack([
+        torch.tensor(y, device=device, dtype=torch.long),
+        torch.tensor(x, device=device, dtype=torch.long),
+    ], dim=1)
+    val_per_row = torch.empty((m, 2), device=device, dtype=dtype)
+    val_per_row[:, 0] = 1.0
+    val_per_row[:, 1] = -a_t.reshape(m)
+    val_block = val_per_row.unsqueeze(0).expand(N, m, 2).contiguous()
+    rhs_block = torch.zeros((N, m), device=device, dtype=dtype)
+    eq.add_block(col_block, val_block, rhs_block)
 
 
 def _emit_bn(
@@ -394,26 +403,23 @@ def _emit_bn(
     x = list(con.var_ids[n:])
     A_raw = con.meta["A"]
     c_raw = con.meta["c"]
-    A_t = (
-        A_raw.to(device=device, dtype=dtype)
-        if isinstance(A_raw, torch.Tensor)
-        else torch.as_tensor(A_raw, device=device, dtype=dtype)
-    ).reshape(-1)
-    c_t = (
-        c_raw.to(device=device, dtype=dtype)
-        if isinstance(c_raw, torch.Tensor)
-        else torch.as_tensor(c_raw, device=device, dtype=dtype)
-    ).reshape(-1)
+    A_t = _as_td(A_raw, device, dtype).reshape(-1)
+    c_t = _as_td(c_raw, device, dtype).reshape(-1)
     if A_t.numel() != n or c_t.numel() != n:
         raise ValueError(
             f"bn: A.numel={A_t.numel()} c.numel={c_t.numel()} != n {n}"
         )
-    for i in range(n):
-        vals = torch.empty((N, 2), device=device, dtype=dtype)
-        vals[:, 0] = 1.0
-        vals[:, 1] = -A_t[i]
-        rhs = c_t[i].expand(N).contiguous()
-        eq.add([y[i], x[i]], vals, rhs)
+    m = n
+    col_block = torch.stack([
+        torch.tensor(y, device=device, dtype=torch.long),
+        torch.tensor(x, device=device, dtype=torch.long),
+    ], dim=1)
+    val_per_row = torch.empty((m, 2), device=device, dtype=dtype)
+    val_per_row[:, 0] = 1.0
+    val_per_row[:, 1] = -A_t.reshape(m)
+    val_block = val_per_row.unsqueeze(0).expand(N, m, 2).contiguous()
+    rhs_block = c_t.reshape(m).unsqueeze(0).expand(N, m).contiguous()
+    eq.add_block(col_block, val_block, rhs_block)
 
 
 def _emit_add_sub(
@@ -429,12 +435,18 @@ def _emit_add_sub(
     z = list(con.var_ids[:n])
     x = list(con.var_ids[n:2 * n])
     y = list(con.var_ids[2 * n:])
-    for i in range(n):
-        vals = torch.tensor(
-            [[1.0, -1.0, -sign_y]], device=device, dtype=dtype
-        ).expand(N, -1).contiguous()
-        rhs = torch.zeros((N,), device=device, dtype=dtype)
-        eq.add([z[i], x[i], y[i]], vals, rhs)
+    m = n
+    col_block = torch.stack([
+        torch.tensor(z, device=device, dtype=torch.long),
+        torch.tensor(x, device=device, dtype=torch.long),
+        torch.tensor(y, device=device, dtype=torch.long),
+    ], dim=1)
+    val_per_row = torch.tensor(
+        [1.0, -1.0, -sign_y], device=device, dtype=dtype
+    ).unsqueeze(0).expand(m, -1)
+    val_block = val_per_row.unsqueeze(0).expand(N, m, 3).contiguous()
+    rhs_block = torch.zeros((N, m), device=device, dtype=dtype)
+    eq.add_block(col_block, val_block, rhs_block)
 
 
 def _emit_flatten(
@@ -461,12 +473,17 @@ def _emit_flatten(
         raise ValueError(f"flatten: n_out {n_out} != n_in {n_in}")
     y = list(con.var_ids[:n_out])
     x = list(con.var_ids[n_out:])
-    vals = torch.tensor(
-        [[1.0, -1.0]], device=device, dtype=dtype
-    ).expand(N, -1).contiguous()
-    rhs = torch.zeros((N,), device=device, dtype=dtype)
-    for i in range(n_out):
-        eq.add([y[i], x[i]], vals, rhs)
+    m = n_out
+    col_block = torch.stack([
+        torch.tensor(y, device=device, dtype=torch.long),
+        torch.tensor(x, device=device, dtype=torch.long),
+    ], dim=1)
+    val_per_row = torch.tensor(
+        [1.0, -1.0], device=device, dtype=dtype
+    ).unsqueeze(0).expand(m, -1)
+    val_block = val_per_row.unsqueeze(0).expand(N, m, 2).contiguous()
+    rhs_block = torch.zeros((N, m), device=device, dtype=dtype)
+    eq.add_block(col_block, val_block, rhs_block)
 
 
 def _emit_mask_add(
@@ -541,11 +558,7 @@ def _emit_conv2d(
     _, C_in, H_in, W_in = (int(v) for v in input_shape)
     _, C_out, H_out, W_out = (int(v) for v in output_shape)
 
-    W_t = (
-        weight_raw.to(device=device, dtype=dtype)
-        if isinstance(weight_raw, torch.Tensor)
-        else torch.as_tensor(weight_raw, device=device, dtype=dtype)
-    )
+    W_t = _as_td(weight_raw, device, dtype)
     if W_t.dim() != 4:
         raise ValueError(
             f"conv2d: weight must be 4-D [C_out, C_in, K_h, K_w]; "
@@ -569,11 +582,7 @@ def _emit_conv2d(
     y_ids = var_ids_all[:n_out_per_instance]
     x_ids = var_ids_all[n_out_per_instance:]
 
-    b_t = (
-        bias_raw.to(device=device, dtype=dtype)
-        if isinstance(bias_raw, torch.Tensor)
-        else torch.as_tensor(bias_raw, device=device, dtype=dtype)
-    ).reshape(-1)
+    b_t = _as_td(bias_raw, device, dtype).reshape(-1)
     if b_t.numel() != n_out_per_instance:
         raise ValueError(
             f"conv2d: b length {b_t.numel()} != n_out_per_instance "
@@ -1634,16 +1643,8 @@ def _emit_in_linpoly(
     """``in:linpoly``: ``A x <= b`` rows on the input variables."""
     A_raw = con.meta["A"]
     b_raw = con.meta["b"]
-    A_t = (
-        A_raw.to(device=device, dtype=dtype)
-        if isinstance(A_raw, torch.Tensor)
-        else torch.as_tensor(A_raw, device=device, dtype=dtype)
-    )
-    b_t = (
-        b_raw.to(device=device, dtype=dtype)
-        if isinstance(b_raw, torch.Tensor)
-        else torch.as_tensor(b_raw, device=device, dtype=dtype)
-    )
+    A_t = _as_td(A_raw, device, dtype)
+    b_t = _as_td(b_raw, device, dtype)
     vids = list(con.var_ids)
     if A_t.dim() != 2 or A_t.shape[1] != len(vids):
         raise ValueError(
@@ -1701,11 +1702,7 @@ def _emit_assert_canonical(
                 "per row. Use solver_tier in {dual, dual_alpha, dual_alpha_eta}."
             )
         c_b = _coerce_b_tensor(c_raw, N, n_out, device, dtype, "c")
-        d_b = (
-            d_raw.to(device=device, dtype=dtype).reshape(-1)
-            if isinstance(d_raw, torch.Tensor)
-            else torch.as_tensor(d_raw, device=device, dtype=dtype).reshape(-1)
-        )
+        d_b = _as_td(d_raw, device, dtype).reshape(-1)
         if d_b.numel() == 1:
             d_b = d_b.expand(N).contiguous()
         elif d_b.numel() != N:
@@ -1725,11 +1722,7 @@ def _emit_assert_canonical(
         if C_raw is None:
             # Fall back to "c" (3-D or 2-D)
             C_raw = assert_layer.params["c"]
-        C_t = (
-            C_raw.to(device=device, dtype=dtype)
-            if isinstance(C_raw, torch.Tensor)
-            else torch.as_tensor(C_raw, device=device, dtype=dtype)
-        )
+        C_t = _as_td(C_raw, device, dtype)
         if C_t.dim() == 3:
             C_t = C_t.reshape(C_t.shape[0] * C_t.shape[1], C_t.shape[2])
         if C_t.shape != (N * M, n_out):
@@ -1744,11 +1737,7 @@ def _emit_assert_canonical(
         d_raw = assert_layer.params.get("thresholds")
         if d_raw is None:
             d_raw = assert_layer.params["d"]
-        d_t = (
-            d_raw.to(device=device, dtype=dtype)
-            if isinstance(d_raw, torch.Tensor)
-            else torch.as_tensor(d_raw, device=device, dtype=dtype)
-        )
+        d_t = _as_td(d_raw, device, dtype)
         if d_t.dim() == 1 and d_t.numel() == M:
             d_t = d_t.unsqueeze(0).expand(N, -1)
         elif d_t.shape == (1, M):
