@@ -426,6 +426,7 @@ REGISTRY: Dict[str, Dict[str, Any]] = {
             "dilation",
             "ceil_mode",
             "count_include_pad",
+            "divisor_override",
             "output_size",
             "input_shape",
             "output_shape",

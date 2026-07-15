@@ -16,6 +16,7 @@ import torch
 import torch.nn.functional as F
 from typing import Tuple, Optional, Dict, Any, List, cast
 from act.back_end.core import Bounds, Layer
+from act.back_end.utils import avgpool2d_denominators, avgpool2d_output_hw, pair_2d
 
 from .tf_forward import (
     LinearBound, Frame,
@@ -304,21 +305,20 @@ def forward_avgpool2d(
 def backward_avgpool2d(L, nu, bounds_dict, preds, M: int = 1, alpha=None):
     """AvgPool2D backward — exact linear transpose.
 
-    AvgPool is mathematically EXACT linear: ``y = (1/k²) · conv(x, ones_k)``,
-    so the backward is mathematically exact (no relaxation):
-    ``nu_in = (1/k²) · conv_transpose(nu_out, ones_k)``, per channel.
+    AvgPool is linear. Scale each output coefficient by its window divisor,
+    then apply the transpose of the unit-kernel sum, per channel.
     contrib = 0 (no bias, no nonlinear gap).
     """
     kernel_size = L.params.get("kernel_size", 2)
     stride = L.params.get("stride", kernel_size)
     padding = L.params.get("padding", 0)
+    ceil_mode = bool(L.params.get("ceil_mode", False))
+    count_include_pad = bool(L.params.get("count_include_pad", True))
+    divisor_override = L.params.get("divisor_override")
     input_shape = L.params.get("input_shape")
-    if isinstance(kernel_size, (list, tuple)): kernel_size = int(kernel_size[0])
-    if isinstance(stride, (list, tuple)): stride = int(stride[0])
-    if isinstance(padding, (list, tuple)): padding = int(padding[0])
-    kernel_size = int(kernel_size)
-    stride = int(stride)
-    padding = int(padding)
+    kernel_size = pair_2d(kernel_size)
+    stride = pair_2d(stride)
+    padding = pair_2d(padding)
 
     if input_shape is None:
         raise ValueError(f"backward_avgpool2d: layer {L.id} missing 'input_shape' param")
@@ -329,8 +329,9 @@ def backward_avgpool2d(L, nu, bounds_dict, preds, M: int = 1, alpha=None):
         c, iH, iW = shape[-3:]
     c = int(c); iH = int(iH); iW = int(iW)
 
-    oH = (iH + 2 * padding - kernel_size) // stride + 1
-    oW = (iW + 2 * padding - kernel_size) // stride + 1
+    oH, oW = avgpool2d_output_hw(
+        (iH, iW), kernel_size, stride, padding, ceil_mode
+    )
 
     BM = nu.shape[0]
     v_flat = nu.flatten(start_dim=1)
@@ -345,17 +346,49 @@ def backward_avgpool2d(L, nu, bounds_dict, preds, M: int = 1, alpha=None):
         v_pad[:, :n] = v_flat
         v_4d = v_pad.view(BM, c, oH, oW)
 
-    avg_weight = torch.full((c, 1, kernel_size, kernel_size),
-                            1.0 / (kernel_size * kernel_size),
-                            dtype=nu.dtype, device=nu.device)
+    denominators = avgpool2d_denominators(
+        (iH, iW),
+        (oH, oW),
+        kernel_size,
+        stride,
+        padding,
+        ceil_mode=ceil_mode,
+        count_include_pad=count_include_pad,
+        divisor_override=divisor_override,
+        device=nu.device,
+        dtype=nu.dtype,
+    )
+    v_4d = v_4d / denominators.view(1, 1, oH, oW)
+    avg_weight = torch.ones(
+        (c, 1, kernel_size[0], kernel_size[1]),
+        dtype=nu.dtype,
+        device=nu.device,
+    )
 
-    computed_h = (oH - 1) * stride - 2 * padding + kernel_size
-    output_padding = max(0, iH - computed_h)
+    computed_h = (oH - 1) * stride[0] - 2 * padding[0] + kernel_size[0]
+    computed_w = (oW - 1) * stride[1] - 2 * padding[1] + kernel_size[1]
+    output_padding = (
+        max(0, iH - computed_h),
+        max(0, iW - computed_w),
+    )
+    if output_padding[0] >= stride[0] or output_padding[1] >= stride[1]:
+        raise ValueError("avgpool2d transpose output padding is inconsistent")
 
-    v_out_4d = F.conv_transpose2d(v_4d, avg_weight, None,
-                                  stride=stride, padding=padding,
-                                  output_padding=output_padding,
-                                  groups=c)
+    v_out_4d = F.conv_transpose2d(
+        v_4d,
+        avg_weight,
+        None,
+        stride=stride,
+        padding=padding,
+        output_padding=output_padding,
+        groups=c,
+    )
+    v_out_4d = v_out_4d[..., :iH, :iW]
+    if v_out_4d.shape[-2:] != (iH, iW):
+        v_out_4d = F.pad(
+            v_out_4d,
+            (0, iW - v_out_4d.shape[-1], 0, iH - v_out_4d.shape[-2]),
+        )
     v_out = v_out_4d.flatten(start_dim=1)
     contrib = torch.zeros(BM, dtype=nu.dtype, device=nu.device)
 

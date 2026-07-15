@@ -1101,6 +1101,10 @@ class ACTToTorch:
         ):
             if key in params:
                 kwargs[key] = params[key]
+        if kind == LayerKind.AVGPOOL2D.value:
+            for key in ("ceil_mode", "count_include_pad", "divisor_override"):
+                if key in params:
+                    kwargs[key] = params[key]
 
         # Create module instance
         m = cls(*args, **kwargs)

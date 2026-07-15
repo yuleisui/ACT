@@ -24,6 +24,7 @@ except ImportError:
 from act.back_end.core import Bounds, Fact
 from act.back_end.solver.solver_hz import HZono, SparseHZono, sparse_hz_linear
 from act.back_end.hybridz_tf.tf_mlp import _hz_fact
+from act.back_end.utils import avgpool2d_denominators, avgpool2d_output_hw
 import act.back_end.interval_tf.tf_cnn as interval
 
 
@@ -180,9 +181,23 @@ def sparse_avgpool2d_matrix_from_layer(layer):
     raw_stride = layer.params.get("stride")
     stride = _pair(raw_stride if raw_stride is not None else layer.params["kernel_size"])
     padding = _pair(layer.params.get("padding", 0))
-    OH = (H + 2 * padding[0] - kernel[0]) // stride[0] + 1
-    OW = (W + 2 * padding[1] - kernel[1]) // stride[1] + 1
-    denom = float(kernel[0] * kernel[1])
+    ceil_mode = bool(layer.params.get("ceil_mode", False))
+    count_include_pad = bool(layer.params.get("count_include_pad", True))
+    divisor_override = layer.params.get("divisor_override")
+    OH, OW = avgpool2d_output_hw(
+        (H, W), kernel, stride, padding, ceil_mode
+    )
+    denominators = avgpool2d_denominators(
+        (H, W),
+        (OH, OW),
+        kernel,
+        stride,
+        padding,
+        ceil_mode=ceil_mode,
+        count_include_pad=count_include_pad,
+        divisor_override=divisor_override,
+        dtype=torch.float64,
+    ).cpu().numpy()
     rows, cols, data = [], [], []
     for c in range(C):
         for oh in range(OH):
@@ -198,7 +213,7 @@ def sparse_avgpool2d_matrix_from_layer(layer):
                             continue
                         rows.append(r)
                         cols.append(c * H * W + ih * W + iw)
-                        data.append(1.0 / denom)
+                        data.append(1.0 / float(denominators[oh, ow]))
     return sp.csr_matrix((data, (rows, cols)), shape=(C * OH * OW, C * H * W)), None
 
 
@@ -346,12 +361,25 @@ def _hz_spatial_affine(hz: HZono, op_fn, input_shape, bias=None) -> HZono:
     )
 
 
-def hz_avgpool2d(hz, kernel_size, stride, padding, input_shape) -> HZono:
+def hz_avgpool2d(
+    hz,
+    kernel_size,
+    stride,
+    padding,
+    input_shape,
+    *,
+    ceil_mode=False,
+    count_include_pad=True,
+    divisor_override=None,
+) -> HZono:
     op = lambda x: F.avg_pool2d(
         x,
         kernel_size=kernel_size,
         stride=stride if stride is not None else kernel_size,
         padding=padding,
+        ceil_mode=ceil_mode,
+        count_include_pad=count_include_pad,
+        divisor_override=divisor_override,
     )
     return _hz_spatial_affine(hz, op, input_shape)
 
@@ -367,6 +395,9 @@ def tf_avgpool2d(L, bounds, tf):
                 L.params.get("stride"),
                 L.params.get("padding", 0),
                 ishape,
+                ceil_mode=bool(L.params.get("ceil_mode", False)),
+                count_include_pad=bool(L.params.get("count_include_pad", True)),
+                divisor_override=L.params.get("divisor_override"),
             )
         else:
             hz_in = None

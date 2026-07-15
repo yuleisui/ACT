@@ -67,6 +67,7 @@ except (ImportError, RuntimeError):
 from act.back_end.core import Net, Layer
 from act.back_end.layer_schema import ACT_TO_TORCH, LayerKind
 from act.back_end.layer_util import create_layer
+from act.back_end.utils import avgpool2d_output_hw
 from act.pipeline.verification.utils import (
     _prod, _normalize_tuple, _assert_dag, _broadcast_const_to_size,
     _normalize_axes, _reduce_output_shape, _compute_slice_output_shape,
@@ -1517,8 +1518,13 @@ class _LayerGraphBuilder:
         st = _normalize_tuple(mod.stride if mod.stride else mod.kernel_size)
         pad = _normalize_tuple(mod.padding, (0, 0))
         
-        out_h = (in_h + 2 * pad[0] - ks[0]) // st[0] + 1
-        out_w = (in_w + 2 * pad[1] - ks[1]) // st[1] + 1
+        if is_max:
+            out_h = (in_h + 2 * pad[0] - ks[0]) // st[0] + 1
+            out_w = (in_w + 2 * pad[1] - ks[1]) // st[1] + 1
+        else:
+            out_h, out_w = avgpool2d_output_hw(
+                (in_h, in_w), ks, st, pad, bool(mod.ceil_mode)
+            )
         output_shape = (1, in_c, out_h, out_w)
         
         out_vars = self._alloc_ids(in_c * out_h * out_w)
@@ -1527,6 +1533,11 @@ class _LayerGraphBuilder:
             "kernel_size": mod.kernel_size, "stride": mod.stride or mod.kernel_size,
             "padding": mod.padding, "input_shape": self.shape, "output_shape": output_shape
         }
+        if not is_max:
+            params["ceil_mode"] = bool(mod.ceil_mode)
+            params["count_include_pad"] = bool(mod.count_include_pad)
+            if mod.divisor_override is not None:
+                params["divisor_override"] = int(mod.divisor_override)
         self._add_layer(
             kind.value, params,
             self.prev_out, out_vars
