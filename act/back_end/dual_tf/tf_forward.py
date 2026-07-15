@@ -808,6 +808,9 @@ def _fwd_avgpool2d(layer: Layer, lb: torch.Tensor, ub: torch.Tensor) -> Tuple[to
     kernel_size = layer.params.get("kernel_size", 2)
     stride = layer.params.get("stride", kernel_size)
     padding = layer.params.get("padding", 0)
+    ceil_mode = bool(layer.params.get("ceil_mode", False))
+    count_include_pad = bool(layer.params.get("count_include_pad", True))
+    divisor_override = layer.params.get("divisor_override")
     input_shape = _shape_list(layer.params.get("input_shape"))
     if input_shape is None:
         raise ValueError(
@@ -820,8 +823,16 @@ def _fwd_avgpool2d(layer: Layer, lb: torch.Tensor, ub: torch.Tensor) -> Tuple[to
     else:
         c, h, w = shape[-3], shape[-2], shape[-1]
     B = lb.shape[0]
-    lb_out = F.avg_pool2d(lb.view(B, c, h, w), kernel_size, stride, padding)
-    ub_out = F.avg_pool2d(ub.view(B, c, h, w), kernel_size, stride, padding)
+    pool_kwargs = {
+        "kernel_size": kernel_size,
+        "stride": stride,
+        "padding": padding,
+        "ceil_mode": ceil_mode,
+        "count_include_pad": count_include_pad,
+        "divisor_override": divisor_override,
+    }
+    lb_out = F.avg_pool2d(lb.view(B, c, h, w), **pool_kwargs)
+    ub_out = F.avg_pool2d(ub.view(B, c, h, w), **pool_kwargs)
     return lb_out.flatten(start_dim=1), ub_out.flatten(start_dim=1)
 
 

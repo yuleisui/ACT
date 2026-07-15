@@ -2174,7 +2174,8 @@ def _lt_spec_cnn_pool() -> Dict[str, Any]:
     # hybridz_tf/tf_cnn.py:44-86 is unreachable via the random CNN generator
     # because it doesn't emit MAXPOOL2D as a direct child of CONV2D inside a
     # hz_cache-bearing context. AvgPool2D additionally exercises the average
-    # pool interval branch in interval_tf/tf_cnn.py.
+    # pool interval branch in interval_tf/tf_cnn.py. The two padded average
+    # pools cover include-pad with a ceil-mode tail and exclude-pad semantics.
     return {"layers": _lt_input([1, 1, 8, 8], -1.0, 1.0) + [
         {"kind": LayerKind.CONV2D.value, "params": {
             "in_channels": 1, "out_channels": 2, "kernel_size": 3,
@@ -2186,8 +2187,14 @@ def _lt_spec_cnn_pool() -> Dict[str, Any]:
             "input_shape": [1, 2, 8, 8], "output_shape": [1, 2, 4, 4],
         }},
         {"kind": LayerKind.AVGPOOL2D.value, "params": {
-            "kernel_size": 2, "stride": 2, "padding": 0,
-            "input_shape": [1, 2, 4, 4], "output_shape": [1, 2, 2, 2],
+            "kernel_size": [3, 2], "stride": [2, 2], "padding": [1, 1],
+            "ceil_mode": True, "count_include_pad": True,
+            "input_shape": [1, 2, 4, 4], "output_shape": [1, 2, 3, 3],
+        }},
+        {"kind": LayerKind.AVGPOOL2D.value, "params": {
+            "kernel_size": 2, "stride": 2, "padding": 1,
+            "ceil_mode": False, "count_include_pad": False,
+            "input_shape": [1, 2, 3, 3], "output_shape": [1, 2, 2, 2],
         }},
         {"kind": LayerKind.FLATTEN.value, "params": {"start_dim": 1}},
         _lt_assert_le([1.0] + [0.0] * 7, 100.0),

@@ -14,7 +14,7 @@ import torch
 import torch.nn.functional as F
 from typing import Callable, Tuple
 from act.back_end.core import Bounds, Con, ConSet, Fact, Layer
-from act.back_end.utils import split_weight
+from act.back_end.utils import avgpool2d_denominators, split_weight
 
 
 def tf_conv2d(L: Layer, Bin: Bounds) -> Fact:
@@ -329,6 +329,9 @@ def tf_avgpool2d(L: Layer, Bin: Bounds) -> Fact:
     kernel_size = L.params["kernel_size"]
     stride = L.params.get("stride", kernel_size)
     padding = L.params.get("padding", 0)
+    ceil_mode = bool(L.params.get("ceil_mode", False))
+    count_include_pad = bool(L.params.get("count_include_pad", True))
+    divisor_override = L.params.get("divisor_override")
     
     # Input/output shape information
     input_shape = L.params["input_shape"]
@@ -342,8 +345,16 @@ def tf_avgpool2d(L: Layer, Bin: Bounds) -> Fact:
 
     input_lb = Bin.lb.view(B_in, channels, in_h, in_w)
     input_ub = Bin.ub.view(B_in, channels, in_h, in_w)
-    output_lb = F.avg_pool2d(input_lb, kernel_size, stride, padding)
-    output_ub = F.avg_pool2d(input_ub, kernel_size, stride, padding)
+    pool_kwargs = {
+        "kernel_size": kernel_size,
+        "stride": stride,
+        "padding": padding,
+        "ceil_mode": ceil_mode,
+        "count_include_pad": count_include_pad,
+        "divisor_override": divisor_override,
+    }
+    output_lb = F.avg_pool2d(input_lb, **pool_kwargs)
+    output_ub = F.avg_pool2d(input_ub, **pool_kwargs)
     assert tuple(output_lb.shape) == (B_in, channels, out_h, out_w), (
         f"avgpool2d output shape mismatch: got {tuple(output_lb.shape)}, expected {(B_in, channels, out_h, out_w)}"
     )
@@ -353,7 +364,16 @@ def tf_avgpool2d(L: Layer, Bin: Bounds) -> Fact:
     B_output = Bounds(output_lb.reshape(B_in, -1), output_ub.reshape(B_in, -1))
 
     W_equiv = _avgpool2d_to_linear_matrix(
-        input_shape, output_shape, kernel_size, stride, padding
+        input_shape,
+        output_shape,
+        kernel_size,
+        stride,
+        padding,
+        ceil_mode=ceil_mode,
+        count_include_pad=count_include_pad,
+        divisor_override=divisor_override,
+        device=Bin.lb.device,
+        dtype=Bin.lb.dtype,
     )
     
     # Create constraints
@@ -364,6 +384,9 @@ def tf_avgpool2d(L: Layer, Bin: Bounds) -> Fact:
         "kernel_size": kernel_size,
         "stride": stride,
         "padding": padding,
+        "ceil_mode": ceil_mode,
+        "count_include_pad": count_include_pad,
+        "divisor_override": divisor_override,
         "input_shape": input_shape,
         "output_shape": output_shape
     }))
@@ -377,7 +400,13 @@ def _avgpool2d_to_linear_matrix(
     output_shape: Tuple[int, ...],
     kernel_size: int,
     stride: int,
-    padding: int
+    padding: int,
+    *,
+    ceil_mode: bool = False,
+    count_include_pad: bool = True,
+    divisor_override=None,
+    device=None,
+    dtype=None,
 ) -> torch.Tensor:
     """Convert AvgPool2d to equivalent linear transformation matrix."""
     _, channels, in_h, in_w = input_shape
@@ -386,7 +415,12 @@ def _avgpool2d_to_linear_matrix(
     input_flat_size = channels * in_h * in_w
     output_flat_size = channels * out_h * out_w
 
-    W_equiv = torch.zeros(output_flat_size, input_flat_size)
+    W_equiv = torch.zeros(
+        output_flat_size,
+        input_flat_size,
+        device=device,
+        dtype=dtype or torch.get_default_dtype(),
+    )
 
     if isinstance(kernel_size, int):
         kernel_size = (kernel_size, kernel_size)
@@ -398,11 +432,11 @@ def _avgpool2d_to_linear_matrix(
     kernel_h, kernel_w = kernel_size
 
     c, out_y, out_x, k_y, k_x = torch.meshgrid(
-        torch.arange(channels),
-        torch.arange(out_h),
-        torch.arange(out_w),
-        torch.arange(kernel_h),
-        torch.arange(kernel_w),
+        torch.arange(channels, device=W_equiv.device),
+        torch.arange(out_h, device=W_equiv.device),
+        torch.arange(out_w, device=W_equiv.device),
+        torch.arange(kernel_h, device=W_equiv.device),
+        torch.arange(kernel_w, device=W_equiv.device),
         indexing="ij",
     )
 
@@ -410,10 +444,19 @@ def _avgpool2d_to_linear_matrix(
     in_x = out_x * stride[1] - padding[1] + k_x
     valid = (in_y >= 0) & (in_y < in_h) & (in_x >= 0) & (in_x < in_w)
 
-    valid_count = valid.sum(dim=(-2, -1), keepdim=True)
-    weight_vals = torch.zeros_like(valid_count, dtype=W_equiv.dtype)
-    nonzero = valid_count > 0
-    weight_vals[nonzero] = valid_count[nonzero].to(W_equiv.dtype).reciprocal()
+    denominators = avgpool2d_denominators(
+        (in_h, in_w),
+        (out_h, out_w),
+        kernel_size,
+        stride,
+        padding,
+        ceil_mode=ceil_mode,
+        count_include_pad=count_include_pad,
+        divisor_override=divisor_override,
+        device=W_equiv.device,
+        dtype=W_equiv.dtype,
+    )
+    weight_vals = denominators.reciprocal().view(1, out_h, out_w, 1, 1)
 
     out_idx = (c * (out_h * out_w) + out_y * out_w + out_x)[valid]
     in_idx = (c * (in_h * in_w) + in_y * in_w + in_x)[valid]

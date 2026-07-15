@@ -23,6 +23,91 @@ EPS = 1e-12
 # Default LRELU/LeakyReLU negative slope when a layer omits negative_slope.
 LRELU_ALPHA_DEFAULT = 0.01
 
+
+def pair_2d(value) -> Tuple[int, int]:
+    if isinstance(value, int):
+        return int(value), int(value)
+    if len(value) != 2:
+        raise ValueError(f"expected a 2-D parameter, got {value}")
+    return int(value[0]), int(value[1])
+
+
+def avgpool2d_output_hw(
+    input_hw,
+    kernel_size,
+    stride=None,
+    padding=0,
+    ceil_mode: bool = False,
+) -> Tuple[int, int]:
+    h, w = pair_2d(input_hw)
+    kh, kw = pair_2d(kernel_size)
+    sh, sw = pair_2d(kernel_size if stride is None else stride)
+    ph, pw = pair_2d(padding)
+
+    def _out(n: int, k: int, s: int, p: int) -> int:
+        if ceil_mode:
+            out = (n + 2 * p - k + s - 1) // s + 1
+            if (out - 1) * s >= n + p:
+                out -= 1
+            return out
+        return (n + 2 * p - k) // s + 1
+
+    return _out(h, kh, sh, ph), _out(w, kw, sw, pw)
+
+
+def avgpool2d_denominators(
+    input_hw,
+    output_hw,
+    kernel_size,
+    stride=None,
+    padding=0,
+    *,
+    ceil_mode: bool = False,
+    count_include_pad: bool = True,
+    divisor_override: Optional[int] = None,
+    device=None,
+    dtype=None,
+) -> torch.Tensor:
+    h, w = pair_2d(input_hw)
+    oh, ow = pair_2d(output_hw)
+    kh, kw = pair_2d(kernel_size)
+    sh, sw = pair_2d(kernel_size if stride is None else stride)
+    ph, pw = pair_2d(padding)
+    expected = avgpool2d_output_hw(
+        (h, w), (kh, kw), (sh, sw), (ph, pw), ceil_mode
+    )
+    if (oh, ow) != expected:
+        raise ValueError(
+            f"avgpool2d output shape {(oh, ow)} does not match expected {expected}"
+        )
+
+    if divisor_override is not None:
+        divisor = int(divisor_override)
+        if divisor <= 0:
+            raise ValueError("avgpool2d divisor_override must be positive")
+        return torch.full(
+            (oh, ow), float(divisor), device=device, dtype=dtype or torch.float32
+        )
+
+    out_y = torch.arange(oh, device=device, dtype=torch.long) * sh - ph
+    out_x = torch.arange(ow, device=device, dtype=torch.long) * sw - pw
+
+    def _count(starts, kernel: int, lower: int, upper: int):
+        lo = torch.maximum(starts, torch.full_like(starts, lower))
+        hi = torch.minimum(starts + kernel, torch.full_like(starts, upper))
+        return (hi - lo).clamp_min(0)
+
+    if count_include_pad:
+        count_y = _count(out_y, kh, -ph, h + ph)
+        count_x = _count(out_x, kw, -pw, w + pw)
+    else:
+        count_y = _count(out_y, kh, 0, h)
+        count_x = _count(out_x, kw, 0, w)
+    denom = count_y[:, None] * count_x[None, :]
+    if torch.any(denom <= 0):
+        raise ValueError("avgpool2d produced an empty pooling window")
+    return denom.to(dtype=dtype or torch.float32)
+
 def split_weight(W):
     return W.clamp(min=0), W.clamp(max=0)
 
