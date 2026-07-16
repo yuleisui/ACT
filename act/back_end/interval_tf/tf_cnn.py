@@ -47,23 +47,42 @@ def tf_conv2d(L: Layer, Bin: Bounds) -> Fact:
     out_channels, in_channels_per_group, kernel_h, kernel_w = weight.shape
     in_channels = in_channels_per_group * groups
     
-    # Get ACTUAL input size from bounds (not metadata - metadata may be wrong!)
     B_in = Bin.lb.shape[0]
     actual_input_size = Bin.lb[0].numel()
-    
-    # Infer spatial dimensions from actual input size
-    spatial_size = actual_input_size // in_channels
-    in_h = in_w = int(spatial_size ** 0.5)  # Assume square initially
-    
-    # Verify and adjust if needed
-    if in_h * in_w * in_channels != actual_input_size:
-        # Try to find correct rectangular dimensions
-        for h in range(int(spatial_size ** 0.5) + 10, 0, -1):
-            if spatial_size % h == 0:
-                in_h = h
-                in_w = spatial_size // h
-                if in_h * in_w * in_channels == actual_input_size:
-                    break
+    if Bin.lb.shape != Bin.ub.shape:
+        raise ValueError(
+            f"conv2d layer {L.id}: lower/upper shape mismatch "
+            f"{tuple(Bin.lb.shape)} vs {tuple(Bin.ub.shape)}"
+        )
+    if Bin.lb.dim() == 4:
+        _, bound_channels, in_h, in_w = Bin.lb.shape
+        if bound_channels != in_channels:
+            raise ValueError(
+                f"conv2d layer {L.id}: bounds have {bound_channels} channels, "
+                f"weight expects {in_channels}"
+            )
+    elif Bin.lb.dim() == 2:
+        meta_shape = L.params.get("input_shape")
+        if meta_shape is None or len(meta_shape) != 4:
+            raise ValueError(
+                f"conv2d layer {L.id}: flattened bounds require a 4-D input_shape"
+            )
+        _, meta_channels, in_h, in_w = (int(dim) for dim in meta_shape)
+        if meta_channels != in_channels:
+            raise ValueError(
+                f"conv2d layer {L.id}: input_shape has {meta_channels} channels, "
+                f"weight expects {in_channels}"
+            )
+    else:
+        raise ValueError(
+            f"conv2d layer {L.id}: expected 2-D flattened or 4-D bounds, "
+            f"got {tuple(Bin.lb.shape)}"
+        )
+    if in_channels * in_h * in_w != actual_input_size:
+        raise ValueError(
+            f"conv2d layer {L.id}: shape {(in_channels, in_h, in_w)} has "
+            f"{in_channels * in_h * in_w} elements, expected {actual_input_size}"
+        )
     
     input_shape = (B_in, in_channels, in_h, in_w)
     
@@ -71,10 +90,17 @@ def tf_conv2d(L: Layer, Bin: Bounds) -> Fact:
     out_h = (in_h + 2 * padding[0] - dilation[0] * (kernel_h - 1) - 1) // stride[0] + 1
     out_w = (in_w + 2 * padding[1] - dilation[1] * (kernel_w - 1) - 1) // stride[1] + 1
     output_shape = (B_in, out_channels, out_h, out_w)
+    expected_output_size = out_channels * out_h * out_w
+    if out_h <= 0 or out_w <= 0 or len(L.out_vars) != expected_output_size:
+        raise ValueError(
+            f"conv2d layer {L.id}: computed output shape "
+            f"{(out_channels, out_h, out_w)} does not match "
+            f"{len(L.out_vars)} output variables"
+        )
     
     # Compute bounds via torch
-    lb_4d = Bin.lb.view(B_in, in_channels, in_h, in_w)
-    ub_4d = Bin.ub.view(B_in, in_channels, in_h, in_w)
+    lb_4d = Bin.lb.reshape(B_in, in_channels, in_h, in_w)
+    ub_4d = Bin.ub.reshape(B_in, in_channels, in_h, in_w)
 
     conv_kw = dict(stride=stride, padding=padding, dilation=dilation, groups=groups)
     lb_out, ub_out = _conv_bound_pair(F.conv2d, lb_4d, ub_4d, weight, **conv_kw)

@@ -17,7 +17,7 @@ import torch
 import math
 from typing import List
 from act.back_end.core import Bounds, Con, ConSet, Fact, Layer
-from act.back_end.utils import affine_bounds, pwl_meta, four_corner_envelope
+from act.back_end.utils import affine_bounds, four_corner_envelope, pwl_meta
 
 
 def _sanitize_smooth_bounds(lb: torch.Tensor, ub: torch.Tensor) -> Bounds:
@@ -136,7 +136,8 @@ def tf_relu(L: Layer, Bin: Bounds) -> Fact:
     C.add_box(L.id,L.out_vars,B); return Fact(B,C)
 
 def tf_lrelu(L: Layer, Bin: Bounds) -> Fact:
-    a=float(L.params["alpha"]); l,u=Bin.lb,Bin.ub; on=l>=0; off=u<=0; amb=~(on|off)
+    a=float(L.params["negative_slope"])
+    l,u=Bin.lb,Bin.ub; on=l>=0; off=u<=0; amb=~(on|off)
     z=torch.zeros_like(l)
     lb=torch.minimum(a*torch.minimum(l,z), torch.maximum(l,z))
     ub=torch.maximum(a*torch.maximum(u,z), torch.maximum(u,z))
@@ -177,7 +178,7 @@ def tf_add(L: Layer, Bx: Bounds, By: Bounds) -> Fact:
     C.add_box(L.id,L.out_vars,B); return Fact(B,C)
     
 def tf_sub(L: Layer, Bx: Bounds, By: Bounds) -> Fact:
-    B = Bounds(Bx.lb - By.lb, Bx.ub - By.ub)
+    B = Bounds(Bx.lb - By.ub, Bx.ub - By.lb)
     C = ConSet()
     C.replace(Con("EQ", tuple(L.out_vars + L.params["x_vars"] + L.params["y_vars"]), {"tag": f"sub:{L.id}"}))
     C.add_box(L.id, L.out_vars, B)
@@ -201,9 +202,8 @@ def tf_div(L: Layer, Bx: Bounds, By: Bounds) -> Fact:
     ], dim=0)
     lb = torch.min(cand, dim=0).values
     ub = torch.max(cand, dim=0).values
-    big = 1e6
-    lb = torch.where(crosses_zero, torch.full_like(lb, -big), lb)
-    ub = torch.where(crosses_zero, torch.full_like(ub, +big), ub)
+    lb = torch.where(crosses_zero, torch.full_like(lb, -float("inf")), lb)
+    ub = torch.where(crosses_zero, torch.full_like(ub, float("inf")), ub)
     B = Bounds(lb, ub)
     C = ConSet()
     C.replace(Con("INEQ", tuple(L.out_vars + L.params["x_vars"] + L.params["y_vars"]), {"tag": f"div:{L.id}", "safe": not torch.any(crosses_zero).item()}))
@@ -568,12 +568,77 @@ def tf_reshape(L: Layer, Bin: Bounds) -> Fact:
     C.replace(Con("EQ", tuple(L.out_vars + L.in_vars), {"tag": f"reshape:{L.id}", "target_shape": L.params.get("target_shape")}))
     C.add_box(L.id, L.out_vars, B); return Fact(B, C)
 
+def _transpose_flat_indices(
+    L: Layer,
+    n: int,
+    device: torch.device,
+    input_shape=None,
+) -> torch.Tensor:
+    input_shape = L.params.get("input_shape") or input_shape
+    perm = L.params.get("perm")
+    if perm is None:
+        return torch.arange(n, device=device)
+    if input_shape is None:
+        raise ValueError(f"transpose layer {L.id} requires input_shape")
+    input_shape = tuple(int(d) for d in input_shape)
+    perm = tuple(int(d) for d in perm)
+    if not input_shape or input_shape[0] != 1:
+        raise ValueError(
+            f"transpose layer {L.id}: input_shape must have a singleton batch "
+            f"dimension, got {input_shape}"
+        )
+    if math.prod(input_shape) != n:
+        raise ValueError(
+            f"transpose layer {L.id}: input_shape {input_shape} has "
+            f"{math.prod(input_shape)} elements, expected {n}"
+        )
+    if sorted(perm) != list(range(len(input_shape))):
+        raise ValueError(f"transpose layer {L.id}: invalid permutation {perm}")
+    if perm[0] != 0:
+        raise ValueError(
+            f"transpose layer {L.id}: batch-axis permutation is unsupported: {perm}"
+        )
+    return torch.arange(n, device=device).reshape(input_shape).permute(*perm).reshape(-1)
+
+
 def tf_transpose(L: Layer, Bin: Bounds) -> Fact:
-    """Transpose: permute dimensions (identity for bounds)"""
-    # Transpose doesn't change the values, only the dimension order
-    B = Bounds(Bin.lb.clone(), Bin.ub.clone())
+    perm_raw = L.params.get("perm")
+    input_shape = L.params.get("input_shape") or (
+        1, *tuple(int(d) for d in Bin.lb.shape[1:])
+    )
+    if perm_raw is None:
+        B = Bounds(Bin.lb.clone(), Bin.ub.clone())
+    else:
+        perm = tuple(int(d) for d in perm_raw)
+        width = Bin.lb[0].numel()
+        rows = _transpose_flat_indices(L, width, Bin.lb.device, input_shape)
+        input_shape = tuple(int(d) for d in input_shape)
+        if len(L.in_vars) != width or len(L.out_vars) != width:
+            raise ValueError(
+                f"transpose layer {L.id}: expected {width} input/output variables, "
+                f"got {len(L.in_vars)}/{len(L.out_vars)}"
+            )
+        if Bin.lb.ndim == len(perm):
+            if tuple(Bin.lb.shape[1:]) != input_shape[1:]:
+                raise ValueError(
+                    f"transpose layer {L.id}: bounds shape {tuple(Bin.lb.shape)} "
+                    f"does not match input_shape {input_shape}"
+                )
+            B = Bounds(
+                Bin.lb.permute(*perm).contiguous(),
+                Bin.ub.permute(*perm).contiguous(),
+            )
+        else:
+            B = Bounds(
+                Bin.lb.reshape(Bin.lb.shape[0], width).index_select(1, rows),
+                Bin.ub.reshape(Bin.ub.shape[0], width).index_select(1, rows),
+            )
     C = ConSet()
-    C.replace(Con("EQ", tuple(L.out_vars + L.in_vars), {"tag": f"transpose:{L.id}", "perm": L.params.get("perm")}))
+    C.replace(Con("EQ", tuple(L.out_vars + L.in_vars), {
+        "tag": f"transpose:{L.id}",
+        "perm": perm_raw,
+        "input_shape": input_shape,
+    }))
     C.add_box(L.id, L.out_vars, B); return Fact(B, C)
 
 def tf_squeeze(L: Layer, Bin: Bounds) -> Fact:

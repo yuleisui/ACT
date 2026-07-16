@@ -1097,7 +1097,6 @@ class ACTToTorch:
             "dilation",
             "groups",
             "start_dim",
-            "negative_slope",
         ):
             if key in params:
                 kwargs[key] = params[key]

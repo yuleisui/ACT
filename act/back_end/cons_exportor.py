@@ -486,6 +486,62 @@ def _emit_flatten(
     eq.add_block(col_block, val_block, rhs_block)
 
 
+def _emit_transpose(
+    con: Any,
+    eq: _RowAcc,
+    N: int,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> None:
+    if len(con.var_ids) % 2 != 0:
+        raise ValueError(
+            f"transpose: var_ids length {len(con.var_ids)} is not even"
+    )
+    n = len(con.var_ids) // 2
+    perm_raw = con.meta.get("perm")
+    if perm_raw is None:
+        idx = torch.arange(n, device=device)
+    else:
+        input_shape_raw = con.meta.get("input_shape")
+        if input_shape_raw is None:
+            raise ValueError("transpose: input_shape is required when perm is set")
+        input_shape = tuple(int(v) for v in input_shape_raw)
+        perm = tuple(int(v) for v in perm_raw)
+        if not input_shape or input_shape[0] != 1:
+            raise ValueError(
+                f"transpose: input_shape must have a singleton batch dimension, "
+                f"got {input_shape}"
+            )
+        if int(np.prod(input_shape)) != n:
+            raise ValueError(
+                f"transpose: input_shape {input_shape} has "
+                f"{int(np.prod(input_shape))} elements, expected {n}"
+            )
+        if sorted(perm) != list(range(len(input_shape))):
+            raise ValueError(f"transpose: invalid permutation {perm}")
+        if perm[0] != 0:
+            raise ValueError(
+                f"transpose: batch-axis permutation is unsupported: {perm}"
+            )
+        idx = (
+            torch.arange(n, device=device)
+            .reshape(input_shape)
+            .permute(*perm)
+            .reshape(-1)
+        )
+    y = torch.tensor(con.var_ids[:n], device=device, dtype=torch.long)
+    x = torch.tensor(
+        con.var_ids[n:], device=device, dtype=torch.long
+    ).index_select(0, idx)
+    col_block = torch.stack([y, x], dim=1)
+    val_per_row = torch.tensor(
+        [1.0, -1.0], device=device, dtype=dtype
+    ).unsqueeze(0).expand(n, -1)
+    val_block = val_per_row.unsqueeze(0).expand(N, n, 2).contiguous()
+    rhs_block = torch.zeros((N, n), device=device, dtype=dtype)
+    eq.add_block(col_block, val_block, rhs_block)
+
+
 def _emit_mask_add(
     con: Any,
     eq: _RowAcc,
@@ -2058,8 +2114,10 @@ def export_to_batch_problem(
             _emit_add_sub(con, eq, +1.0, N, device, dtype)
         elif tag.startswith("sub:"):
             _emit_add_sub(con, eq, -1.0, N, device, dtype)
-        elif tag.startswith(("flatten:", "reshape:", "transpose:")):
+        elif tag.startswith(("flatten:", "reshape:")):
             _emit_flatten(con, eq, N, device, dtype)
+        elif tag.startswith("transpose:"):
+            _emit_transpose(con, eq, N, device, dtype)
         elif tag.startswith("relu:"):
             _emit_relu_canonical(con, le, lb_global, ub_global, N, device, dtype)
         elif tag.startswith("lrelu:"):
@@ -2357,7 +2415,7 @@ def _build_lrelu_test_net(B, n, lb, ub, alpha):  # pragma: no cover
         ),
         Layer(
             id=2, kind=LayerKind.LRELU.value,
-            params={"alpha": alpha}, in_vars=in_v, out_vars=out_v,
+            params={"negative_slope": alpha}, in_vars=in_v, out_vars=out_v,
         ),
         Layer(
             id=3, kind=LayerKind.ASSERT.value,
