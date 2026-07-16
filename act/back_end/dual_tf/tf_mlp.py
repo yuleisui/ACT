@@ -22,7 +22,6 @@
 import torch
 from typing import Tuple, Optional, Dict, Any, List
 from act.back_end.core import Bounds
-from act.back_end.utils import LRELU_ALPHA_DEFAULT
 
 from .tf_forward import (
     LinearBound, Frame, _align,
@@ -355,8 +354,8 @@ def forward_lrelu(
 ) -> Tuple[Bounds, Bounds, LinearBound, Frame]:
     """Forward handler for LRELU / LEAKY_RELU (triangle linear relaxation).
 
-    Source: tf_forward.py lines 436-446. Reads ``alpha`` from
-    ``L.params.get("alpha", 0.01)``. ``post_activation`` handling mirrors
+    Source: tf_forward.py lines 436-446. Reads the canonical
+    ``negative_slope`` parameter. ``post_activation`` handling mirrors
     :func:`forward_relu`: when True ``stored == out`` and lin/frame are
     reset to identity on the new box; otherwise ``stored`` is the
     pre-activation box and lin/frame pass through.
@@ -366,7 +365,7 @@ def forward_lrelu(
     parent_frame = parent_frames[0]
     x_L, x_U = parent_frame
     pre_lb, pre_ub = parent_box.lb, parent_box.ub
-    alpha = L.params.get("alpha", LRELU_ALPHA_DEFAULT)
+    alpha = float(L.params["negative_slope"])
     lin = _fwd_lrelu(parent_lin, pre_lb, pre_ub, alpha)
     int_lb, int_ub = _box_lrelu(pre_lb, pre_ub, alpha)
     if lin is None:

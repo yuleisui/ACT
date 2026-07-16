@@ -1513,9 +1513,6 @@ class NetFactory:
 
             params.pop("preds_indices", None)
 
-            if kind == LayerKind.LRELU.value and "negative_slope" in params:
-                params["alpha"] = params["negative_slope"]
-
             layer = Layer(
                 id=i, kind=kind, params=params, in_vars=in_vars, out_vars=out_vars
             )
@@ -1908,7 +1905,12 @@ def _lt_spec_reshape() -> Dict[str, Any]:
 
 
 def _lt_spec_transpose() -> Dict[str, Any]:
-    return {"layers": _lt_input([1, 2, 3], -1.0, 1.0) + [
+    dtype = get_default_dtype()
+    scale = torch.tensor([[1.0, 10.0, 2.0], [20.0, 3.0, 30.0]], dtype=dtype)
+    return {"layers": _lt_input([1, 2, 3], 0.0, 1.0) + [
+        {"kind": LayerKind.SCALE.value,
+         "params": {"a": scale, "input_shape": [1, 2, 3],
+                    "output_shape": [1, 2, 3]}},
         {"kind": LayerKind.TRANSPOSE.value,
          "params": {"perm": [0, 2, 1], "input_shape": [1, 2, 3]}},
         {"kind": LayerKind.FLATTEN.value, "params": {"start_dim": 1}},
@@ -2176,25 +2178,25 @@ def _lt_spec_cnn_pool() -> Dict[str, Any]:
     # hz_cache-bearing context. AvgPool2D additionally exercises the average
     # pool interval branch in interval_tf/tf_cnn.py. The two padded average
     # pools cover include-pad with a ceil-mode tail and exclude-pad semantics.
-    return {"layers": _lt_input([1, 1, 8, 8], -1.0, 1.0) + [
+    return {"layers": _lt_input([1, 1, 8, 6], -1.0, 1.0) + [
         {"kind": LayerKind.CONV2D.value, "params": {
             "in_channels": 1, "out_channels": 2, "kernel_size": 3,
             "stride": 1, "padding": 1, "dilation": 1, "groups": 1,
-            "input_shape": [1, 1, 8, 8], "output_shape": [1, 2, 8, 8],
+            "input_shape": [1, 1, 8, 6], "output_shape": [1, 2, 8, 6],
         }},
         {"kind": LayerKind.MAXPOOL2D.value, "params": {
             "kernel_size": 2, "stride": 2, "padding": 0,
-            "input_shape": [1, 2, 8, 8], "output_shape": [1, 2, 4, 4],
+            "input_shape": [1, 2, 8, 6], "output_shape": [1, 2, 4, 3],
         }},
         {"kind": LayerKind.AVGPOOL2D.value, "params": {
             "kernel_size": [3, 2], "stride": [2, 2], "padding": [1, 1],
             "ceil_mode": True, "count_include_pad": True,
-            "input_shape": [1, 2, 4, 4], "output_shape": [1, 2, 3, 3],
+            "input_shape": [1, 2, 4, 3], "output_shape": [1, 2, 3, 2],
         }},
         {"kind": LayerKind.AVGPOOL2D.value, "params": {
             "kernel_size": 2, "stride": 2, "padding": 1,
             "ceil_mode": False, "count_include_pad": False,
-            "input_shape": [1, 2, 3, 3], "output_shape": [1, 2, 2, 2],
+            "input_shape": [1, 2, 3, 2], "output_shape": [1, 2, 2, 2],
         }},
         {"kind": LayerKind.FLATTEN.value, "params": {"start_dim": 1}},
         _lt_assert_le([1.0] + [0.0] * 7, 100.0),
@@ -2202,12 +2204,11 @@ def _lt_spec_cnn_pool() -> Dict[str, Any]:
 
 
 def _lt_spec_sub() -> Dict[str, Any]:
-    # SUB binary op: y = x - c. The random MLP/CNN generators only emit ADD
-    # (via skip-connections and BIAS), so tf_sub in interval_tf/tf_mlp.py is
-    # unreachable. Pattern mirrors _lt_spec_compare (input + const + binary).
     dtype = get_default_dtype()
     return {"layers": _lt_input([1, 3], 0.0, 1.0) + [
-        _lt_const(torch.tensor([0.5, 0.5, 0.5], dtype=dtype), [3]),
+        {"kind": LayerKind.SCALE.value,
+         "params": {"a": -torch.ones(3, dtype=dtype),
+                    "input_shape": [1, 3], "output_shape": [1, 3]}},
         {"kind": LayerKind.SUB.value,
          "params": {"input_shape": [1, 3], "output_shape": [1, 3]},
          "inputs": {"x": 1, "y": 2}, "preds": [1, 2]},
@@ -2405,10 +2406,10 @@ def _lt_spec_sigmoid() -> Dict[str, Any]:
 
 
 def _lt_spec_lrelu() -> Dict[str, Any]:
-    # LRELU: negative_slope=0.01, input [-2, 2] exercises the on/off/amb
+    # LRELU: negative_slope=0.2, input [-2, 2] exercises the on/off/amb
     # partition in tf_lrelu (tf_mlp.py) and the lrelu: constraint handler.
     return {"layers": _lt_input([1, 4], -2.0, 2.0) + [
-        {"kind": LayerKind.LRELU.value, "params": {"negative_slope": 0.01}},
+        {"kind": LayerKind.LRELU.value, "params": {"negative_slope": 0.2}},
         _lt_assert_le([1.0, 1.0, 1.0, 1.0], 4.0),
     ]}
 

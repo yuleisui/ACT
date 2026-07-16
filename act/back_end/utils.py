@@ -20,9 +20,6 @@ from act.util.format_utils import rule
 
 EPS = 1e-12
 
-# Default LRELU/LeakyReLU negative slope when a layer omits negative_slope.
-LRELU_ALPHA_DEFAULT = 0.01
-
 
 def pair_2d(value) -> Tuple[int, int]:
     if isinstance(value, int):

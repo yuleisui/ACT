@@ -455,8 +455,8 @@ REGISTRY: Dict[str, Dict[str, Any]] = {
         "params_optional": ["input_shape", "output_shape"],
     },
     LayerKind.LRELU.value: {
-        "params_required": [],
-        "params_optional": ["negative_slope", "alpha"],
+        "params_required": ["negative_slope"],
+        "params_optional": [],
     },
     LayerKind.PRELU.value: {
         "params_required": ["weight"],
