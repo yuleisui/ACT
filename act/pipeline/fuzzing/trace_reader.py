@@ -682,7 +682,7 @@ class TraceAnalyzer:
         strategies = list(strategy_data.keys())
         data = [strategy_data[s] for s in strategies]
 
-        bp = ax.boxplot(data, labels=strategies, patch_artist=True)
+        bp = ax.boxplot(data, tick_labels=strategies, patch_artist=True)
 
         # Color boxes
         colors = plt.cm.Set3(range(len(strategies)))
