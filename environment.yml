@@ -14,7 +14,7 @@ dependencies:
   - gurobi
   - ipykernel
   - ipywidgets  # Interactive trace explorer in Jupyter notebooks
-  - matplotlib
+  - matplotlib>=3.9
   - pyyaml  # Config loading (specs, models)
   - psutil  # Memory monitoring in pipeline
   - pip
