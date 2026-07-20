@@ -63,9 +63,9 @@ class BertSpecCreator(BaseSpecCreator):
         num_samples: int = 1,
         split: str = "test",
         max_verify_length: int = 8,
-        epsilon: float = 0.1,
-        p_norm: float = 1.0,
-        perturbed_words: int = 1,
+        epsilon: float | None = 0.1,
+        p_norm: float | None = 1.0,
+        perturbed_words: int | None = 1,
     ) -> list[tuple[str, str, nn.Module, list[torch.Tensor], list[tuple[InputSpec, OutputSpec]]]]:
         """Create embedding-space specs for BERT datasets.
 
@@ -85,6 +85,12 @@ class BertSpecCreator(BaseSpecCreator):
         """
         if max_samples is not None:
             num_samples = max_samples
+        if epsilon is None:
+            epsilon = float(self.config.get("eps", 0.1))
+        if p_norm is None:
+            p_norm = float(self.config.get("p", 1.0))
+        if perturbed_words is None:
+            perturbed_words = int(self.config.get("perturbed_words", 1))
         datasets = [find_bert_dataset_name(name) for name in (dataset_names or ["sst"])]
         models = model_names or ["embedding_classifier"]
         results: list[

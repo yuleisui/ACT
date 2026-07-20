@@ -286,7 +286,7 @@ Config (`BaBConfig`) / CLI flags:
 | `llm_probe_model` | `--bab-llm-probe-model` | `""` |
 | `llm_probe_base_url` | `--bab-llm-probe-base-url` | `""` |
 | `llm_probe_cadence` | `--bab-llm-probe-cadence` | `1` |
-| `llm_probe_decisions` (e.g. `split,frontier,refine,neuron`) / `llm_probe_max_candidates_total` / `llm_probe_api_key_env` / `_temperature` / `_max_candidates` / `_history` / `_max_failures` / `_log` | (config/YAML only) | see `config.py` |
+| `llm_probe_decisions` (e.g. `split,frontier,refine,neuron`) / `llm_probe_max_candidates_total` / `llm_probe_api_key_env` / `_temperature` / `_max_candidates` / `_history` / `_max_failures` / `_log` | (config/YAML only) | see `act/config/config.py` |
 
 Implementation lives in `act/pipeline/verification/llm_probe.py`. That file has two independent
 sections: the legacy TinyLlama input/output probe (Section A) and this BaB controller (Section B);

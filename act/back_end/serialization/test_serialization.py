@@ -25,6 +25,7 @@ except ImportError:
     torch = None
 
 from act.back_end.core import Layer, Net
+from act.util.format_utils import rule
 from act.back_end.serialization import (
     save_net_to_file, load_net_from_file, 
     save_net_to_string, load_net_from_string,
@@ -264,7 +265,7 @@ def test_schema_validation():
 def run_all_tests():
     """Run all serialization tests."""
     print("🚀 Running ACT Serialization Test Suite")
-    print("=" * 50)
+    print(rule(50))
     
     tests = [
         test_basic_serialization,
@@ -287,7 +288,7 @@ def run_all_tests():
             failed += 1
         print()
     
-    print("=" * 50)
+    print(rule(50))
     print(f"Test Results: {passed} passed, {failed} failed")
     
     if failed == 0:

@@ -12,6 +12,7 @@ License: AGPLv3+
 import logging
 from typing import Dict, Tuple, Optional, List
 from act.front_end.spec_creator_base import BaseSpecCreator
+from act.util.format_utils import rule
 
 logger = logging.getLogger(__name__)
 
@@ -224,16 +225,16 @@ def detect_creator(name: str, explicit_creator: Optional[str] = None) -> Tuple[s
 
 if __name__ == "__main__":
     # Quick demo
-    print("="*80)
+    print(rule())
     print("CREATOR REGISTRY DEMO")
-    print("="*80)
+    print(rule())
     
     print("\nAvailable creators:", list_creators())
     
     # Test auto-detection
-    print("\n" + "="*80)
+    print("\n" + rule())
     print("AUTO-DETECTION TESTS")
-    print("="*80)
+    print(rule())
     
     test_cases = [
         "MNIST",

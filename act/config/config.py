@@ -1,20 +1,17 @@
-# ===- act/back_end/config.py - Backend Configuration ---------------------====#
-# ACT: Abstract Constraint Transformer
-# Copyright (C) 2025– ACT Team
-#
-# Licensed under the GNU Affero General Public License v3.0 or later (AGPLv3+).
-# Distributed without any warranty; see <http://www.gnu.org/licenses/>.
-# ===---------------------------------------------------------------------====#
-
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import asdict, dataclass, field, fields
+from importlib import import_module
 from pathlib import Path
 from typing import Any, Final, List, Optional, Union
 
 import yaml
 
-_DEFAULT_YAML = Path(__file__).parent / "config.yaml"
+_BACKEND_YAML = Path(__file__).parent / "backend.yaml"
+_NETGEN_YAML = Path(__file__).parent / "gen_act_net.yaml"
+_PIPELINE_YAML = Path(__file__).parent / "pipeline.yaml"
+_FRONTEND_YAML = Path(__file__).parent / "frontend.yaml"
 
 _VALID_SOLVERS = {"auto", "gurobi", "torchlp", "dual", "hybridz"}
 _VALID_DEVICES = {"cpu", "cuda", "gpu"}
@@ -29,6 +26,11 @@ VALID_BERT_METHODS: Final[tuple[str, ...]] = (
     "ibp",
     "discrete",
 )
+
+
+def _load_yaml(path: Path) -> dict[str, Any]:
+    with open(path) as handle:
+        return yaml.safe_load(handle) or {}
 
 
 @dataclass(frozen=True)
@@ -82,7 +84,7 @@ class BaBConfig:
     Construction::
 
         BaBConfig()                     # programmatic defaults
-        BaBConfig.from_yaml()           # load from act/back_end/config.yaml
+        BaBConfig.from_yaml()           # load from act/config/backend.yaml
         BaBConfig.from_yaml(path, **kw) # custom YAML + overrides
     """
 
@@ -94,8 +96,8 @@ class BaBConfig:
     branching_method: str = "random"
     bounding_method: str = "random"
     bounding_order: str = "depth_lb"
-    bounding_depth_weight: float = 0.5
-    bounding_bound_weight: float = 0.5
+    bounding_depth_weight: float = field(default=0.5, metadata={"in_yaml": False})
+    bounding_bound_weight: float = field(default=0.5, metadata={"in_yaml": False})
     sa_cooling_rate: float = 0.99
 
     # Dual-tier solver knobs — support solver_tier="dual_alpha_eta" with
@@ -103,34 +105,16 @@ class BaBConfig:
     solver_tier: str = "lp"
     f"""Solver tier for BaB bound computation. Valid: {VALID_SOLVER_TIERS}."""
 
-    dual_n_iters: int = 50
-    """Number of Adam iterations for α/η optimization (only used in ``dual_alpha`` / ``dual_alpha_eta`` tiers)."""
-
-    lr_alpha: float = 0.1
-    """Adam learning rate for α (slope) variables."""
-
-    lr_beta: float = 0.1
-    """Adam learning rate for η (split-constraint KKT multipliers). 0.1 default; tune per network."""
-
-    lr_decay: float = 0.98
-    """Multiplicative learning-rate decay applied each Adam iteration."""
-
-    incremental_start_enabled: bool = True
-    """Reuse α/η tensors from the parent subproblem as the initial point for child optimization."""
-
-    per_class_alpha: bool = True
-    """Allocate separate α tensors per output class (tighter bounds) rather than sharing one α."""
-
     provenance_enabled: bool = False
     """Track logical BaB node ids and parent ids in TopKBounding."""
 
-    eta_only_children: bool = False
+    eta_only_children: bool = field(default=False, metadata={"in_yaml": False})
     """Freeze alpha in child subproblems (depth > 0): children inherit the
     parent's optimized alpha and refine only the split multipliers (eta).
     Cuts the per-node Adam graph and, combined with reuse_root_bounds,
     removes the per-iteration forward pass entirely."""
 
-    presplit_levels: int = 0
+    presplit_levels: int = field(default=0, metadata={"in_yaml": False})
     """Pre-split the root's top-k scored unstable neurons into all 2^k sign
     combinations before the main loop (LEAPS-style leap: descendants are
     materialized directly, intermediate tree levels are never bounded). The
@@ -143,7 +127,7 @@ class BaBConfig:
     intermediate_refine_ratio x the median - targets wide fan-in
     concretization loss), 'all' (every unstable activation layer)."""
 
-    intermediate_refine_ratio: float = 10.0
+    intermediate_refine_ratio: float = field(default=10.0, metadata={"in_yaml": False})
     """Width-blowup threshold multiplier for intermediate_refine='auto'."""
 
     reuse_root_bounds: bool = False
@@ -156,7 +140,7 @@ class BaBConfig:
     the input-term concretization and the eta split multipliers. Eliminates
     the per-node forward pass (the dominant time and memory cost)."""
 
-    per_subproblem_refine: str = "none"
+    per_subproblem_refine: str = field(default="none", metadata={"in_yaml": False})
     """Per-subproblem sparse backward refinement of intermediate bounds in the
     BaB loop (requires reuse_root_bounds): 'none' (off), 'tail' (last two
     unstable activation layers), 'all' (every unstable activation layer). For
@@ -165,23 +149,23 @@ class BaBConfig:
     exact, so refining them gains nothing), so splits propagate relationally
     downstream instead of only through the interval refresh."""
 
-    per_subproblem_refine_iters: int = 0
+    per_subproblem_refine_iters: int = field(default=0, metadata={"in_yaml": False})
     """Adam iterations for per-subproblem refine rows (0 = single fixed-slope
     backward, cheapest)."""
 
-    per_subproblem_refine_rows_cap: int = 64
+    per_subproblem_refine_rows_cap: int = field(default=64, metadata={"in_yaml": False})
     """Max refined neurons per layer per batch (top-cap by interval width);
     bounds the K x 2*cap backward cost."""
 
-    auto_batch_safety: float = 0.55
+    auto_batch_safety: float = field(default=0.55, metadata={"in_yaml": False})
     """Fraction of GPU memory the auto batch sizer (max_batch_size='auto') may
     target; lowered on a shared GPU. The sizer also never exceeds 90% of the
     currently-reclaimable memory (free + this process's reserved cache)."""
 
-    auto_batch_cap: int = 2048
+    auto_batch_cap: int = field(default=2048, metadata={"in_yaml": False})
     """Hard upper bound on the auto-sized batch (also the CPU fallback)."""
 
-    auto_batch_floor: int = 8
+    auto_batch_floor: int = field(default=8, metadata={"in_yaml": False})
     """Lower bound on the auto-sized batch."""
 
     multi_split_levels: int = 1
@@ -194,17 +178,17 @@ class BaBConfig:
 
     llm_probe_enabled: bool = False
     llm_probe_backend: str = "mock"
-    llm_probe_model: str = ""
-    llm_probe_base_url: str = ""
-    llm_probe_api_key_env: str = ""
-    llm_probe_temperature: float = 0.0
-    llm_probe_timeout: float = 30.0
-    llm_probe_max_candidates: int = 8
-    llm_probe_max_candidates_total: int = 1024
-    llm_probe_neuron_topk: int = 512
+    llm_probe_model: str = field(default="", metadata={"in_yaml": False})
+    llm_probe_base_url: str = field(default="", metadata={"in_yaml": False})
+    llm_probe_api_key_env: str = field(default="", metadata={"in_yaml": False})
+    llm_probe_temperature: float = field(default=0.0, metadata={"in_yaml": False})
+    llm_probe_timeout: float = field(default=30.0, metadata={"in_yaml": False})
+    llm_probe_max_candidates: int = field(default=8, metadata={"in_yaml": False})
+    llm_probe_max_candidates_total: int = field(default=1024, metadata={"in_yaml": False})
+    llm_probe_neuron_topk: int = field(default=512, metadata={"in_yaml": False})
     llm_probe_cadence: int = 1
-    llm_probe_history: int = 8
-    llm_probe_max_failures: int = 3
+    llm_probe_history: int = field(default=8, metadata={"in_yaml": False})
+    llm_probe_max_failures: int = field(default=3, metadata={"in_yaml": False})
     llm_probe_decisions: str = "split,frontier,refine"
     """Comma-separated decision types the LLM may steer: 'split' (joint neuron
     split depth), 'frontier' (wave width), 'refine' (per-subproblem refinement),
@@ -212,18 +196,18 @@ class BaBConfig:
     dimension to bisect and its fanout, input-domain-splitting BaB only)."""
     llm_probe_log: bool = False
 
-    verbose: bool = False
+    verbose: bool = field(default=False, metadata={"in_yaml": False})
 
     method: Optional[str] = None
-    baf: bool = True
-    alpha_mode: str = "fixed"
+    baf: bool = field(default=True, metadata={"in_yaml": False})
+    alpha_mode: str = field(default="fixed", metadata={"in_yaml": False})
     p: float = 2.0
-    perturbed_words: int = 1
+    perturbed_words: int = field(default=1, metadata={"in_yaml": False})
     eps: float = 1e-5
     max_eps: float = 0.01
-    num_verify_iters: int = 5
+    num_verify_iters: int = field(default=5, metadata={"in_yaml": False})
     k: int = 1
-    alpha_opt_steps: int = 1000
+    alpha_opt_steps: int = field(default=1000, metadata={"in_yaml": False})
 
     def __post_init__(self) -> None:
         if self.solver_tier not in VALID_SOLVER_TIERS:
@@ -255,11 +239,11 @@ class BaBConfig:
         Reads from ``backend.bab`` in the unified backend config, falling
         back to a top-level ``bab`` key for standalone BaB YAML files.
         """
-        path = Path(config_path) if config_path else _DEFAULT_YAML
+        path = Path(config_path) if config_path else _BACKEND_YAML
 
         if not path.exists():
             raise FileNotFoundError(
-                f"Backend config not found: {path}\nExpected: act/back_end/config.yaml"
+                f"Backend config not found: {path}\nExpected: act/config/backend.yaml"
             )
 
         with open(path) as f:
@@ -292,21 +276,14 @@ class BaBConfig:
 # GenerationConfig — network generation (net_factory) parameters
 # ---------------------------------------------------------------------------
 
-_DEFAULT_GEN_CONFIG = str(
-    Path(__file__).parent / "examples" / "config_gen_act_net.yaml"
-)
-
-
 @dataclass
 class GenerationConfig:
     """Configuration for network generation via ``NetFactory``.
 
-    Controls the simple knobs (how many, where, seed, TF filtering).
-    The architecture sampling DSL lives in a separate file referenced
-    by ``gen_config_path``.
+    Controls network generation knobs and the architecture-sampling DSL loaded
+    from ``act/config/gen_act_net.yaml``.
     """
 
-    gen_config_path: str = _DEFAULT_GEN_CONFIG
     output_dir: str = "act/back_end/examples/nets"
     num_instances: int = 15
     base_seed: int = 42
@@ -317,6 +294,8 @@ class GenerationConfig:
     coverage_max_attempts: int = 1000
     coverage_report: bool = True
     write_manifest: bool = True
+
+    net_factory: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.registry_mode not in _VALID_REGISTRY_MODES:
@@ -333,7 +312,56 @@ class GenerationConfig:
 @dataclass
 class HybridZConfig:
     timeout: Optional[float] = None
-    engine: str = "dense_hz_objbound"
+    tolerance: float = 1e-7
+    max_input_dim: int = 1024
+
+
+@dataclass
+class GurobiConfig:
+    time_limit: Optional[float] = None
+    mip_gap: float = 1e-4
+    threads: int = 0
+    output_flag: int = 0
+
+
+@dataclass
+class DualConfig:
+    n_iters: int = 50
+    """Number of Adam iterations for α/η optimization in BaB dual tiers."""
+
+    lr_alpha: float = 0.1
+    """Adam learning rate for α (slope) variables."""
+
+    lr_beta: float = field(default=0.1, metadata={"in_yaml": False})
+    """Adam learning rate for η (split-constraint KKT multipliers)."""
+
+    lr_decay: float = field(default=0.98, metadata={"in_yaml": False})
+    """Multiplicative learning-rate decay applied each Adam iteration."""
+
+    per_class_alpha: bool = True
+    """Allocate separate α tensors per output class rather than sharing one α."""
+
+    incremental_start_enabled: bool = True
+    """Reuse α/η tensors from the parent subproblem as the child initialization."""
+
+
+@dataclass
+class TorchLPConfig:
+    rho_eq: float = 10.0
+    rho_ineq: float = 10.0
+    max_iter: int = 2000
+    tol_feas: float = 1e-4
+    lr: float = 1e-2
+    beta1: float = 0.9
+    beta2: float = 0.999
+    weight_decay: float = 0.0
+    large_n_threshold: int = 20000
+    large_n_max_iter: int = 800
+    large_n_tol: float = 1e-3
+    stagnation_patience: int = 300
+    stagnation_tol: float = 1e-5
+    feas_check_stride: int = 5
+
 
 # ---------------------------------------------------------------------------
 # BackendConfig — unified back-end configuration
@@ -345,7 +373,7 @@ class BackendConfig:
     """Unified configuration for the ACT back-end.
 
     Covers runtime selectors (solver / device / dtype), verification timeout,
-    and nested BaB settings.  The canonical source is ``act/back_end/config.yaml``;
+    and nested BaB settings.  The canonical source is ``act/config/backend.yaml``;
     CLI flags and environment variables override it at load time.
 
     Construction::
@@ -383,15 +411,18 @@ class BackendConfig:
 
     generation: GenerationConfig = field(default_factory=GenerationConfig)
     hybridz: HybridZConfig = field(default_factory=HybridZConfig)
+    gurobi: GurobiConfig = field(default_factory=GurobiConfig)
+    torchlp: TorchLPConfig = field(default_factory=TorchLPConfig)
+    dual: DualConfig = field(default_factory=DualConfig)
 
-    method: Optional[str] = None
-    p: float = 2.0
-    perturbed_words: int = 1
-    eps: float = 1e-5
-    max_eps: float = 0.01
-    num_verify_iters: int = 5
-    k: int = 1
-    alpha_opt_steps: int = 1000
+    method: Optional[str] = field(default=None, metadata={"in_yaml": False})
+    p: float = field(default=2.0, metadata={"in_yaml": False})
+    perturbed_words: int = field(default=1, metadata={"in_yaml": False})
+    eps: float = field(default=1e-5, metadata={"in_yaml": False})
+    max_eps: float = field(default=0.01, metadata={"in_yaml": False})
+    num_verify_iters: int = field(default=5, metadata={"in_yaml": False})
+    k: int = field(default=1, metadata={"in_yaml": False})
+    alpha_opt_steps: int = field(default=1000, metadata={"in_yaml": False})
 
     # -- validation ---------------------------------------------------------
 
@@ -459,27 +490,30 @@ class BackendConfig:
               bab:
                 enabled: true
                 ...
-              generation:
-                num_instances: 15
-                ...
+            generation settings are loaded from act/config/gen_act_net.yaml
 
         Override naming:
           - ``bab_<field>`` → ``BaBConfig.<field>``
           - ``gen_<field>`` → ``GenerationConfig.<field>``
           - ``hybridz_<field>`` → ``HybridZConfig.<field>``
+          - ``gurobi_<field>`` → ``GurobiConfig.<field>``
+          - ``torchlp_<field>`` → ``TorchLPConfig.<field>``
+          - ``dual_<field>`` → ``DualConfig.<field>``
           - ``bab_enabled`` → top-level ``bab_enabled``
         """
-        path = Path(config_path) if config_path else _DEFAULT_YAML
+        path = Path(config_path) if config_path else _BACKEND_YAML
         if not path.exists():
             raise FileNotFoundError(f"Backend config not found: {path}")
 
-        with open(path) as f:
-            raw = yaml.safe_load(f) or {}
+        raw = _load_yaml(path)
 
         backend_raw: dict[str, Any] = raw.get("backend", {})
         bab_raw: dict[str, Any] = backend_raw.pop("bab", {})
-        gen_raw: dict[str, Any] = backend_raw.pop("generation", {})
+        gen_raw: dict[str, Any] = _load_yaml(_NETGEN_YAML) if _NETGEN_YAML.exists() else {}
         hz_raw: dict[str, Any] = backend_raw.pop("hybridz", {})
+        gurobi_raw: dict[str, Any] = backend_raw.pop("gurobi", {})
+        torchlp_raw: dict[str, Any] = backend_raw.pop("torchlp", {})
+        dual_raw: dict[str, Any] = backend_raw.pop("dual", {})
 
         # Extract "enabled" from bab section → top-level bab_enabled
         bab_enabled = bab_raw.pop("enabled", None)
@@ -488,9 +522,15 @@ class BackendConfig:
         bab_fields = {fld.name for fld in fields(BaBConfig)}
         gen_fields = {fld.name for fld in fields(GenerationConfig)}
         hz_fields = {fld.name for fld in fields(HybridZConfig)}
+        gurobi_fields = {fld.name for fld in fields(GurobiConfig)}
+        torchlp_fields = {fld.name for fld in fields(TorchLPConfig)}
+        dual_fields = {fld.name for fld in fields(DualConfig)}
         bab_overrides: dict[str, Any] = {}
         gen_overrides: dict[str, Any] = {}
         hz_overrides: dict[str, Any] = {}
+        gurobi_overrides: dict[str, Any] = {}
+        torchlp_overrides: dict[str, Any] = {}
+        dual_overrides: dict[str, Any] = {}
         top_overrides: dict[str, Any] = {}
         for k, v in overrides.items():
             if k.startswith("bab_") and k[4:] in bab_fields:
@@ -499,11 +539,22 @@ class BackendConfig:
                 gen_overrides[k[4:]] = v
             elif k.startswith("hybridz_") and k[8:] in hz_fields:
                 hz_overrides[k[8:]] = v
+            elif k.startswith("gurobi_") and k[7:] in gurobi_fields:
+                gurobi_overrides[k[7:]] = v
+            elif k.startswith("torchlp_") and k[8:] in torchlp_fields:
+                torchlp_overrides[k[8:]] = v
+            elif k.startswith("dual_") and k[5:] in dual_fields:
+                dual_overrides[k[5:]] = v
             else:
                 top_overrides[k] = v
 
         # Build BaBConfig
-        bab_merged = {k: v for k, v in bab_raw.items() if k in bab_fields}
+        bab_in_yaml = {
+            fld.name for fld in fields(BaBConfig) if fld.metadata.get("in_yaml", True)
+        }
+        bab_merged = {
+            k: v for k, v in bab_raw.items() if k in bab_fields and k in bab_in_yaml
+        }
         bab_merged.update(bab_overrides)
         bab_config = BaBConfig(**bab_merged)
 
@@ -511,13 +562,37 @@ class BackendConfig:
         gen_merged = {k: v for k, v in gen_raw.items() if k in gen_fields}
         gen_merged.update(gen_overrides)
         gen_config = GenerationConfig(**gen_merged)
-        
+
         hz_merged = {k: v for k, v in hz_raw.items() if k in hz_fields}
         hz_merged.update(hz_overrides)
         hz_config = HybridZConfig(**hz_merged)
 
+        gurobi_config = GurobiConfig(
+            **{k: v for k, v in gurobi_raw.items() if k in gurobi_fields} | gurobi_overrides
+        )
+
+        torchlp_merged = {k: v for k, v in torchlp_raw.items() if k in torchlp_fields}
+        torchlp_merged.update(torchlp_overrides)
+        torchlp_config = TorchLPConfig(**torchlp_merged)
+
+        dual_in_yaml = {
+            fld.name for fld in fields(DualConfig) if fld.metadata.get("in_yaml", True)
+        }
+        dual_merged = {
+            k: v for k, v in dual_raw.items() if k in dual_fields and k in dual_in_yaml
+        }
+        dual_merged.update(dual_overrides)
+        dual_config = DualConfig(**dual_merged)
+
         # Build top-level config
-        top_fields = {fld.name for fld in fields(cls)} - {"bab", "generation", "hybridz"}
+        top_fields = {fld.name for fld in fields(cls)} - {
+            "bab",
+            "generation",
+            "hybridz",
+            "gurobi",
+            "torchlp",
+            "dual",
+        }
         top_merged: dict[str, Any] = {}
         for k, v in backend_raw.items():
             if k in top_fields:
@@ -528,7 +603,15 @@ class BackendConfig:
 
         top_merged.update({k: v for k, v in top_overrides.items() if k in top_fields})
 
-        return cls(bab=bab_config, generation=gen_config, hybridz=hz_config, **top_merged)
+        return cls(
+            bab=bab_config,
+            generation=gen_config,
+            hybridz=hz_config,
+            gurobi=gurobi_config,
+            torchlp=torchlp_config,
+            dual=dual_config,
+            **top_merged,
+        )
 
     def to_yaml(self, path: Union[str, Path]) -> Path:
         path = Path(path)
@@ -536,14 +619,26 @@ class BackendConfig:
 
         d = asdict(self)
         bab_d = d.pop("bab")
-        gen_d = d.pop("generation")
+        d.pop("generation")
         hz_d = d.pop("hybridz")
+        gurobi_d = d.pop("gurobi")
+        torchlp_d = d.pop("torchlp")
+        dual_d = d.pop("dual")
         bab_enabled = d.pop("bab_enabled")
         bab_d["enabled"] = bab_enabled
 
         with open(path, "w") as f:
             yaml.dump(
-                {"backend": {**d, "bab": bab_d, "generation": gen_d, "hybridz": hz_d}},
+                {
+                    "backend": {
+                        **d,
+                        "bab": bab_d,
+                        "hybridz": hz_d,
+                        "gurobi": gurobi_d,
+                        "torchlp": torchlp_d,
+                        "dual": dual_d,
+                    }
+                },
                 f,
                 default_flow_style=False,
                 sort_keys=False,
@@ -618,7 +713,7 @@ def build_vnncomp_bab_config(
     max_nodes: int = 1_000_000_000,
     solver_tier: str = "dual_alpha_eta",
     dual_n_iters: int = 100,
-) -> BaBConfig:
+) -> tuple[BaBConfig, DualConfig]:
     """BaBConfig for real VNNLIB instances (the VNN-COMP runner profile):
     ``fsb``/``babsr`` keep single-neuron splits, ``gain``/``gain+llm`` use joint-split
     depth, and only ``gain+llm`` enables the LLM probe."""
@@ -631,20 +726,22 @@ def build_vnncomp_bab_config(
         frontier_cap=25000,
         max_depth=max_depth,
         max_nodes=max_nodes,
-        dual_n_iters=dual_n_iters,
-        lr_alpha=0.25,
-        lr_beta=0.1,
-        lr_decay=0.98,
-        incremental_start_enabled=True,
-        per_class_alpha=True,
         reuse_root_bounds=True,
         intermediate_refine="all",
         presplit_levels=0,
         eta_only_children=False,
         multi_split_levels=1 if branching_method != "gain" else max(1, int(multi_split_levels)),
     )
+    dual_cfg = DualConfig(
+        n_iters=dual_n_iters,
+        lr_alpha=0.25,
+        lr_beta=0.1,
+        lr_decay=0.98,
+        incremental_start_enabled=True,
+        per_class_alpha=True,
+    )
     if config_label != "gain+llm":
-        return BaBConfig(**common)
+        return BaBConfig(**common), dual_cfg
     cfg = BaBConfig(
         llm_probe_enabled=True,
         llm_probe_backend=llm_backend,
@@ -657,4 +754,139 @@ def build_vnncomp_bab_config(
     )
     if llm_model:
         cfg.llm_probe_model = llm_model
-    return cfg
+    return cfg, dual_cfg
+
+
+# ---------------------------------------------------------------------------
+# Pipeline configuration
+# ---------------------------------------------------------------------------
+
+
+FuzzingConfig = Any
+
+
+@dataclass
+class ValidationConfig:
+    solvers: list[str]
+    tf_modes: list[str]
+    samples: int
+    per_neuron_topk: int
+    bounds_tolerance: str
+    batch_sizes: Optional[list[Optional[int]]]
+
+
+@dataclass
+class PipelineConfig:
+    fuzzing: FuzzingConfig
+    bab: BaBConfig
+    dual: DualConfig
+    validation: ValidationConfig
+
+    @classmethod
+    def from_yaml(
+        cls,
+        config_path: Optional[str | Path] = None,
+        **overrides: Any,
+    ) -> "PipelineConfig":
+        path = Path(config_path) if config_path else _PIPELINE_YAML
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Pipeline config not found: {path}\nExpected: act/config/pipeline.yaml"
+            )
+
+        FuzzingConfig = import_module("act.pipeline.fuzzing.actfuzzer").FuzzingConfig
+
+        with open(path) as f:
+            yaml_data = yaml.safe_load(f) or {}
+
+        fuzz_overrides = _strip_prefixed_overrides(overrides, "fuzz_")
+        bab_overrides = _strip_prefixed_overrides(overrides, "bab_")
+        dual_overrides = _strip_prefixed_overrides(overrides, "dual_")
+        val_overrides = _strip_prefixed_overrides(overrides, "val_")
+
+        fuzzing = FuzzingConfig.from_mapping(
+            yaml_data.get("fuzzing") or {}, **fuzz_overrides
+        )
+        verification_data = yaml_data.get("verification") or {}
+        bab_data = verification_data.get("bab") or {}
+        dual_data = verification_data.get("dual") or {}
+        validation_data = yaml_data.get("validation") or {}
+
+        bab = BaBConfig(**_merge_dataclass_fields(BaBConfig, bab_data, bab_overrides))
+        dual = DualConfig(**_merge_dataclass_fields(DualConfig, dual_data, dual_overrides))
+        validation = ValidationConfig(
+            **_merge_dataclass_fields(ValidationConfig, validation_data, val_overrides)
+        )
+        return cls(fuzzing=fuzzing, bab=bab, dual=dual, validation=validation)
+
+
+def _strip_prefixed_overrides(overrides: dict[str, Any], prefix: str) -> dict[str, Any]:
+    return {
+        key[len(prefix) :]: value
+        for key, value in overrides.items()
+        if key.startswith(prefix) and value is not None
+    }
+
+
+def _merge_dataclass_fields(
+    dataclass_type: type,
+    yaml_values: dict[str, Any],
+    overrides: dict[str, Any],
+) -> dict[str, Any]:
+    valid_keys = {field.name for field in fields(dataclass_type)}
+    merged = {key: value for key, value in yaml_values.items() if key in valid_keys}
+    merged.update({key: value for key, value in overrides.items() if key in valid_keys})
+    return merged
+
+
+def read_fuzzing_section(config_path: Optional[str | Path] = None) -> dict[str, Any]:
+    """Read the ``fuzzing`` section of the pipeline YAML.
+
+    config.py is the single reader of the config YAML files; FuzzingConfig (in
+    act.pipeline.fuzzing.actfuzzer) routes its YAML access through here.
+    """
+    path = Path(config_path) if config_path else _PIPELINE_YAML
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Pipeline config not found: {path}\nExpected: act/config/pipeline.yaml"
+        )
+    with open(path) as f:
+        yaml_data = yaml.safe_load(f) or {}
+    return yaml_data.get("fuzzing") or {}
+
+
+# ---------------------------------------------------------------------------
+# Front-end configuration loading
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class FrontEndConfig:
+    specs: dict[str, dict[str, Any]] = field(default_factory=dict)
+    text_verification: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_yaml(
+        cls,
+        config_path: Optional[Union[str, Path]] = None,
+        **overrides: Any,
+    ) -> "FrontEndConfig":
+        path = Path(config_path) if config_path else _FRONTEND_YAML
+        if not path.exists():
+            raise FileNotFoundError(f"Front-end config not found: {path}")
+
+        with open(path) as f:
+            raw = yaml.safe_load(f) or {}
+
+        specs = deepcopy(raw.get("specs", {}))
+        text_verification = deepcopy(raw.get("text_verification", {}))
+        text_verification.update(
+            {k: v for k, v in overrides.items() if k in text_verification and v is not None}
+        )
+        return cls(specs=specs, text_verification=text_verification)
+
+    def spec_config(self, name: Optional[str]) -> dict[str, Any]:
+        key = name or "default"
+        if key not in self.specs:
+            raise KeyError(f"Unknown front-end spec config: {key}")
+        return deepcopy(self.specs[key])

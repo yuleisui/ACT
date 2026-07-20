@@ -17,6 +17,7 @@ from dataclasses import fields
 import datetime
 import glob
 import json
+import logging
 import os
 import statistics
 import sys
@@ -24,14 +25,16 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional, Union, cast, get_args, get_origin, get_type_hints
 
-from act.back_end.config import VALID_BERT_METHODS, _VALID_SOLVERS
+from act.config.config import DualConfig, GurobiConfig, TorchLPConfig, VALID_BERT_METHODS, _VALID_SOLVERS
 from act.back_end.layer_schema import LayerKind
 from act.front_end.specs import OutKind
 from act.util.cli_utils import add_device_args, initialize_from_args
+from act.util.format_utils import rule
 
 
 _TF_MODES: tuple[str, ...] = ("interval", "hybridz")
 _SOLVERS: tuple[str, ...] = tuple(sorted(_VALID_SOLVERS))
+logger = logging.getLogger(__name__)
 
 
 def _strip_optional(tp: Any) -> Any:
@@ -62,7 +65,7 @@ def _parse_config_value(tp: Any):
 
 def _add_dataclass_config_args(parser: argparse.ArgumentParser) -> None:
     """Expose all BackendConfig dataclass fields without hand-maintained drift."""
-    from act.back_end.config import BackendConfig, BaBConfig, GenerationConfig, HybridZConfig
+    from act.config.config import BackendConfig, BaBConfig, DualConfig, GenerationConfig, GurobiConfig, HybridZConfig, TorchLPConfig
 
     existing_options = {
         option
@@ -118,24 +121,43 @@ def _add_dataclass_config_args(parser: argparse.ArgumentParser) -> None:
         "Backend Config Overrides (generated)",
         "",
         "",
-        {"bab", "generation", "hybridz"},
+        {"bab", "generation", "hybridz", "gurobi", "torchlp", "dual"},
     )
     add_group(BaBConfig, "BaB Config Overrides (generated)", "bab-", "bab_", set())
-    add_group(GenerationConfig, "Generation Config Overrides (generated)", "gen-", "gen_", set())
+    add_group(DualConfig, "Dual Config Overrides (generated)", "dual-", "dual_", set())
+    add_group(GenerationConfig, "Generation Config Overrides (generated)", "gen-", "gen_", {"net_factory"})
     add_group(HybridZConfig, "HybridZ Config Overrides (generated)", "hz-", "hybridz_", set())
+    add_group(GurobiConfig, "Gurobi Config Overrides (generated)", "gurobi-", "gurobi_", set())
+    add_group(TorchLPConfig, "TorchLP Config Overrides (generated)", "torchlp-", "torchlp_", set())
+
+
+# Backend YAML sub-section (== the BackendConfig nested-dataclass field name) ->
+# the flat prefix its fields carry in the CLI/override namespace. Single source of
+# truth, shared by the override-key derivation below AND the config-parity check
+# (act/config/check_parity.py). Adding a field to an existing sub-config needs no
+# change here; only a brand-new sub-config does.
+_BACKEND_SUBCONFIG_PREFIX: dict[str, str] = {
+    "bab": "bab_",
+    "generation": "gen_",
+    "hybridz": "hybridz_",
+    "gurobi": "gurobi_",
+    "torchlp": "torchlp_",
+    "dual": "dual_",
+}
 
 
 def _backend_override_keys_from_dataclasses() -> set[str]:
-    from act.back_end.config import BackendConfig, BaBConfig, GenerationConfig, HybridZConfig
+    from act.config.config import BackendConfig
 
-    keys = {
-        fld.name
-        for fld in fields(BackendConfig)
-        if fld.name not in {"bab", "generation", "hybridz"}
-    }
-    keys.update(f"bab_{fld.name}" for fld in fields(BaBConfig))
-    keys.update(f"gen_{fld.name}" for fld in fields(GenerationConfig))
-    keys.update(f"hybridz_{fld.name}" for fld in fields(HybridZConfig))
+    hints = get_type_hints(BackendConfig)
+    keys: set[str] = set()
+    for fld in fields(BackendConfig):
+        prefix = _BACKEND_SUBCONFIG_PREFIX.get(fld.name)
+        if prefix is None:
+            keys.add(fld.name)
+        else:
+            sub_type = _strip_optional(hints.get(fld.name, fld.type))
+            keys.update(f"{prefix}{sub.name}" for sub in fields(sub_type))
     return keys
 
 
@@ -151,7 +173,11 @@ class _SkipUnsupported(NamedTuple):
     kinds: tuple[str, ...]
 
 
-def _make_solver(solver_name: str):
+def _make_solver(
+    solver_name: str,
+    torchlp_config: Optional[TorchLPConfig] = None,
+    gurobi_config: Optional[GurobiConfig] = None,
+):
     """LP-cascade solver factory (gurobi / torchlp / auto). Dual is routed
     separately via ``is_dual_solver_active`` since it implements
     ``compute_certified_bound``, not ``solve_batch``.
@@ -161,16 +187,16 @@ def _make_solver(solver_name: str):
     if solver_name == "gurobi":
         from act.back_end.solver.solver_gurobi import GurobiSolver
 
-        return GurobiSolver()
+        return GurobiSolver(config=gurobi_config)
     if solver_name == "torchlp":
-        return TorchLPSolver()
+        return TorchLPSolver(config=torchlp_config)
     # "auto": try Gurobi, fall back to TorchLP
     try:
         from act.back_end.solver.solver_gurobi import GurobiSolver
 
-        return GurobiSolver()
+        return GurobiSolver(config=gurobi_config)
     except Exception:
-        return TorchLPSolver()
+        return TorchLPSolver(config=torchlp_config)
 
 
 def _verify_one_net(
@@ -248,9 +274,17 @@ def _verify_one_net(
             return [], _SkipUnsupported(tf_name=authority_name, kinds=blocking), n_layers
 
         hz_timeout = None
+        hz_tolerance = None
         if is_hybridz:
             hz_timeout = backend_cfg.hybridz.timeout or backend_cfg.timeout
-        results: List[Any] = list(verify_once(net=net, timelimit=hz_timeout))
+            hz_tolerance = backend_cfg.hybridz.tolerance
+        results: List[Any] = list(
+            verify_once(
+                net=net,
+                timelimit=hz_timeout,
+                hybridz_tolerance=hz_tolerance,
+            )
+        )
 
         any_unknown = any(r.status == VerifyStatus.UNKNOWN for r in results)
 
@@ -260,7 +294,9 @@ def _verify_one_net(
             try:
                 lp_results = verify_lp_batched(
                     net,
-                    solver_factory=lambda: _make_solver(backend_cfg.solver),
+                solver_factory=lambda: _make_solver(
+                    backend_cfg.solver, backend_cfg.torchlp, backend_cfg.gurobi
+                ),
                     timelimit=backend_cfg.timeout,
                 )
                 results = [
@@ -305,10 +341,13 @@ def _verify_one_net(
                 results = [
                     _vbb(
                         slice_net_to_sample(net, i),
-                        solver_factory=lambda: _make_solver(backend_cfg.solver),
+                        solver_factory=lambda: _make_solver(
+                            backend_cfg.solver, backend_cfg.torchlp, backend_cfg.gurobi
+                        ),
                         config=bab_cfg,
                         max_batch_size=backend_cfg.bab_max_batch_size,
                         time_budget_s=backend_cfg.timeout,
+                        dual_config=backend_cfg.dual,
                     )
                     if results[i].status == VerifyStatus.UNKNOWN
                     else results[i]
@@ -362,9 +401,9 @@ def run_verification(args, backend_cfg):
 
 def run_network_factory(args, backend_cfg):
     """Generate example networks using TF-aware NetFactory."""
-    print(f"\n{'=' * 80}")
+    print(f"\n{rule()}")
     print(f"ACT NETWORK FACTORY")
-    print(f"{'=' * 80}\n")
+    print(f"{rule()}\n")
 
     from act.back_end.net_factory import NetFactory
 
@@ -372,14 +411,13 @@ def run_network_factory(args, backend_cfg):
 
     if gen.tf_targets:
         print(f"TF targets: {gen.tf_targets} (mode: {gen.registry_mode})")
-    print(f"Config: {gen.gen_config_path}")
     print(f"Output: {gen.output_dir}")
     print(f"Instances: {gen.num_instances}, Seed: {gen.base_seed}")
     print()
 
     try:
         factory = NetFactory(
-            gen_config_path=gen.gen_config_path,
+            config=gen.net_factory,
             output_dir=gen.output_dir,
             base_seed=gen.base_seed,
             num_instances=gen.num_instances,
@@ -389,9 +427,9 @@ def run_network_factory(args, backend_cfg):
             write_manifest=gen.write_manifest,
         )
         factory.generate()
-        print(f"\n{'=' * 80}")
+        print(f"\n{rule()}")
         print(f"✓ Network generation complete")
-        print(f"{'=' * 80}\n")
+        print(f"{rule()}\n")
 
         return 0
     except Exception as e:
@@ -405,9 +443,9 @@ def run_network_factory(args, backend_cfg):
 
 def run_network_info(args):
     """Display information about a network."""
-    print(f"\n{'=' * 80}")
+    print(f"\n{rule()}")
     print(f"NETWORK INFORMATION")
-    print(f"{'=' * 80}\n")
+    print(f"{rule()}\n")
 
     from act.back_end.serialization.serialization import load_net_from_file
     from act.back_end.layer_schema import LayerKind
@@ -433,9 +471,9 @@ def run_network_info(args):
 
     # Detailed layer info if verbose
     if args.verbose:
-        print(f"\n{'=' * 80}")
+        print(f"\n{rule()}")
         print(f"DETAILED LAYER INFORMATION")
-        print(f"{'=' * 80}\n")
+        print(f"{rule()}\n")
 
         for layer in net.layers:
             print(f"Layer {layer.id}: {layer.kind}")
@@ -455,36 +493,36 @@ def run_network_info(args):
                 print(f"  Successors: {succs}")
             print()
 
-    print(f"{'=' * 80}\n")
+    print(f"{rule()}\n")
     return 0
 
 
 def run_serialization_test(args):
     """Test network serialization (save/load round-trip)."""
-    print(f"\n{'=' * 80}")
+    print(f"\n{rule()}")
     print(f"SERIALIZATION TEST")
-    print(f"{'=' * 80}\n")
+    print(f"{rule()}\n")
 
     from act.back_end.serialization.test_serialization import main as test_main
 
     print("Running serialization tests...\n")
     result = test_main()
 
-    print(f"\n{'=' * 80}")
+    print(f"\n{rule()}")
     if result == 0:
         print("✓ All serialization tests passed")
     else:
         print("❌ Some serialization tests failed")
-    print(f"{'=' * 80}\n")
+    print(f"{rule()}\n")
 
     return result
 
 
 def list_examples(args):
     """List available example networks."""
-    print(f"\n{'=' * 80}")
+    print(f"\n{rule()}")
     print(f"AVAILABLE EXAMPLE NETWORKS")
-    print(f"{'=' * 80}\n")
+    print(f"{rule()}\n")
 
     from act.pipeline.verification.model_factory import ModelFactory
 
@@ -511,16 +549,16 @@ def list_examples(args):
 
     for cat, nets in sorted(categories.items()):
         print(f"{cat} ({len(nets)} networks):")
-        print("-" * 70)
+        print(rule(70, "-"))
         for name, info in sorted(nets):
             shape = info.get("input_shape", "?")
             layers = info.get("num_layers", "?")
             print(f"  {name:40s}  shape={shape}  layers={layers}")
         print()
 
-    print(f"{'=' * 80}")
+    print(f"{rule()}")
     print("To generate networks: python -m act.back_end --generate")
-    print(f"{'=' * 80}\n")
+    print(f"{rule()}\n")
 
     return 0
 
@@ -676,9 +714,9 @@ def run_bench(args) -> int:
     kind = args.bench
     bench_out = getattr(args, "bench_out", None)
 
-    print(f"\n{'=' * 80}")
+    print(f"\n{rule()}")
     print(f"ACT BENCH: {kind.upper()}")
-    print(f"{'=' * 80}\n")
+    print(f"{rule()}\n")
 
     if kind in ("cnn", "all"):
         out_path = bench_out if (bench_out and kind == "cnn") else _bench_default_path("cnn")
@@ -694,9 +732,9 @@ def run_bench(args) -> int:
         if rc != 0:
             return rc
 
-    print(f"\n{'=' * 80}")
+    print(f"\n{rule()}")
     print(f"Bench complete")
-    print(f"{'=' * 80}\n")
+    print(f"{rule()}\n")
     return 0
 
 
@@ -718,11 +756,11 @@ def run_diff_nets(args) -> int:
         print(f"Error loading {path_b}: {e}")
         return 1
 
-    print(f"\n{'=' * 80}")
+    print(f"\n{rule()}")
     print(f"NET DIFF")
     print(f"  A: {path_a}")
     print(f"  B: {path_b}")
-    print(f"{'=' * 80}\n")
+    print(f"{rule()}\n")
 
     la, lb = len(net_a.layers), len(net_b.layers)
     marker = "  " if la == lb else "!"
@@ -760,7 +798,7 @@ def run_diff_nets(args) -> int:
             lyr = extra_net.layers[i]
             print(f"+ Layer {i:2d} ({lyr.kind:20s}): only in {extra_side}")
 
-    print(f"\n{'=' * 80}\n")
+    print(f"\n{rule()}\n")
     return 0
 
 
@@ -965,11 +1003,13 @@ Examples:
         default=None,
         dest="solver",
         help=(
-            "Solver backend.  Three alternative families:\n"
+            "Solver backend:\n"
             "  'gurobi'  — commercial MILP/LP (license required).  LP cascade.\n"
             "  'torchlp' — PyTorch-tensor LP (Adam + penalty + box projection,\n"
             "              GPU-capable).  LP cascade.\n"
-                "  'dual'    — DualSolver, linear-relaxation dual certified bounds via\n"
+            "  'hybridz' — Hybrid Zonotope propagation with a standalone open-source\n"
+            "              MILP verdict; automatically selects HybridzTF.\n"
+            "  'dual'    — DualSolver, linear-relaxation dual certified bounds via\n"
             "              backward propagation.  No LP cascade (DualSolver is\n"
             "              its own verification pipeline).\n"
             "  'auto'    — try gurobi, fall back to torchlp.\n"
@@ -993,8 +1033,8 @@ Examples:
             "Forward-bounds transfer function: 'interval' or 'hybridz'.  Selects "
             "the abstract interpretation used during analyze() to seed bounds "
             "for the LP cascade.  Default: configured default (typically "
-            "'interval').  For dual certified bounds, use --solver dual instead "
-            "(dual is a solver, not a TF — see --solver help)."
+            "'interval').  The standalone hybridz solver selects HybridzTF "
+            "automatically; dual does not use this option."
         ),
     )
     verify_group.add_argument(
@@ -1248,7 +1288,7 @@ Examples:
         type=str,
         default=None,
         dest="backend_config",
-        help="Path to backend YAML config (default: act/back_end/config.yaml)",
+        help="Path to backend YAML config (default: act/config/backend.yaml)",
     )
 
     # Common options
@@ -1281,7 +1321,7 @@ Examples:
     # ── Build BackendConfig ──────────────────────────────────────────────
     # Load YAML as baseline, then overlay env vars and CLI flags on top.
     # Precedence: CLI flag > env var > config.yaml > dataclass default
-    from act.back_end.config import BackendConfig
+    from act.config.config import BackendConfig
 
     backend_cfg = BackendConfig.from_yaml(
         config_path=args.backend_config,
@@ -1295,10 +1335,20 @@ Examples:
         _ap.Namespace(device=backend_cfg.device, dtype=backend_cfg.dtype)
     )
 
-    if args.tf_mode is not None:
+    tf_mode = args.tf_mode
+    if backend_cfg.solver == "hybridz":
+        if tf_mode is not None and tf_mode != "hybridz":
+            logger.warning(
+                "--solver hybridz requires the hybridz transformer; overriding "
+                "--tf-mode %s",
+                tf_mode,
+            )
+        tf_mode = "hybridz"
+
+    if tf_mode is not None:
         from act.back_end.analyze import initialize_tf_mode
 
-        initialize_tf_mode(args.tf_mode)
+        initialize_tf_mode(tf_mode, backend_cfg.hybridz)
 
     # Set the solver-mode global so verify_once / _verify_one_net can dispatch
     # dual ↔ LP-cascade without consulting the TF mode (refactor decoupled
@@ -1376,7 +1426,6 @@ _BACKEND_ALIAS_OVERRIDE_SPEC: list[tuple[str, str, Optional[str], Any, str]] = [
     ("bab_llm_probe_decisions",          "bab_llm_probe_decisions",          None, None,  "not_none"),
     ("bab_llm_probe_log",                "bab_llm_probe_log",                None, None,  "user_set"),
     ("bab_multi_split_levels",           "bab_multi_split_levels",           None, int,   "not_none"),
-    ("gen_gen_config_path",  "config",              None,             None, "not_none"),
     ("gen_output_dir",       "output",              "ACT_GEN_OUTPUT", None, "not_none"),
     ("gen_num_instances",    "num",                 "ACT_GEN_NUM",    int,  "not_none"),
     ("gen_base_seed",        "base_seed",           "ACT_GEN_SEED",   int,  "not_none"),
@@ -1424,7 +1473,7 @@ def _run_cli_cascade_smoke() -> int:
     from act.back_end.core import Layer, Net, Bounds, Fact, ConSet
     from act.back_end.layer_schema import LayerKind
     from act.front_end.specs import OutputSpec
-    from act.back_end.config import BackendConfig
+    from act.config.config import BackendConfig
     from act.util.stats import VerifyStatus
 
     passed = 0
@@ -1496,7 +1545,7 @@ def _run_cli_cascade_smoke() -> int:
         if results[0].status == VerifyStatus.UNKNOWN and cfg.lp_enabled:
             lp_results = verify_lp_batched(
                 net,
-                solver_factory=lambda: _make_solver(cfg.solver),
+        solver_factory=lambda: _make_solver(cfg.solver, cfg.torchlp, cfg.gurobi),
                 timelimit=cfg.timeout,
             )
             assert len(lp_results) == 1

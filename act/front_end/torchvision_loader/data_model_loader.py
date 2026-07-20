@@ -18,7 +18,7 @@ import torch
 
 # Import path configuration
 from act.util.path_config import get_torchvision_data_root
-from act.util.format_utils import format_bytes as _format_size, dir_size as _get_directory_size
+from act.util.format_utils import format_bytes as _format_size, dir_size as _get_directory_size, rule
 
 # Import from data_model_mapping
 from act.front_end.torchvision_loader.data_model_mapping import (
@@ -274,9 +274,9 @@ def download_dataset_model_pair(
             models_dir.mkdir(parents=True, exist_ok=True)
             downloaded_splits = []
         
-        print(f"\n{'='*80}")
+        print(f"\n{rule()}")
         print(f"{'ADDING MODEL' if dataset_exists else 'DOWNLOADING'}: {dataset_name} + {model_name}")
-        print(f"{'='*80}")
+        print(f"{rule()}")
         print(f"Target: {dataset_dir}")
         if not dataset_exists:
             print(f"Split: {split}")
@@ -388,9 +388,9 @@ print(f"Parameters: {{sum(p.numel() for p in model.parameters()):,}}")
         total_size_formatted = _format_size(total_size_bytes)
         
         # Print summary
-        print(f"\n{'='*80}")
+        print(f"\n{rule()}")
         print(f"✓ DOWNLOAD COMPLETE")
-        print(f"{'='*80}")
+        print(f"{rule()}")
         print(f"Dataset: {raw_dir}")
         print(f"Model: {model_path}")
         print(f"Info: {info_path}")
@@ -553,9 +553,9 @@ def load_dataset_model_pair(
     # Auto-download if not found
     if not dataset_dir.exists() or not info_path.exists():
         if auto_download:
-            print(f"\n{'='*80}")
+            print(f"\n{rule()}")
             print(f"Dataset-model pair not found locally. Downloading...")
-            print(f"{'='*80}\n")
+            print(f"{rule()}\n")
             
             # Determine which split to download
             download_split = split if split in ['train', 'test'] else 'both'
@@ -573,9 +573,9 @@ def load_dataset_model_pair(
                     f"Failed to download dataset-model pair: {download_result['message']}"
                 )
             
-            print(f"\n{'='*80}")
+            print(f"\n{rule()}")
             print(f"Download completed. Proceeding to load...")
-            print(f"{'='*80}\n")
+            print(f"{rule()}\n")
         else:
             raise FileNotFoundError(
                 f"Dataset directory not found: {dataset_dir}\n"
@@ -593,9 +593,9 @@ def load_dataset_model_pair(
     with open(info_path, 'r') as f:
         metadata = json.load(f)
     
-    print(f"\n{'='*80}")
+    print(f"\n{rule()}")
     print(f"LOADING: {dataset_name} + {model_name}")
-    print(f"{'='*80}")
+    print(f"{rule()}")
     
     # Check if requested split was downloaded
     if split not in metadata['splits_downloaded']:
@@ -705,9 +705,9 @@ def load_dataset_model_pair(
     print(f"  Batch size: {batch_size}")
     print(f"  Preprocessing: {'Yes' if metadata['preprocessing_required'] else 'No'}")
     
-    print(f"\n{'='*80}")
+    print(f"\n{rule()}")
     print(f"✓ LOADED SUCCESSFULLY")
-    print(f"{'='*80}")
+    print(f"{rule()}")
     
     return {
         'dataset': dataset,
@@ -879,9 +879,9 @@ def main():
     Loads all pairs from data/torchvision/, performs inference on each sample,
     and reports success/failure statistics.
     """
-    print("="*80)
+    print(rule())
     print("DATASET-MODEL PAIR INFERENCE TESTING")
-    print("="*80)
+    print(rule())
     
     # Get all downloaded pairs
     downloaded_pairs = list_downloaded_pairs()
@@ -893,7 +893,7 @@ def main():
         return
     
     print(f"\n📊 Found {len(downloaded_pairs)} downloaded pairs")
-    print(f"{'='*80}\n")
+    print(f"{rule()}\n")
     
     # Track statistics
     results = []
@@ -925,9 +925,9 @@ def main():
     failed_pairs = total_pairs - successful_pairs
     
     # Print summary
-    print("="*80)
+    print(rule())
     print("SUMMARY")
-    print("="*80)
+    print(rule())
     print(f"Total pairs tested: {total_pairs}")
     print(f"Successful: {successful_pairs}")
     print(f"Failed: {failed_pairs}")
@@ -956,7 +956,7 @@ def main():
         for pair_key, reason in failure_reasons.items():
             print(f"   • {pair_key}: {reason}")
     
-    print("="*80)
+    print(rule())
 
 
 if __name__ == "__main__":

@@ -57,7 +57,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: act/back_end/examples/nets
-          key: act-nets-${{ hashFiles('act/back_end/examples/config_gen_act_net.yaml', 'act/back_end/net_factory.py', 'act/back_end/config.yaml') }}
+          key: act-nets-${{ hashFiles('act/config/gen_act_net.yaml', 'act/back_end/net_factory.py', 'act/config/backend.yaml') }}
           restore-keys: |
             act-nets-
 

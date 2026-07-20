@@ -16,7 +16,7 @@
 import torch
 from typing import Dict, List
 from act.back_end.core import Bounds, Fact, Layer, Net, ConSet
-from act.back_end.transfer_functions import TransferFunction
+from act.back_end.transfer_functions import RegistryTF
 from act.back_end.layer_schema import LayerKind
 from act.back_end.interval_tf.tf_mlp import *
 from act.back_end.interval_tf.tf_cnn import *
@@ -24,7 +24,7 @@ from act.back_end.interval_tf.tf_rnn import *
 from act.back_end.interval_tf.tf_transformer import *
 
 
-class IntervalTF(TransferFunction):
+class IntervalTF(RegistryTF):
     """Interval-based transfer functions for standard bounds propagation."""
     
     # Layer kind to function mapping
@@ -146,25 +146,14 @@ class IntervalTF(TransferFunction):
         LayerKind.MASK_ADD.value: lambda L, bounds, tf: tf_mask_add(L, bounds),
     }
     
-    @property
-    def name(self) -> str:
-        return "IntervalTF"
-        
-    def supports_layer(self, layer_kind: str) -> bool:
-        """Check if this transfer function supports the given layer kind."""
-        return layer_kind.upper() in self._LAYER_REGISTRY
+    def __init__(self) -> None:
+        super().__init__("IntervalTF")
         
     def apply(self, L: Layer, input_bounds: Bounds, net: Net,
               before: Dict[int, Fact], after: Dict[int, Fact]) -> Fact:
         """Apply interval transfer function to layer L."""
-        k = L.kind.upper()
-        if k not in self._LAYER_REGISTRY:
-            raise NotImplementedError(f"IntervalTF: Unsupported layer kind '{k}'")
-            
-        # Store context for lambdas
-        self._net = net
-        self._before = before
-        self._after = after
+        k = self._check_supported(L.kind)
+        self._set_context(net, before, after)
         
         transfer_fn = self._LAYER_REGISTRY[k]
         return transfer_fn(L, input_bounds, self)

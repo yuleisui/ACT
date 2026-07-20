@@ -1,3 +1,4 @@
+# pyright: reportOptionalMemberAccess=false, reportOperatorIssue=false, reportOptionalOperand=false, reportMissingTypeArgument=false
 """
 Base class for specification creators with shape validation.
 
@@ -10,11 +11,10 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Tuple, Dict, Any, Optional, Callable, Union
 import logging
-import yaml
 import torch
 
 from act.front_end.specs import InputSpec, OutputSpec, InKind, OutKind
-from act.util.path_config import get_spec_config_path, get_default_spec_config_path
+from act.config.config import FrontEndConfig
 
 
 logger = logging.getLogger(__name__)
@@ -235,7 +235,7 @@ class BaseSpecCreator(ABC):
         Initialize spec creator with configuration.
         
         Args:
-            config_name: Named config from configs/specs/ (e.g., 'torchvision_classification')
+            config_name: Named front-end spec config (e.g., 'torchvision_classification')
             config_dict: Runtime configuration overrides
         """
         self.config = self._load_config(config_name)
@@ -243,15 +243,9 @@ class BaseSpecCreator(ABC):
             self.config.update(config_dict)
     
     def _load_config(self, config_name: Optional[str] = None) -> Dict[str, Any]:
-        """Load configuration from YAML file"""
+        """Load a named spec configuration from the front-end config."""
         try:
-            if config_name:
-                config_path = get_spec_config_path(config_name)
-            else:
-                config_path = get_default_spec_config_path()
-            
-            with open(config_path, 'r') as f:
-                return yaml.safe_load(f)
+            return FrontEndConfig.from_yaml().spec_config(config_name)
         except Exception as e:
             print(f"⚠️  Could not load config: {e}, using defaults")
             return self._get_default_config()

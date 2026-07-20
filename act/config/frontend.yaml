@@ -1,0 +1,189 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# ACT Front-End Configuration
+# ═══════════════════════════════════════════════════════════════════════════
+# Data/model/spec-creation settings for the front-end tier.
+#
+# Precedence:  CLI flag  >  this file  >  code default
+#
+# Sections:
+#   specs             – named presets that drive InputSpec/OutputSpec synthesis
+#   text_verification – BERT/text robustness-verification defaults
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Specification presets
+# ─────────────────────────────────────────────────────────────────────────────
+# Select a preset by name (falls back to "default"). Fields shared by presets:
+#   epsilons             – list of L∞ perturbation radii to sweep
+#   margins              – list of robustness margins
+#   input_kinds          – BOX | LINF_BALL | LIN_POLY
+#   output_kinds         – MARGIN_ROBUST | TOP1_ROBUST | LINEAR_LE | RANGE | UNSAFE_LINEAR
+#   combination_strategy – full | minimal | balanced (how many input×output pairs)
+#   balanced_params      – caps used when combination_strategy = balanced
+# Each preset's `notes:` block (below) documents its intended usage.
+specs:
+
+  # -- TorchVision image classifiers (MNIST / CIFAR10 / ImageNet) --
+  torchvision_classification:
+    epsilons:
+    - 0.01
+    - 0.03
+    - 0.05
+    - 0.1
+    margins:
+    - 0.0
+    - 0.5
+    input_kinds:
+    - BOX
+    - LINF_BALL
+    output_kinds:
+    - MARGIN_ROBUST
+    - TOP1_ROBUST
+    combination_strategy: full
+    balanced_params:
+      max_input_specs: 5
+      max_output_specs: 3
+      max_total_combinations: 15
+    validation:
+      validate_shapes: true
+      skip_invalid: true
+    torchvision:
+      num_samples: 20
+      start_index: 0
+      split: test
+      preprocessing_info:
+        normalize: true
+        resize: true
+        grayscale: false
+    image_classification:
+      clamp_range:
+        min: 0.0
+        max: 1.0
+      center_perturbations: true
+    logging:
+      level: INFO
+      show_progress: true
+      verbose_samples: false
+    performance:
+      batch_validate: false
+      cache_shapes: true
+    notes: 'TorchVision Classification Preset:
+
+      - Designed for MNIST, CIFAR10, ImageNet models
+
+      - Uses standard epsilon values (0.01, 0.03, 0.05, 0.1)
+
+      - Generates both BOX and LINF_BALL input specs
+
+      - Tests both strict (TOP1_ROBUST) and margin-based robustness
+
+      - Full combination strategy creates many spec pairs for thorough testing
+
+      '
+  # -- VNN-COMP benchmark instances (ONNX + VNNLIB, minimal specs per instance) --
+  vnnlib_default:
+    epsilons:
+    - 0.01
+    margins:
+    - 0.0
+    input_kinds:
+    - BOX
+    - LIN_POLY
+    output_kinds:
+    - LINEAR_LE
+    - RANGE
+    combination_strategy: minimal
+    balanced_params:
+      max_input_specs: 1
+      max_output_specs: 1
+      max_total_combinations: 1
+    validation:
+      validate_shapes: true
+      skip_invalid: true
+    vnnlib:
+      max_instances: null
+      simplify_onnx: true
+      onnx_conversion:
+        force_conversion: false
+        test_conversion: true
+    onnx:
+      shape_inference: auto
+      handle_batch_dim: true
+    vnnlib_parsing:
+      input_tensor_method: center
+      fallback_output_spec: RANGE
+    category_overrides:
+      acasxu:
+        max_instances: 50
+        simplify_onnx: false
+      mnist_fc:
+        max_instances: 100
+        test_conversion: true
+      cifar10_resnet:
+        max_instances: 20
+        simplify_onnx: true
+    logging:
+      level: INFO
+      show_progress: true
+      verbose_conversion: false
+      verbose_parsing: false
+    performance:
+      cache_models: true
+      parallel: false
+      num_workers: 1
+    download:
+      vnncomp_repo: https://raw.githubusercontent.com/ChristopherBrix/vnncomp_benchmarks/main
+      retry_failed: true
+      max_retries: 3
+    notes: "VNNLIB Benchmark Preset:\n- Designed for VNN-COMP benchmark instances\n\
+      - Minimal combination strategy (1 input spec, 1 output spec per instance)\n\
+      - Automatically downloads from VNN-COMP GitHub repository\n- Converts ONNX models\
+      \ to PyTorch for unified verification interface\n- Parses VNNLIB SMT-LIB format\
+      \ to extract constraints\n- Handles common VNN-COMP categories (MNIST, CIFAR10,\
+      \ ACAS Xu, etc.)\n\nUsage:\n  1. Download category: download_vnnlib_category(\"\
+      mnist_fc\")\n  2. Create specs: creator = VNNLibSpecCreator(); results = creator.create_specs_for_data_model_pairs()\n\
+      \  3. Each result contains: (category, instance_id, pytorch_model, [input_tensor],\
+      \ [(input_spec, output_spec)])\n"
+  # -- Generic fallback preset (used when no named preset is requested) --
+  default:
+    epsilons:
+    - 0.01
+    - 0.03
+    - 0.05
+    margins:
+    - 0.0
+    input_kinds:
+    - BOX
+    - LINF_BALL
+    output_kinds:
+    - MARGIN_ROBUST
+    combination_strategy: balanced
+    balanced_params:
+      max_input_specs: 3
+      max_output_specs: 2
+      max_total_combinations: 6
+    validation:
+      validate_shapes: true
+      skip_invalid: true
+    torchvision:
+      num_samples: 10
+      start_index: 0
+      split: test
+    vnnlib:
+      max_instances: null
+      simplify_onnx: true
+    logging:
+      level: INFO
+      show_progress: true
+# ─────────────────────────────────────────────────────────────────────────────
+# Text verification  (BERT / NLP robustness defaults)
+# ─────────────────────────────────────────────────────────────────────────────
+text_verification:
+  # method: null (off) or "planar" | "rule" | "alpha" | "ibp" | "discrete"
+  method: null
+  p: 2.0                 # perturbation norm p
+  perturbed_words: 1     # number of perturbed words (1 or 2)
+  eps: 1.0e-05           # initial epsilon
+  max_eps: 0.01          # maximum epsilon
+  num_verify_iters: 5    # verification iterations
+  k: 1                   # top-k value
+  alpha_opt_steps: 1000  # alpha optimization steps

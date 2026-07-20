@@ -1,0 +1,94 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# ACT Pipeline Configuration
+# ═══════════════════════════════════════════════════════════════════════════
+# Settings for the pipeline tier: whitebox fuzzing, BaB verification, and the
+# verifier-validation harness.
+#
+# Precedence:  CLI flag  >  this file  >  code default
+#
+# Sections:
+#   fuzzing       – ACTFuzzer counterexample search
+#   verification  – Branch-and-Bound overrides (see backend.yaml for the
+#                   full BaB surface; only non-default keys are set here)
+#   validation    – soundness / numerical-precision harness
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Fuzzing  (ACTFuzzer — gradient/coverage-guided counterexample search)
+# ─────────────────────────────────────────────────────────────────────────────
+fuzzing:
+
+  # -- Budget --
+  max_iterations: 10000      # maximum fuzzing iterations
+  timeout_seconds: 3600.0    # total wall-clock time budget (seconds)
+
+  # -- Coverage tracking --
+  # coverage_strategy:  "GlobalCov"    – monotonic union coverage over all inputs
+  #                     "BestInputCov" – best per-input coverage over time
+  coverage_strategy: "GlobalCov"
+  activation_threshold: 0.0001   # a neuron "fires" when activation > threshold
+
+  # -- Mutation strategy --
+  # mutation_weights: relative selection weights per mutation operator (need not
+  # sum to 1). Set an operator to 0 to disable it.
+  mutation_weights:
+    gradient: 0      # single-step FGSM-style perturbation
+    pgd: 0.4         # iterative PGD-style perturbation (projected each step)
+    activation: 0.3  # DeepXplore-style: target low-activation neurons
+    boundary: 0.2    # sample near InputSpec boundaries
+    random: 0.1      # Gaussian-noise baseline
+  # perturb_mode: how mutation perturbation size is computed.
+  #   "adaptive_scalar" – single size from mean(ub-lb) * perturb_scale (default)
+  #   "adaptive_perdim" – per-dimension size from (ub-lb) * perturb_scale
+  #   "fixed"           – legacy hardcoded values
+  perturb_mode: "adaptive_scalar"
+  # Fraction of the feasible range each perturbation covers (steps ≈ 1/scale;
+  # 0.1 ⇒ ~10 steps to traverse lb→ub).
+  perturb_scale: 0.1
+
+  # -- Seed scheduling --
+  # seed_selection_strategy:  "energy" (AFL-style prioritization) | "random"
+  seed_selection_strategy: "energy"
+
+  # -- Output / reporting --
+  save_counterexamples: true     # write counterexamples incrementally
+  output_dir: "fuzzing_results"  # relative to act/pipeline/log/
+  report_interval: 500           # print progress every N iterations
+  # verbose:  0 = silent | 1 = report violations in progress | 2 = print each
+  verbose: 1
+
+  # -- Execution tracing (replay/debugging; 0 = off, no overhead) --
+  trace_level: 0            # 0 = disabled | 1 = default | 2 = full | 3 = debug
+  trace_sample_rate: 1      # capture every Nth iteration (1 = all)
+  trace_storage: "json"     # "json" (human-readable) | "hdf5" (compressed, needs h5py)
+  trace_output: null        # output path; null = auto-generate under output_dir
+
+  # -- Early stop --
+  # Stop at the first counterexample (fast pre-attack: total time then measures
+  # time-to-first-counterexample).
+  stop_on_first_violation: false
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Verification  (Branch-and-Bound)
+# ─────────────────────────────────────────────────────────────────────────────
+verification:
+  bab:
+    # Sparse override: only keys that differ from BaBConfig defaults are set
+    # here; every other BaBConfig field is inherited from its dataclass default.
+    # The full, documented BaB surface lives in backend.yaml (backend.bab).
+    solver_tier: "dual_alpha_eta"  # "lp" | "dual" | "dual_alpha" | "dual_alpha_eta"
+    max_depth: 8                   # maximum BaB search-tree depth
+    max_nodes: 100                 # maximum subproblems (nodes) to explore
+  dual: {}                         # Sparse DualConfig overrides for BaB dual tiers.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Validation  (verifier soundness + numerical-precision harness)
+# ─────────────────────────────────────────────────────────────────────────────
+validation:
+  # Solvers to validate: any of "gurobi" | "torchlp" | "dual" | "hybridz" | "auto".
+  solvers: ["gurobi", "torchlp"]
+  # Transfer-function modes to validate (e.g. "interval", "hybridz").
+  tf_modes: ["interval"]
+  samples: 10             # concrete samples drawn per network for the soundness check
+  per_neuron_topk: 10     # per-neuron bounds: top-K widest neurons to cross-check
+  bounds_tolerance: "auto"  # "auto" (dtype-derived) or a numeric tolerance
+  batch_sizes: null       # null = auto; or a list of ints to sweep batch sizes

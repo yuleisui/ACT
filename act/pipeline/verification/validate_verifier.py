@@ -138,6 +138,7 @@ from act.pipeline.verification.per_neuron_bounds import (
 )
 from act.util.stats import VerifyStatus
 from act.util.options import PerformanceOptions
+from act.util.format_utils import rule
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -165,7 +166,7 @@ class VerificationValidator:
             with open(debug_file, "w") as f:
                 f.write(f"ACT Verification Debug Log\n")
                 f.write(f"Device: {device}, Dtype: {dtype}\n")
-                f.write(f"{'=' * 80}\n\n")
+                f.write(f"{rule()}\n\n")
             logger.info(f"Debug logging to: {debug_file}")
 
     def _batchify_net(self, net: Net, target_B: Optional[int]) -> Net:
@@ -936,16 +937,16 @@ class VerificationValidator:
         """Print validation summary for specific validation type."""
         validation_type = summary.get("validation_type", "unknown")
 
-        print("\n" + "=" * 80)
+        print("\n" + rule())
         print(f"VALIDATION SUMMARY - {validation_type.upper()}")
-        print("=" * 80)
+        print(rule())
 
         if summary["total"] == 0:
             print()
             print("⚠️  No validation tests completed successfully")
             if "error_message" in summary:
                 print(f"   {summary['error_message']}")
-            print("=" * 80)
+            print(rule())
             return
 
         print(f"\nTotal validation tests: {summary['total']}")
@@ -967,7 +968,7 @@ class VerificationValidator:
             print(f"⏭️  SKIPPED:      {summary['skipped']}")
         print(f"❌ ERRORS:       {summary['errors']}")
         print(f"🚨 FAILED:       {summary['failed']}")
-        print("=" * 80)
+        print(rule())
 
         if summary["failed"] > 0:
             print(f"\n🚨 CRITICAL: {validation_type.upper()} validation failed!")
@@ -989,4 +990,4 @@ class VerificationValidator:
         else:
             print(f"\n✅ {validation_type.upper()} validation PASSED!")
 
-        print("=" * 80)
+        print(rule())

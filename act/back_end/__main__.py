@@ -10,7 +10,7 @@ License: AGPLv3+
 
 import sys
 
-from act.back_end.cli import main
+from act.config.backend_cli import main
 
 if __name__ == "__main__":
     sys.exit(main())

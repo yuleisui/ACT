@@ -234,6 +234,20 @@ def seed_from_input_specs(spec_layers) -> Bounds:
     
     raise ValueError("No valid input specification found for seeding.")
 
+
+def _setup_verify_context(net):
+    spec_layers = gather_input_spec_layers(net)
+    seed_bounds = seed_from_input_specs(spec_layers)
+    if seed_bounds.lb.dim() < 2:
+        message = (
+            f"_setup_verify_context: INPUT_SPEC seed must be batched [B, *input_shape], got dim={seed_bounds.lb.dim()} "
+            f"shape={tuple(seed_bounds.lb.shape)}."
+        )
+        raise ValueError(message)
+    B = int(seed_bounds.lb.shape[0])
+    return spec_layers, seed_bounds, B
+
+
 def add_all_input_specs(globalC: ConSet, input_ids: List[int], spec_layers) -> None:
     """
     Add all INPUT_SPEC constraints to constraint set.
@@ -354,14 +368,12 @@ def verify_lp_batched(
     """
     import importlib
 
-    spec_layers = gather_input_spec_layers(net)
-    seed_bounds = seed_from_input_specs(spec_layers)
-    if seed_bounds.lb.dim() < 2 or seed_bounds.ub.dim() < 2:
+    _, seed_bounds, batch_size = _setup_verify_context(net)
+    if seed_bounds.ub.dim() < 2:
         raise ValueError(
             f"verify_lp_batched: seed bounds must be [B, *input_shape], "
             f"got lb={tuple(seed_bounds.lb.shape)} ub={tuple(seed_bounds.ub.shape)}"
         )
-    batch_size = int(seed_bounds.lb.shape[0])
     solver = solver_factory()
     solution = setup_and_solve_batch(
         net,
@@ -466,6 +478,7 @@ def verify_once(
     *,
     model_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
     timelimit: Optional[float] = None,
+    hybridz_tolerance: Optional[float] = None,
 ) -> List[VerifyResult]:
     ...
 
@@ -477,6 +490,7 @@ def verify_once(
     model_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
     collect_facts: Literal[False],
     timelimit: Optional[float] = None,
+    hybridz_tolerance: Optional[float] = None,
 ) -> List[VerifyResult]:
     ...
 
@@ -488,6 +502,7 @@ def verify_once(
     model_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
     collect_facts: Literal[True],
     timelimit: Optional[float] = None,
+    hybridz_tolerance: Optional[float] = None,
 ) -> Tuple[List[VerifyResult], Optional[Dict[int, Any]]]:
     ...
 
@@ -499,6 +514,7 @@ def verify_once(
     model_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
     collect_facts: bool = False,
     timelimit: Optional[float] = None,
+    hybridz_tolerance: Optional[float] = None,
 ) -> List[VerifyResult] | Tuple[List[VerifyResult], Optional[Dict[int, Any]]]:
     """Single-shot, pure-tensor batched verifier.
 
@@ -530,6 +546,7 @@ def verify_once(
             interval/hybridz path, or dual pre-activation forward bounds for the
             dual path.
         timelimit: optional HybridZ verdict-solver wall-clock limit in seconds.
+        hybridz_tolerance: optional HybridZ MILP feasibility/spec tolerance.
 
     Returns:
         ``List[VerifyResult]`` of length ``B`` (one per input lane), or
@@ -545,18 +562,8 @@ def verify_once(
     entry_id = find_entry_layer_id(net)
     input_ids = get_input_ids(net)
     output_ids = get_output_ids(net)
-    spec_layers = gather_input_spec_layers(net)
+    spec_layers, seed_bounds, B = _setup_verify_context(net)
     assert_layer = get_assert_layer(net)
-
-    seed_bounds = seed_from_input_specs(spec_layers)
-    if seed_bounds.lb.dim() < 2:
-        raise ValueError(
-            f"verify_once: INPUT_SPEC seed must be batched [B, *input_shape], "
-            f"got dim={seed_bounds.lb.dim()} shape={tuple(seed_bounds.lb.shape)}. "
-            f"Use VerifiableModel._merge_specs_to_batch (front-end) or manually "
-            f"expand INPUT_SPEC lb/ub to [B, ...] before calling verify_once."
-        )
-    B = seed_bounds.lb.shape[0]
 
     # Standalone solver modes own their verdict logic; the interval/LP path
     # below remains authoritative for non-standalone solver modes.
@@ -656,7 +663,11 @@ def verify_once(
                     ):
                         input_hz = candidate
                         break
-        solver = HZSolver()
+        solver = HZSolver(
+            time_limit=30.0 if timelimit is None else timelimit,
+            tolerance=1e-7 if hybridz_tolerance is None else hybridz_tolerance,
+        )
+        assert out_spec is not None
         results = solver.evaluate_spec(
             output_hz,
             out_spec,

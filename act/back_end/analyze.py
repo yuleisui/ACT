@@ -26,9 +26,9 @@ from act.back_end.transfer_functions import (
 )
 
 # Initialize default transfer function mode
-def initialize_tf_mode(mode: str = "interval"):
+def initialize_tf_mode(mode: str = "interval", tf_config=None):
     """Initialize transfer function mode. Call this before using analyze()."""
-    set_transfer_function_mode(mode)
+    set_transfer_function_mode(mode, tf_config)
 
 
 @dataclass

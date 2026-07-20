@@ -39,6 +39,7 @@ from act.back_end.serialization.serialization import NetSerializer
 from act.pipeline.verification.act2torch import ACTToTorch
 from act.util.device_manager import get_default_dtype, get_default_device
 from act.util.path_config import get_examples_nets_dir
+from act.util.format_utils import rule
 
 logger = logging.getLogger(__name__)
 
@@ -337,18 +338,18 @@ def main():
     
     factory = ModelFactory()
     
-    print("=" * 80)
+    print(rule())
     print("PyTorch Model Factory - Spec-Free Verification Testing")
-    print("=" * 80)
+    print(rule())
     
     all_passed = True
     total_tests = 0
     passed_tests = 0
     
     for name in factory.list_networks():
-        print(f"\n{'=' * 80}")
+        print(f"\n{rule()}")
         print(f"Network: {name}")
-        print("=" * 80)
+        print(rule())
         
         # Get network info
         info = factory.get_network_info(name)
@@ -366,7 +367,7 @@ def main():
             
             for test_case in test_cases:
                 print(f"\n📊 Test Case: {test_case}")
-                print("-" * 80)
+                print(rule(80, "-"))
                 
                 try:
                     # Generate strategic input
@@ -423,7 +424,7 @@ def main():
             all_passed = False
     
     # Print summary
-    print("\n" + "=" * 80)
+    print("\n" + rule())
     print(f"📊 Verification Test Summary:")
     print(f"   Total tests: {total_tests}")
     print(f"   ✅ Passed: {passed_tests}")
@@ -431,13 +432,13 @@ def main():
     if total_tests > 0:
         success_rate = (passed_tests / total_tests) * 100
         print(f"   Success rate: {success_rate:.1f}%")
-    print("=" * 80)
+    print(rule())
     
     if all_passed:
         print("✅ All models created and tested successfully")
     else:
         print("⚠️  Some models had issues - see details above")
-    print("=" * 80)
+    print(rule())
 
     if not all_passed:
         import sys

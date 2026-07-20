@@ -1,0 +1,472 @@
+# ============================================================================
+# ACT Network Generation Configuration
+# ============================================================================
+# Scalar generation knobs and the NetFactory architecture-sampling DSL live here.
+
+# Directory where generated .json network files are written.
+output_dir: "act/back_end/examples/nets"
+
+# Number of networks to generate per run.
+num_instances: 15
+
+# Random seed for reproducible generation.
+base_seed: 42
+
+# Prefix prepended to every generated filename.
+name_prefix: "cfg_seed"
+
+# Transfer-function targets for layer filtering.
+#   null                    – no filtering, all layer types allowed
+#   ["interval"]            – only layers supported by interval TF
+#   ["interval", "hybridz"] – layers supported by both TFs
+tf_targets: null
+
+# How to combine layer sets when multiple tf_targets are given.
+#   "intersection" – keep only layers supported by ALL targets (stricter)
+#   "union"        – keep layers supported by ANY target (more permissive)
+registry_mode: "intersection"
+
+# When to stop generating.
+#   "basic" – generate exactly num_instances, then stop
+#   "full"  – keep generating until every target layer type is covered
+coverage_mode: "basic"
+
+# Maximum attempts in "full" coverage mode before giving up.
+coverage_max_attempts: 1000
+
+# Print a layer-coverage summary after generation finishes.
+coverage_report: true
+
+# Write a manifest.json listing all generated network filenames.
+write_manifest: true
+
+net_factory:
+  # ============================================================================
+  # NetFactory architecture-sampling DSL ("the different networks")
+  # ============================================================================
+  # Consumed via GenerationConfig.net_factory and loaded by
+  # BackendConfig.from_yaml from act/config/gen_act_net.yaml.
+
+  # ============================================================================
+  # ACT Network Generation Configuration
+  # ============================================================================
+  #
+  # This file drives the automatic generation of neural networks for
+  # verification testing.  Each generated network is a self-contained JSON
+  # file with embedded input constraints (INPUT_SPEC) and output properties
+  # (ASSERT), ready for spec-free verification:
+  #
+  #   python -m act.back_end --generate                   # default 15 nets
+  #   python -m act.back_end --generate --num 50          # custom count
+  #   python -m act.back_end --generate --base-seed 42    # reproducible
+  #   python -m act.back_end --generate --tf-targets interval hybridz
+  #
+  # Generated networks end up in  act/back_end/examples/nets/*.json
+  # and can be loaded via  ModelFactory  or  NetSerializer.
+  #
+  # ---------------------------------------------------------------------------
+  # HOW THE SAMPLING RULES WORK
+  # ---------------------------------------------------------------------------
+  # Every parameter below is either a plain value or a sampling rule.
+  # The six rule types are:
+  #
+  #   {choice: [a, b, c]}            Pick one uniformly at random
+  #   {range: [lo, hi]}              Random integer in [lo, hi]
+  #   {weighted: {a: 0.7, b: 0.3}}  Pick with given probability weights
+  #   {repeat: {count: <rule>,       Build a list: sample count first,
+  #             value: <rule>}}       then sample each element
+  #   {probability: 0.3}             True with 30% chance, False otherwise
+  #   {const: v}                     Always returns v (explicit constant)
+  #
+  # You can nest rules freely.  A bare scalar (e.g.  3) is shorthand for
+  # {const: 3}.
+  #
+  # ---------------------------------------------------------------------------
+  # HOW TF-AWARE FILTERING WORKS
+  # ---------------------------------------------------------------------------
+  # When you pass “--tf-targets interval hybridz” on the command line, the
+  # factory queries each Transfer Function's layer registry and keeps only
+  # layer types supported by ALL specified TFs (intersection mode, default).
+  # Families whose required layers are not in that set are excluded
+  # automatically.  This guarantees every generated network can be analyzed
+  # by the chosen TFs without "unsupported layer" errors.
+  #
+  # ============================================================================
+
+
+  # ============================================================================
+  # 1. GENERATION CONTROL
+  # ============================================================================
+
+  common:
+    # How many networks to generate per run.
+    num_instances: 15
+
+    # Random seed for reproducible generation.
+    # seed=42 produces a network set with minimal Gurobi soundness issues (1 out of 30).
+    # Override with --base-seed on command line if needed.
+    base_seed: 42
+
+    # Prefix prepended to every generated filename.
+    name_prefix: cfg_seed
+
+    # Where to write the generated .json files.
+    output_dir: act/back_end/examples/nets
+
+    # Write a manifest.json listing all generated network names.
+    # Downstream tools (ModelFactory) use this for discovery.
+    write_manifest: true
+    manifest_path: act/back_end/examples/nets/_meta/manifest.json
+
+    # Tensor data type used for all generated weights.
+    # "torch.float64" gives maximum precision; "torch.float32" is faster.
+    dtype: torch.float64
+
+    # Coverage mode controls when generation stops:
+    #   "basic" - generate exactly num_instances networks, then stop.
+    #   "full"  - keep generating until every target layer type has appeared
+    #             at least once (up to coverage_max_attempts).  Uncovered
+    #             layers get a minimal template network as fallback.
+    coverage_mode: basic
+    coverage_max_attempts: 1000
+
+    # Print a layer coverage summary after generation finishes.
+    coverage_report: true
+
+
+  # ============================================================================
+  # 2. ARCHITECTURE FAMILY SELECTION
+  # ============================================================================
+  # Each generated network belongs to one "family".  The weights below control
+  # how often each family is chosen.  (Values are relative, not percentages.)
+
+  family_selection:
+    weighted:
+      mlp:   0.5        # fully-connected networks
+      cnn2d: 0.5        # 2-D convolutional networks
+      rnn:   0.0        # disabled by default curently, only interval, hybridz supports RNNs; bump to 1.0 for RNN self-tests
+
+
+  # ============================================================================
+  # 3. FAMILY-SPECIFIC PARAMETERS
+  # ============================================================================
+  # Each family has its own set of tunables.  Parameters that belong to a
+  # specific variant (plain / block / residual / stage) are ignored when
+  # a different variant is sampled.
+
+  families:
+
+    # --------------------------------------------------------------------------
+    # 3.1  MLP  (fully-connected feedforward)
+    # --------------------------------------------------------------------------
+    #
+    # Three structural variants ("Activ" = whichever activation is sampled below):
+    #   plain    -  Dense -> Activ -> Dense -> Activ -> ... -> Dense(num_classes)
+    #   block    -  projection Dense, then repeated [Dense->Activ->Dense->(Activ?)]
+    #   residual -  projection Dense, then repeated [Dense->Activ->Dense + skip->Activ]
+    #
+    # The final Dense(num_classes) classifier head is always appended.
+
+    mlp:
+
+      # --- Input ---
+      # Shape's leading dim is the batch size B. Sequential analysis is the
+      # B=1 case of the same batched code path.
+      # [1, 6] = batch of 1 6-D input;  [4, 16] = batch of 4 16-D inputs;
+      # [1, 3, 8] = 3-channel 1-D signal (auto-flattened).
+      input_shape:
+        choice: [[1, 6], [1, 16], [1, 3, 8], [4, 6], [4, 16]]
+
+      # Number of output classes (= width of the final Dense layer).
+      num_classes:
+        choice: [10]
+
+      # --- Variant selection ---
+      variant:
+        weighted:
+          plain:    0.5
+          block:    0.5
+          residual: 0.0
+
+      # --- "plain" variant params ---
+      # Keep shallow (2-3 layers) to avoid bounds explosion in interval domain.
+      # Each DENSE+activation layer inflates bounds ~3×, so 3 layers ≈ 27× inflation.
+      hidden_sizes:                           # Width of each hidden layer
+        repeat:
+          count: { range: [2, 3] }            #   2-3 hidden layers (was 2-4)
+          value: { choice: [32, 64] }         #   narrower (was 32-128)
+
+      # --- "block" variant params ---
+      # Each block = 2 Dense layers. num_blocks=2 → 4 Dense + projection + head = 7 layers total.
+      num_blocks:                             # How many [Dense->Act->Dense] blocks
+        range: [1, 2]                         #   was 1-3
+      block_width:                            # All blocks share this width
+        choice: [32, 64]
+      post_block_activation:                  # Add activation after each block?
+        probability: 0.8
+
+      # --- "residual" variant params ---
+      num_residual_blocks:                    # How many skip-connection blocks
+        range: [1, 2]                         #   was 1-3
+      residual_width:                         # Width of all residual blocks
+        choice: [32, 64]                      #   was 32-128
+
+      # --- Common layer settings ---
+      use_bias:
+        const: true                           # All Dense layers include bias
+
+      # Rare extra layers (low probability) to exercise more operator types
+      # during coverage-mode testing:
+      # use_bias_layer/use_scale_layer disabled: standalone SCALE/BIAS are BN
+      # decomposition artifacts, not real layers. Removed to avoid act2torch issues.
+      # use_unsqueeze_squeeze disabled: cons_exportor doesn't support unsqueeze constraint tags
+      # use_unsqueeze_squeeze:
+      #   probability: 0.04
+
+      # --- Activation function ---
+      # Only activations registered in ACT's layer_schema REGISTRY.
+      activation:
+        choice: [relu, tanh, sigmoid, lrelu, relu6, silu, abs]
+
+      # LeakyReLU negative slope (used only when activation = lrelu).
+      lrelu_alpha:
+        choice: [0.01, 0.1, 0.2]
+
+    # --------------------------------------------------------------------------
+    # 3.2  CNN2D  (2-D convolutional)
+    # --------------------------------------------------------------------------
+    #
+    # Three structural variants ("Activ" = whichever activation is sampled below):
+    #   plain    -  [Conv->Activ->(Pool?)] x N  ->  Flatten -> Dense -> Activ -> Dense
+    #   residual -  Conv->Activ, then [Conv->Activ->Conv + skip->Activ] x N  ->  pool-to-1x1 -> Dense
+    #   stage    -  Conv->Activ, then S stages each with downsample + B conv blocks  ->  pool-to-1x1 -> Dense
+    #              (stage resembles simplified ResNet)
+
+    cnn2d:
+
+      # --- Input ---
+      # [batch, channels, height, width]. Leading dim is the batch B.
+      # [1,1,8,8] = single-channel 8x8;  [4,1,8,8] = batch of 4;
+      # [1,3,16,16] = RGB 16x16;         [4,3,16,16] = batch of 4 RGB.
+      input_shape:
+        choice: [[1, 1, 8, 8], [1, 3, 16, 16], [4, 1, 8, 8], [4, 3, 16, 16]]
+
+      num_classes:
+        choice: [10]
+
+      # --- Variant selection ---
+      variant:
+        weighted:
+          plain:    0.5
+          residual: 0.0
+          stage:    0.5
+
+      # --- "plain" variant params ---
+      conv_channels:                          # Output channels per conv layer
+        repeat:
+          count: { range: [1, 3] }            #   1-3 conv layers
+          value: { choice: [8, 16, 32] }      #   each 8, 16, or 32 channels
+      fc_hidden:                              # Hidden units in FC head
+        choice: [32, 64, 128]
+
+      # --- "residual" variant params ---
+      num_residual_blocks:                    # Blocks with skip connections
+        range: [1, 2]                         #   was 2-4
+      residual_channels:                      # Channel width for all blocks
+        choice: [16, 32]                      #   was 16-64
+
+      # --- "stage" variant params ---
+      stages:                                 # Number of downsampling stages
+        range: [1, 2]                         #   was 1-3
+      blocks_per_stage:                       # Conv blocks per stage
+        range: [1, 2]
+      base_channels:                          # Initial channel count (doubles per stage)
+        choice: [8, 16]                       #   was 8-32
+      channel_mult:                           # Channel multiplier between stages
+        choice: [2]
+      double_conv_p:                          # Probability of double conv in a block
+        choice: [0.5, 0.7]
+      head_pool_to_1x1:                       # Pool spatial dims to 1x1 before FC
+        const: true
+      downsample:                             # How to downsample between stages
+        choice: [maxpool, avgpool, stride2_conv]
+
+      # --- Extra layers ---
+      # use_batchnorm and use_scale_layer disabled: SCALE/BIAS are BN decomposition
+      # artifacts, not real network layers. Generating them requires _ScaleModule/
+      # _BiasModule wrappers in act2torch and causes shape mismatch issues.
+      # use_transpose disabled: cons_exportor doesn't support transpose constraint tags
+      # use_transpose:
+      #   probability: 0.04
+
+      # --- Convolution settings ---
+      kernel_sizes:  { choice: [3] }          # Kernel size for all conv layers
+      strides:       { choice: [1] }          # Stride for all conv layers
+      paddings:      { choice: [1] }          # Padding for all conv layers (same-padding with k=3, p=1)
+      use_bias:      { const: true }
+
+      # --- Pooling settings ---
+      # Always pool after each conv block to prevent bounds explosion.
+      # Without pooling, 3-layer CONV can inflate bounds to width 11000+.
+      use_pooling:
+        const: true
+      pool_kind:                              # Type of pooling layer (no 'none' — always pool)
+        choice: [maxpool, avgpool]
+      pool_kernel: { const: 2 }
+      pool_stride: { const: 2 }
+
+      # --- Activation ---
+      # Restricted to kinds that have both a dual_tf forward handler AND
+      # a PyTorch builder in ActGraphModule (required by --verify netfactory
+      # --validate-soundness Level 2 bounds checks against concrete model output).
+      activation:
+        choice: [relu, tanh, sigmoid, lrelu]
+
+      lrelu_alpha:
+        choice: [0.01, 0.1, 0.2]
+
+    # --------------------------------------------------------------------------
+    # 3.3  RNN  (recurrent: RNN / LSTM / GRU + Flatten + Dense head)
+    # --------------------------------------------------------------------------
+    #
+    # Single-layer recurrent cell with a flattened classifier head:
+    #   INPUT (1, T, F) -> RNN/LSTM/GRU -> FLATTEN -> DENSE(num_classes)
+    #
+    # Multi-layer (num_layers > 1) and bidirectional are supported by the
+    # serialization / restoration paths, but the interval transfer function
+    # currently unrolls only layer 0 — so we keep num_layers = 1 here to avoid
+    # silently coarse bounds. The cell type (RNN / LSTM / GRU) is sampled
+    # per-instance.
+    #
+    # Sequence length and feature width are kept small to control bounds
+    # explosion: an LSTM cell unrolled T times applies sigmoid/tanh interval
+    # widening at every step.
+
+    rnn:
+
+      # --- Input ---
+      # [batch, seq_len, input_size]; batch is always 1 for symbolic verification.
+      input_shape:
+        choice: [[1, 4, 3], [1, 6, 4]]
+
+      num_classes:
+        choice: [10]
+
+      # --- Cell type ---
+      cell:
+        weighted:
+          LSTM: 0.4
+          GRU:  0.3
+          RNN:  0.3
+
+      # --- Cell hyper-parameters ---
+      hidden_size:
+        choice: [8, 16]
+
+      num_layers:
+        const: 1
+
+      bidirectional:
+        # Disabled: interval_tf raises NotImplementedError on bidirectional RNN
+        # because the reverse-direction sweep over weight_*_l0_reverse is not
+        # implemented. Bump back above 0 once that lands.
+        probability: 0.0
+
+      batch_first:
+        const: true
+
+      use_bias:
+        const: true
+
+      # Vanilla-RNN nonlinearity (ignored for LSTM/GRU).
+      nonlinearity:
+        choice: [tanh, relu]
+
+
+  # ============================================================================
+  # 4. INPUT SPECIFICATION  (INPUT_SPEC layer)
+  # ============================================================================
+  # Defines the input region that verification will analyze.
+  # Every generated network gets exactly one INPUT_SPEC.
+
+  input_spec:
+    # Which constraint type to embed:
+    #   BOX       -  axis-aligned box   lb[i] <= x[i] <= ub[i]
+    #   LINF_BALL -  L-infinity ball    ||x - center||_inf <= eps
+    kind:
+      weighted:
+        BOX: 0.5
+        LINF_BALL: 0.5
+
+    # Base value range for the input domain.
+    # BOX bounds and LINF_BALL center are sampled within this range.
+    value_range:
+      choice: [[0.0, 1.0]]
+
+    # BOX only: random shrinkage applied to each side of the box.
+    # Higher shrinkage = tighter box = less bounds inflation.
+    # [0.3, 0.45] means the box is shrunk to ~10-40% of full range per side.
+    box_shrink_range: [0.3, 0.45]
+
+    # LINF_BALL only: perturbation radius.
+    # Smaller eps = tighter input bounds = less bounds inflation through deep networks.
+    # 0.1 caused bounds width ~19 at output of 4-layer MLP → degenerate LP.
+    eps:
+      choice: [0.01, 0.02, 0.03]
+
+
+  # ============================================================================
+  # 5. OUTPUT SPECIFICATION  (ASSERT layer)
+  # ============================================================================
+  # Defines the verification property the network output must satisfy.
+  # Every generated network gets exactly one ASSERT.
+  #
+  # Property types:
+  #   TOP1_ROBUST    -  The true class must have the highest logit.
+  #                     Params: y_true (class index)
+  #
+  #   MARGIN_ROBUST  -  The true class must beat all others by >= margin.
+  #                     Params: y_true, margin
+  #
+  #   LINEAR_LE      -  A linear inequality  c^T y <= d  must hold.
+  #                     Params: c (coefficient vector), d (threshold)
+  #
+  #   RANGE          -  Every output must lie within element-wise bounds.
+  #                     Params: lb, ub (vectors same size as output)
+
+  output_spec:
+    kind:
+      weighted:
+        TOP1_ROBUST:   0.7       # Most common: classification robustness (margin=0, easiest for interval domain)
+        MARGIN_ROBUST: 0.1       # Rare: non-zero margin is hard for interval domain on deep networks
+        LINEAR_LE:     0.1       # Linear inequality on outputs
+        RANGE:         0.1       # Element-wise output bounds
+
+    # MARGIN_ROBUST: required separation between true class and runner-up.
+    # Keep values small — interval domain bounds explode through deep networks,
+    # making large margins unprovable (false CERTIFIED).
+    margin:
+      choice: [0.0, 0.01]
+
+    # LINEAR_LE: coefficient vector c is sampled element-wise from this range,
+    # threshold d is sampled from linear_le_d_range.
+    linear_le_c_range: [-1.0, 1.0]
+    linear_le_d_range: [-1.0, 1.0]
+
+    # RANGE: per-output lower and upper bounds are sampled within this range.
+    range_bounds:
+      choice: [[-1.0, 1.0]]
+
+
+  # ============================================================================
+  # 6. VALIDATE-VERIFIER DEFAULTS
+  # ============================================================================
+  # Defaults consumed by `python -m act.pipeline --verify netfactory --validate-soundness ...`
+  # when the corresponding CLI flag is NOT explicitly passed. Any CLI flag
+  # that IS passed overrides the value here.
+
+  validate:
+    # Batch sizes to validate at. ``null`` = use each network's native B
+    # from its INPUT shape; positive int = batchify INPUT_SPEC/ASSERT to
+    # that B (sequential analysis is the B=1 case of the same path).
+    batch_sizes: [null, 1, 4]

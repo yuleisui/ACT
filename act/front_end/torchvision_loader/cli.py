@@ -13,6 +13,7 @@ import argparse
 from typing import Optional
 
 from act.util.cli_utils import add_device_args, initialize_from_args
+from act.util.format_utils import rule
 
 from act.front_end.torchvision_loader.data_model_mapping import (
     DATASET_MODEL_MAPPING,
@@ -41,9 +42,9 @@ def print_mapping_summary(category: Optional[str] = None):
     Args:
         category: If provided, only show datasets in this category
     """
-    print("=" * 100)
+    print(rule(100))
     print("TORCHVISION DATASET → MODEL MAPPING SUMMARY")
-    print("=" * 100)
+    print(rule(100))
     
     categories_to_show = [category] if category else get_all_categories()
     
@@ -52,9 +53,9 @@ def print_mapping_summary(category: Optional[str] = None):
         if not datasets:
             continue
             
-        print(f"\n{'='*100}")
+        print(f"\n{rule(100)}")
         print(f"{cat.upper()} ({len(datasets)} datasets)")
-        print('='*100)
+        print(rule(100))
         
         for dataset in sorted(datasets):
             info = DATASET_MODEL_MAPPING[dataset]
@@ -76,9 +77,9 @@ def print_preprocessing_summary():
     - Resize requirements
     - Ready without preprocessing
     """
-    print("=" * 100)
+    print(rule(100))
     print("PREPROCESSING REQUIREMENTS SUMMARY")
-    print("=" * 100)
+    print(rule(100))
     
     needs_grayscale_rgb = []
     needs_resize = []
@@ -115,7 +116,7 @@ def print_preprocessing_summary():
     else:
         print(f"  (None - all require some preprocessing)")
     
-    print("=" * 100)
+    print(rule(100))
 
 
 def print_dataset_detail(dataset_name: str):
@@ -128,9 +129,9 @@ def print_dataset_detail(dataset_name: str):
     actual_name = find_dataset_name(dataset_name)
     info = get_dataset_info(actual_name)
     
-    print("=" * 100)
+    print(rule(100))
     print(f"DATASET: {actual_name}")
-    print("=" * 100)
+    print(rule(100))
     print(f"Category: {info['category']}")
     print(f"Input Size: {info['input_size']}")
     if info['num_classes']:
@@ -154,7 +155,7 @@ def print_dataset_detail(dataset_name: str):
         print(f"  {i:2d}. {model}")
     print(f"\nNotes:")
     print(f"  {info['notes']}")
-    print("=" * 100)
+    print(rule(100))
 
 
 def main():
@@ -348,9 +349,9 @@ For Common Operations (list, search, download, info):
             print("\nNo downloaded dataset-model pairs found.")
             print("Use --download DATASET MODEL to download a pair.")
         else:
-            print(f"\n{'='*80}")
+            print(f"\n{rule()}")
             print(f"DOWNLOADED DATASET-MODEL PAIRS ({len(downloaded)})")
-            print(f"{'='*80}")
+            print(f"{rule()}")
             
             # Calculate total size
             total_size_bytes = sum(item.get('size_bytes', 0) for item in downloaded)
@@ -366,9 +367,9 @@ For Common Operations (list, search, download, info):
                 if item['preprocessing_required']:
                     print(f"  Preprocessing: {', '.join(item['preprocessing_steps'])}")
             
-            print(f"\n{'='*80}")
+            print(f"\n{rule()}")
             print(f"Total Size: {total_size_formatted}")
-            print(f"{'='*80}")
+            print(f"{rule()}")
     
     elif args.load_torchvision:
         # Load a downloaded dataset-model pair
@@ -377,14 +378,14 @@ For Common Operations (list, search, download, info):
         split = "test"  # Default split
         batch_size = args.batch_size
         
-        print(f"\n{'='*80}")
+        print(f"\n{rule()}")
         print(f"LOADING DATASET-MODEL PAIR")
-        print(f"{'='*80}")
+        print(f"{rule()}")
         print(f"Dataset: {dataset_name}")
         print(f"Model: {model_name}")
         print(f"Split: {split}")
         print(f"Batch Size: {batch_size}")
-        print(f"{'='*80}\n")
+        print(f"{rule()}\n")
         
         try:
             # Load the dataset and model
@@ -423,9 +424,9 @@ For Common Operations (list, search, download, info):
                 for step in result['metadata']['preprocessing_steps']:
                     print(f"  • {step}")
             
-            print(f"\n{'='*80}")
+            print(f"\n{rule()}")
             print(f"✓ Load completed successfully!")
-            print(f"{'='*80}\n")
+            print(f"{rule()}\n")
             
         except FileNotFoundError as e:
             print(f"✗ Error: {e}")
@@ -445,9 +446,9 @@ For Common Operations (list, search, download, info):
             info = get_dataset_info(dataset_name)
             models = info['models']
             
-            print(f"\n{'='*100}")
+            print(f"\n{rule(100)}")
             print(f"RECOMMENDED MODELS FOR: {dataset_name}")
-            print(f"{'='*100}")
+            print(f"{rule(100)}")
             print(f"Category: {info['category']}")
             print(f"Input Size: {info['input_size']}")
             if info['num_classes']:
@@ -491,7 +492,7 @@ For Common Operations (list, search, download, info):
                     print(f"    {i:2d}. {model}")
             
             print(f"\nNotes: {info['notes']}")
-            print(f"{'='*100}")
+            print(f"{rule(100)}")
             
         except ValueError as e:
             print(f"Error: {e}")
@@ -520,9 +521,9 @@ For Common Operations (list, search, download, info):
                     'preprocessing': get_preprocessing_transforms(dataset_name)
                 })
         
-        print(f"\n{'='*100}")
+        print(f"\n{rule(100)}")
         print(f"DATASETS COMPATIBLE WITH: {model_name}")
-        print(f"{'='*100}")
+        print(f"{rule(100)}")
         
         if not matching_datasets:
             print(f"\nNo datasets found that recommend '{model_name}'")
@@ -543,7 +544,7 @@ For Common Operations (list, search, download, info):
             for category in sorted(by_category.keys()):
                 datasets = by_category[category]
                 print(f"\n{category.upper()} ({len(datasets)} dataset{'s' if len(datasets) > 1 else ''}):")
-                print("-" * 100)
+                print(rule(100, "-"))
                 
                 for ds in sorted(datasets, key=lambda x: x['name']):
                     print(f"\n  {ds['name']}")
@@ -565,18 +566,18 @@ For Common Operations (list, search, download, info):
                     else:
                         print(f"    Preprocessing: None required")
         
-        print(f"\n{'='*100}")
+        print(f"\n{rule(100)}")
     
     elif args.inference:
         # Test inference for a specific dataset-model pair
         dataset_name, model_name = args.inference
         split = args.inference_split
         
-        print(f"\n{'='*80}")
+        print(f"\n{rule()}")
         print(f"INFERENCE TEST: {dataset_name} + {model_name}")
-        print(f"{'='*80}")
+        print(f"{rule()}")
         print(f"Split: {split}")
-        print(f"{'='*80}\n")
+        print(f"{rule()}\n")
         
         try:
             result = model_inference_with_dataset(
@@ -586,9 +587,9 @@ For Common Operations (list, search, download, info):
                 verbose=True
             )
             
-            print(f"\n{'='*80}")
+            print(f"\n{rule()}")
             print(f"INFERENCE TEST RESULT")
-            print(f"{'='*80}")
+            print(f"{rule()}")
             print(f"Status: {result['status'].upper()}")
             
             if result['status'] == 'success':
@@ -601,7 +602,7 @@ For Common Operations (list, search, download, info):
                 if 'num_samples' in result:
                     print(f"  Dataset samples: {result['num_samples']}")
             
-            print(f"{'='*80}")
+            print(f"{rule()}")
             
         except FileNotFoundError as e:
             print(f"\n✗ Error: Dataset-model pair not found locally")
@@ -622,9 +623,9 @@ For Common Operations (list, search, download, info):
             model_name = find_model_name(user_model)
             
             result = validate_dataset_model_compatibility(dataset_name, model_name)
-            print(f"\n{'='*100}")
+            print(f"\n{rule(100)}")
             print(f"COMPATIBILITY CHECK: {dataset_name} + {model_name}")
-            print(f"{'='*100}")
+            print(f"{rule(100)}")
             print(f"Compatible: {'✓ YES' if result['compatible'] else '✗ NO'}")
             
             if result['issues']:
@@ -639,7 +640,7 @@ For Common Operations (list, search, download, info):
             else:
                 print(f"\nNo preprocessing required - direct compatibility!")
             
-            print(f"{'='*100}")
+            print(f"{rule(100)}")
         except ValueError as e:
             print(f"Error: {e}")
     
@@ -649,9 +650,9 @@ For Common Operations (list, search, download, info):
             
             preprocessing = get_preprocessing_transforms(dataset_name)
             info = get_dataset_info(dataset_name)
-            print(f"\n{'='*100}")
+            print(f"\n{rule(100)}")
             print(f"PREPROCESSING FOR: {dataset_name}")
-            print(f"{'='*100}")
+            print(f"{rule(100)}")
             print(f"Input Size: {info['input_size']}")
             
             if preprocessing:
@@ -673,22 +674,22 @@ For Common Operations (list, search, download, info):
                 print(f"      root='./data', transform=transform, download=True)")
             else:
                 print(f"\nNo special preprocessing required!")
-            print(f"{'='*100}")
+            print(f"{rule(100)}")
         except ValueError as e:
             print(f"Error: {e}")
     
     else:
         # Default: show quick examples
-        print("\n" + "=" * 100)
+        print("\n" + rule(100))
         print("TORCHVISION DOMAIN-SPECIFIC CLI")
-        print("=" * 100)
+        print(rule(100))
         print("\nFor common operations, use the unified CLI:")
         print("  python -m act.front_end --list              # List all datasets/categories")
         print("  python -m act.front_end --search mnist      # Search across all")
         print("  python -m act.front_end --info CIFAR10      # Show dataset info")
         print("  python -m act.front_end --download MNIST    # Download dataset + models")
         
-        print("\n" + "-" * 100)
+        print("\n" + rule(100, "-"))
         print("TorchVision-Specific Commands (use --help for full list):")
         print("  python -m act.front_end.torchvision_loader --category classification")
         print("  python -m act.front_end.torchvision_loader --dataset CIFAR10")
@@ -699,7 +700,7 @@ For Common Operations (list, search, download, info):
         print("  python -m act.front_end.torchvision_loader --models-for CIFAR10")
         print("  python -m act.front_end.torchvision_loader --datasets-for resnet18")
         print("  python -m act.front_end.torchvision_loader --inference MNIST resnet18")
-        print("=" * 100)
+        print(rule(100))
 
 
 if __name__ == "__main__":

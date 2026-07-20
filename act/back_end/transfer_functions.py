@@ -26,6 +26,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 from act.back_end.core import Bounds, Fact, Layer, Net
 from act.util.options import PerformanceOptions
+from act.util.format_utils import rule
 
 
 class TransferFunction(ABC):
@@ -74,8 +75,42 @@ class TransferFunction(ABC):
     def side_state_signature(self, layer_id: int) -> Any:
         return None
 
+
+class RegistryTF(TransferFunction, ABC):
+    """Base for transfer functions dispatched through a layer registry."""
+
+    _LAYER_REGISTRY: Dict[str, Any] = {}
+
+    def __init__(self, name: str) -> None:
+        self._name: str = name
+
+    @property
+    def name(self) -> str:
+        """Implementation name for debugging and logging."""
+        return self._name
+
+    def supports_layer(self, layer_kind: str) -> bool:
+        """Check if this transfer function supports the given layer kind."""
+        return layer_kind.upper() in self._LAYER_REGISTRY
+
+    def _check_supported(self, layer_kind: str) -> str:
+        k = layer_kind.upper()
+        if k not in self._LAYER_REGISTRY:
+            raise NotImplementedError(f"{self.name}: Unsupported layer kind '{k}'")
+        return k
+
+    def _set_context(
+        self,
+        net: Net,
+        before: Dict[int, Fact],
+        after: Dict[int, Fact],
+    ) -> None:
+        self._net: Net = net
+        self._before: Dict[int, Fact] = before
+        self._after: Dict[int, Fact] = after
+
 # Global transfer function management
-_current_tf: TransferFunction = None
+_current_tf: Optional[TransferFunction] = None
 
 
 def set_transfer_function(tf_impl: TransferFunction) -> None:
@@ -106,7 +141,7 @@ def ensure_active_tf(default_mode: str = "interval") -> TransferFunction:
         return get_transfer_function()
 
 
-def set_transfer_function_mode(mode: str = "interval") -> None:
+def set_transfer_function_mode(mode: str = "interval", tf_config: Any = None) -> None:
     """Set transfer function implementation by mode name.
 
     Args:
@@ -120,7 +155,7 @@ def set_transfer_function_mode(mode: str = "interval") -> None:
         set_transfer_function(IntervalTF())
     elif mode == "hybridz":
         from act.back_end.hybridz_tf import HybridzTF
-        set_transfer_function(HybridzTF())
+        set_transfer_function(HybridzTF(config=tf_config))
     else:
         raise ValueError(
             f"Unknown transfer function mode: {mode!r}. Use 'interval' or "
@@ -165,9 +200,9 @@ def dispatch_tf(L: Layer, before: Dict[int, Fact], after: Dict[int, Fact], net: 
     # Debug logging to file (GUARDED)
     if PerformanceOptions.debug_tf:
         with open(PerformanceOptions.debug_output_file, 'a') as f:
-            f.write(f"\n{'='*80}\n")
+            f.write(f"\n{rule()}\n")
             f.write(f"Layer {L.id} ({L.kind})\n")
-            f.write(f"{'='*80}\n")
+            f.write(f"{rule()}\n")
             
             # Input bounds info (single Bounds object)
             lb_min, lb_max = input_bounds.lb.min().item(), input_bounds.lb.max().item()
@@ -188,10 +223,12 @@ def dispatch_tf(L: Layer, before: Dict[int, Fact], after: Dict[int, Fact], net: 
             if L.kind == 'DENSE' and 'W' in L.params:
                 W = L.params['W']
                 b = L.params['b']
-                f.write(f"Parameters: W.shape={W.shape}, b.shape={b.shape}\n")
+                if isinstance(W, torch.Tensor) and isinstance(b, torch.Tensor):
+                    f.write(f"Parameters: W.shape={W.shape}, b.shape={b.shape}\n")
             elif L.kind == 'CONV2D' and 'weight' in L.params:
                 weight = L.params['weight']
-                f.write(f"Parameters: weight.shape={weight.shape}\n")
+                if isinstance(weight, torch.Tensor):
+                    f.write(f"Parameters: weight.shape={weight.shape}\n")
             
             # Constraint info
             cons = result.cons

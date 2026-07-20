@@ -121,7 +121,10 @@ class Net:
     preds: Dict[int, List[int]]
     succs: Dict[int, List[int]]
     by_id: Dict[int, Layer] = field(init=False)
-    
+    _topo_cache: Dict[bool, List[int]] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
+
     def __post_init__(self):
         self.by_id = {L.id: L for L in self.layers}
         # Validate the graph structure
@@ -196,6 +199,26 @@ def topological_sort(net: Net, reverse: bool = False) -> List[int]:
             f"topological_sort: graph has cycle or disconnected layers "
             f"({len(order)}/{len(layer_ids)} sorted)"
         )
+    return order
+
+
+def get_topo_order(net: Net, reverse: bool = False) -> List[int]:
+    """Memoized ``topological_sort(net, reverse)`` keyed on ``reverse``.
+
+    Caches the forward and reverse Kahn orders on the (mutable) ``Net`` in
+    ``net._topo_cache``; returns the identical list ``topological_sort`` would.
+    The cache is valid only while the layer set is immutable (as during BaB); a
+    cheap cache-hit guard asserts the current layer-id set still matches.
+    """
+    cache = net._topo_cache
+    order = cache.get(reverse)
+    if order is None:
+        order = topological_sort(net, reverse)
+        cache[reverse] = order
+        return order
+    assert set(order) == {layer.id for layer in net.layers}, (
+        "get_topo_order: net layer set changed since cache was populated"
+    )
     return order
 
 

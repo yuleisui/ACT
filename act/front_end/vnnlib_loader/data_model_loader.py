@@ -8,7 +8,8 @@
 #
 # Purpose:
 #   Download, list, and load VNNLIB benchmarks from VNN-COMP repository.
-#   Mirrors torchvision/data_model_loader.py structure for unified interface.
+#   Repository base URL(s) are overridable via the ACT_VNNCOMP_REPO_URL env var
+#   (comma-separated); the default targets the VNN-COMP 2026 benchmark mirror.
 #
 #===---------------------------------------------------------------------===#
 
@@ -16,6 +17,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, List, Dict, Optional, Tuple
 import ast
+import os
 import logging
 import json
 import csv
@@ -43,9 +45,10 @@ logger = logging.getLogger(__name__)
 
 
 # VNN-COMP GitHub repository base URLs (try multiple sources)
-VNNCOMP_REPO_URLS = [
-    "https://raw.githubusercontent.com/VNN-COMP/vnncomp2026_benchmarks/main/benchmarks"
-]
+VNNCOMP_REPO_URLS = os.environ.get(
+    "ACT_VNNCOMP_REPO_URL",
+    "https://raw.githubusercontent.com/VNN-COMP/vnncomp2026_benchmarks/main/benchmarks",
+).split(",")
 DEFAULT_BENCHMARK_VERSION = "2.0"
 
 

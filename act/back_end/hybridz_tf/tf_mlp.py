@@ -396,6 +396,22 @@ def _sparse_apply_relu(L, hz: SparseHZono, input_bounds: Bounds, tf):
     return sparse_hz_apply_relu_exact(hz, lb, ub, slots, n_cont, n_bin), None
 
 
+def _transpose_rows(
+    L, n_rows: int, width: int, device, input_shape
+) -> torch.Tensor:
+    local = interval._transpose_flat_indices(
+        L, width, device, input_shape=input_shape
+    )
+    width = int(local.numel())
+    if width == 0 or n_rows % width != 0:
+        raise ValueError(
+            f"transpose: {n_rows} HZ rows are incompatible with width {width}"
+        )
+    batch = n_rows // width
+    offsets = torch.arange(batch, device=local.device).unsqueeze(1) * width
+    return (local.unsqueeze(0) + offsets).reshape(-1)
+
+
 def sparse_hz_apply_layer(L, hz: SparseHZono, input_bounds: Bounds, result: Fact, tf):
     if not _sparse_available():
         return True, None, "scipy_unavailable"
@@ -434,8 +450,12 @@ def sparse_hz_apply_layer(L, hz: SparseHZono, input_bounds: Bounds, result: Fact
         elif sparse_hz_is_point(hz):
             out = _sparse_matmul_const(L, other, hz.c, variable_is_left=False)
         return (True, out, None) if out is not None else (True, None, "unsupported_sparse_matmul")
-    if k in {"FLATTEN", "RESHAPE", "SQUEEZE", "UNSQUEEZE", "TRANSPOSE"}:
+    if k in {"FLATTEN", "RESHAPE", "SQUEEZE", "UNSQUEEZE"}:
         return True, hz, None
+    if k == "TRANSPOSE":
+        width = input_bounds.lb.numel() // input_bounds.lb.shape[0]
+        rows = _transpose_rows(L, hz.n_out, width, result.bounds.lb.device, (1, *tuple(int(d) for d in input_bounds.lb.shape[1:])),)
+        return True, sparse_hz_gather_rows(hz, rows.detach().cpu().numpy()), None
     if k == "UPSAMPLE":
         rows = _row_indices_upsample_nearest(L, hz.n_out, result.bounds.lb.numel())
         return (
@@ -572,9 +592,7 @@ def tf_lrelu(L, bounds, tf):
     hz_in = tf._hz_cache.get(L.id)
     fact = interval.tf_lrelu(L, bounds)
     if hz_in is not None:
-        hz_out = hz_apply_leaky_relu(
-            hz_in, float(L.params.get("negative_slope", 0.01))
-        )
+        hz_out = hz_apply_leaky_relu(hz_in, float(L.params["negative_slope"]))
         if _hz_exceeds_limit(tf, L, hz_out):
             tf._hz_cache.pop(L.id, None)
         else:
@@ -1096,7 +1114,12 @@ def tf_transpose(L, bounds, tf):
     fact = interval.tf_transpose(L, bounds)
     hz_in = tf._hz_cache.get(L.id)
     if hz_in is not None:
-        tf._hz_cache[L.id] = _hz_rebind(hz_in)
+        width = bounds.lb.numel() // bounds.lb.shape[0]
+        rows = _transpose_rows(L, hz_in.c.shape[0], width,
+            fact.bounds.lb.device,
+            (1, *tuple(int(d) for d in bounds.lb.shape[1:])),
+        )
+        tf._hz_cache[L.id] = _hz_gather_rows(hz_in, rows)
         return _hz_fact(fact, tf._hz_cache[L.id])
     return fact
 

@@ -42,7 +42,7 @@ HOW TO ADD NEW STUFF (READ THIS):
            "params_optional": [...],  # All optional params (tensors + scalars)
        }
        If the layer has a PyTorch nn.Module equivalent, also add it to
-       _ACT_TO_TORCH in act2torch.py for ACT→PyTorch restoration.
+       ACT_TO_TORCH in layer_schema.py for ACT→PyTorch restoration.
     3. Done. The validator will enforce that only those keys are used.
        Tensor params are auto-detected at runtime - no manual tracking needed.
 
@@ -63,7 +63,7 @@ InputLayer → InputSpecLayer → Model → OutputSpecLayer
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Dict, Any
+from typing import Dict, Any, override
 import enum
 
 # Import Layer from core to avoid circular import issues
@@ -72,12 +72,10 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .core import Layer
 
-try:
-    import torch
+import torch
+import torch.nn as nn
 
-    Tensor = torch.Tensor
-except Exception:  # typing only
-    Tensor = "torch.Tensor"  # type: ignore
+Tensor = torch.Tensor
 
 
 # -------------------------------
@@ -221,8 +219,8 @@ HOOKABLE_ACTIVATION_KINDS: frozenset[str] = frozenset(
 # Tensor params are auto-detected via isinstance(val, torch.Tensor).
 # Bias existence is determined by checking if "bias" is in params (no separate flag needed).
 #
-# PyTorch restoration mapping (ACT LayerKind → torch.nn.Module) lives in
-# act2torch.py (_ACT_TO_TORCH dict), not here.  REGISTRY is validation-only.
+# ACT_TO_TORCH below defines the PyTorch restoration mapping
+# (ACT LayerKind → torch.nn.Module); REGISTRY remains the param-validation schema.
 
 REGISTRY: Dict[str, Dict[str, Any]] = {
     # =====================
@@ -428,6 +426,7 @@ REGISTRY: Dict[str, Dict[str, Any]] = {
             "dilation",
             "ceil_mode",
             "count_include_pad",
+            "divisor_override",
             "output_size",
             "input_shape",
             "output_shape",
@@ -456,8 +455,8 @@ REGISTRY: Dict[str, Dict[str, Any]] = {
         "params_optional": ["input_shape", "output_shape"],
     },
     LayerKind.LRELU.value: {
-        "params_required": [],
-        "params_optional": ["negative_slope", "alpha"],
+        "params_required": ["negative_slope"],
+        "params_optional": [],
     },
     LayerKind.PRELU.value: {
         "params_required": ["weight"],
@@ -928,6 +927,89 @@ REGISTRY: Dict[str, Dict[str, Any]] = {
         "params_required": ["p"],
         "params_optional": ["input_shape", "output_shape"],
     },
+}
+
+# PyTorch restoration mapping (ACT LayerKind -> torch.nn.Module)
+class _ErfModule(nn.Module):
+    @override
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.erf(x)
+
+
+class _SqrtModule(nn.Module):
+    @override
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.sqrt(torch.clamp(x, min=0.0))
+
+
+class _QuantizeModule(nn.Module):
+    def __init__(self, scale: object = None, zero_point: object = None, qmin: int = 0, qmax: int = 255) -> None:
+        super().__init__()
+        self.register_buffer("scale", torch.as_tensor(1.0 if scale is None else scale))
+        self.register_buffer("zero_point", torch.as_tensor(0 if zero_point is None else zero_point))
+        self.qmin: float = float(qmin)
+        self.qmax: float = float(qmax)
+
+    @override
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        scale = self.get_buffer("scale").to(device=x.device, dtype=x.dtype)
+        zp = self.get_buffer("zero_point").to(device=x.device, dtype=x.dtype)
+        return scale * torch.clamp(torch.round(x / scale), min=self.qmin - zp, max=self.qmax - zp)
+
+
+class _SinModule(nn.Module):
+    @override
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.sin(x)
+
+
+class _CosModule(nn.Module):
+    @override
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.cos(x)
+
+
+# ACT LayerKind -> PyTorch nn.Module path.
+# Layers not listed are skipped during restoration (wrapper, graph ops, functional-only).
+ACT_TO_TORCH: dict[str, type[nn.Module]] = {
+    LayerKind.DENSE.value: nn.Linear,
+    LayerKind.CONV1D.value: nn.Conv1d,
+    LayerKind.CONV2D.value: nn.Conv2d,
+    LayerKind.CONV3D.value: nn.Conv3d,
+    LayerKind.CONVTRANSPOSE2D.value: nn.ConvTranspose2d,
+    LayerKind.MAXPOOL1D.value: nn.MaxPool1d,
+    LayerKind.MAXPOOL2D.value: nn.MaxPool2d,
+    LayerKind.MAXPOOL3D.value: nn.MaxPool3d,
+    LayerKind.AVGPOOL1D.value: nn.AvgPool1d,
+    LayerKind.AVGPOOL2D.value: nn.AvgPool2d,
+    LayerKind.AVGPOOL3D.value: nn.AvgPool3d,
+    LayerKind.ADAPTIVEAVGPOOL2D.value: nn.AdaptiveAvgPool2d,
+    LayerKind.RELU.value: nn.ReLU,
+    LayerKind.LRELU.value: nn.LeakyReLU,
+    LayerKind.PRELU.value: nn.PReLU,
+    LayerKind.SIGMOID.value: nn.Sigmoid,
+    LayerKind.TANH.value: nn.Tanh,
+    LayerKind.ERF.value: _ErfModule,
+    LayerKind.SQRT.value: _SqrtModule,
+    LayerKind.SIN.value: _SinModule,
+    LayerKind.COS.value: _CosModule,
+    LayerKind.QUANTIZE.value: _QuantizeModule,
+    LayerKind.SOFTPLUS.value: nn.Softplus,
+    LayerKind.SILU.value: nn.SiLU,
+    LayerKind.GELU.value: nn.GELU,
+    LayerKind.RELU6.value: nn.ReLU6,
+    LayerKind.HARDTANH.value: nn.Hardtanh,
+    LayerKind.HARDSIGMOID.value: nn.Hardsigmoid,
+    LayerKind.HARDSWISH.value: nn.Hardswish,
+    LayerKind.MISH.value: nn.Mish,
+    LayerKind.SOFTSIGN.value: nn.Softsign,
+    LayerKind.FLATTEN.value: nn.Flatten,
+    LayerKind.EMBEDDING.value: nn.Embedding,
+    LayerKind.RNN.value: nn.RNN,
+    LayerKind.GRU.value: nn.GRU,
+    LayerKind.LSTM.value: nn.LSTM,
+    LayerKind.SOFTMAX.value: nn.Softmax,
+    LayerKind.MHA.value: nn.MultiheadAttention,
 }
 
 # Supported exporter op tags (base name before ":").

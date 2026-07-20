@@ -1,0 +1,43 @@
+name: ACT Config Parity
+
+# Enforce CLI <-> YAML <-> dataclass consistency for the three config tiers, so
+# an option added on one surface can never be silently missed by the others.
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'act/config/**'
+      - 'act/pipeline/fuzzing/actfuzzer.py'
+      - '.github/workflows/act.config.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'act/config/**'
+      - 'act/pipeline/fuzzing/actfuzzer.py'
+      - '.github/workflows/act.config.yml'
+  workflow_dispatch:
+
+env:
+  PYTHONPATH: ${{ github.workspace }}
+
+jobs:
+  config-parity:
+    name: CLI <-> YAML parity
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install -r modules/setup/main_requirements.txt
+
+      - name: Check CLI <-> YAML <-> dataclass parity
+        run: python -m act.config.check_parity

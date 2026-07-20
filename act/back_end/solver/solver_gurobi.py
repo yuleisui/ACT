@@ -6,10 +6,12 @@ import os
 from act.back_end.solver.solver_base import (
     Solver,
     SolverCaps,
+    SolveStatus,
     _empty_blockdiag,
     _problem,
     _make_problem_n1,
 )
+from act.config.config import GurobiConfig
 from act.util.path_config import get_project_root
 
 if TYPE_CHECKING:
@@ -59,14 +61,15 @@ class GurobiSolver(Solver):
     def capabilities(self) -> SolverCaps:
         return SolverCaps(False)
 
-    def __init__(self):
+    def __init__(self, config: Optional[GurobiConfig] = None):
+        self._cfg: GurobiConfig = config or GurobiConfig()
         if not GUROBI_AVAILABLE:
             raise RuntimeError("gurobipy is not available in this environment.")
 
-    @staticmethod
-    def compute_bounds(hz) -> 'Bounds':
+    def compute_bounds(self, domain_obj) -> 'Bounds':
         from act.back_end.core import Bounds
         import torch
+        hz = domain_obj
         n = int(hz.c.shape[0])
         p = int(hz.Gc.shape[1])
         q = int(hz.Gb.shape[1])
@@ -81,7 +84,11 @@ class GurobiSolver(Solver):
         UB = np.empty((n,), dtype=np.float64)
         for i in range(n):
             m = gp.Model(f"hz_dim_{i}")
-            m.Params.OutputFlag = 0
+            m.Params.OutputFlag = self._cfg.output_flag
+            m.Params.MIPGap = self._cfg.mip_gap
+            m.Params.Threads = self._cfg.threads
+            if self._cfg.time_limit is not None:
+                m.Params.TimeLimit = float(self._cfg.time_limit)
             xi_c = m.addMVar(p, lb=-1.0, ub=1.0, name="xi_c")
             xi_b = m.addMVar(q, vtype=GRB.BINARY, name="xi_b") if q > 0 else None
             if nc > 0:
@@ -137,9 +144,11 @@ class GurobiSolver(Solver):
         ub = problem.ub[0].cpu().numpy().astype(np.float64)
 
         env = gp.Env(empty=True)
-        env.setParam("OutputFlag", 0)
+        env.setParam("OutputFlag", self._cfg.output_flag)
         env.start()
         m = gp.Model("verify_batch_n1", env=env)
+        m.Params.MIPGap = self._cfg.mip_gap
+        m.Params.Threads = self._cfg.threads
         x = m.addMVar(nvars, lb=lb, ub=ub, name="x")
 
         # Decompose block-diagonal sparse: for N=1 the block is the full matrix.
@@ -168,23 +177,24 @@ class GurobiSolver(Solver):
         sense = GRB.MINIMIZE if problem.sense == "min" else GRB.MAXIMIZE
         m.setObjective(obj_c @ x + obj_const, sense)
 
-        if timelimit is not None:
-            m.Params.TimeLimit = float(timelimit)
+        active_timelimit = self._cfg.time_limit if self._cfg.time_limit is not None else timelimit
+        if active_timelimit is not None:
+            m.Params.TimeLimit = float(active_timelimit)
         m.optimize()
 
         dtype = problem.lb.dtype
         device = problem.lb.device
 
         if m.Status in (GRB.OPTIMAL, GRB.SUBOPTIMAL):
-            status = "SAT"
+            status = SolveStatus.SAT
             x_val = torch.as_tensor(x.X, dtype=dtype, device=device).unsqueeze(0)
             max_viol = torch.zeros(1, dtype=dtype, device=device)
         elif m.Status in (GRB.INFEASIBLE, GRB.INF_OR_UNBD):
-            status = "UNSAT"
+            status = SolveStatus.UNSAT
             x_val = torch.zeros_like(problem.lb)
             max_viol = torch.full((1,), float("inf"), dtype=dtype, device=device)
         else:
-            status = "UNKNOWN"
+            status = SolveStatus.UNKNOWN
             x_val = torch.zeros_like(problem.lb)
             max_viol = torch.full((1,), float("nan"), dtype=dtype, device=device)
 

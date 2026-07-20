@@ -40,6 +40,7 @@ omit =
     */__main__.py
     act/pipeline/verification/llm_probe.py
     act/wrapper_exts/ext_runner.py
+    act/config/check_parity.py
 
 precision = 2
 show_missing = True

@@ -1,0 +1,147 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# ACT Back-End Configuration
+# ═══════════════════════════════════════════════════════════════════════════
+# Canonical source for ALL back-end settings (runtime, verification, generation).
+# CI (.github/workflows/act-bab.yml) relies on these defaults.
+#
+# Precedence:  CLI flag  >  environment variable  >  this file  >  code default
+# Env vars:    ACT_SOLVER / ACT_DEVICE / ACT_DTYPE
+#
+# Layout (all under the single top-level `backend:` mapping):
+#   runtime selectors → verification cascade → torchlp → tf → hybridz
+#   → bab (branch-and-bound)
+
+backend:
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Runtime selectors  (apply to every back-end command)
+  # ─────────────────────────────────────────────────────────────────────────
+
+  # Solver backend for LP/MILP verification.
+  #   "auto"    – try Gurobi first, fall back to TorchLP
+  #   "gurobi"  – exact MILP/LP via Gurobi (requires license)
+  #   "torchlp" – PyTorch-tensor LP (Adam + penalty + box projection,
+  #               GPU-capable, no license)
+  #   "dual"    – linear-relaxation dual certified bounds
+  #   "hybridz" – HybridZ zonotope solver
+  # This selects WHICH solver runs; each solver's own tuning lives in its block
+  # below (torchlp:/gurobi:/hybridz:/dual:).  "auto" reuses gurobi + torchlp.
+  solver: "torchlp"
+
+  # Compute device.
+  #   "cpu"  – run on CPU (CI default, always available)
+  #   "cuda" – run on NVIDIA GPU (requires CUDA toolkit)
+  #   "gpu"  – alias for "cuda"
+  device: "cpu"
+
+  # Floating-point precision for all tensors.
+  #   "float64" – double precision (more accurate, slower)
+  #   "float32" – single precision (faster, may cause numerical drift)
+  dtype: "float64"
+
+  # Print extra diagnostic output across all commands.
+  verbose: false
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Verification cascade  (single-shot → LP-batched → BaB)
+  # ─────────────────────────────────────────────────────────────────────────
+
+  # Wall-clock budget in seconds for both single execution and BaB verification.
+  timeout: 60.0
+
+  # Enable the batched LP cascade tier (tier 2) before BaB.
+  # Must be false when solver = "gurobi" (Gurobi solve_batch is N=1 only).
+  lp_enabled: true
+
+  # Maximum BaB subproblems solved in one batch (tier 3).
+  # Must be 1 when solver = "gurobi" (same N=1 restriction as lp_enabled).
+  bab_max_batch_size: 8
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # TorchLP solver tuning  (torchlp)
+  # ─────────────────────────────────────────────────────────────────────────
+  torchlp:
+    # -- Penalty weights --
+    rho_eq: 10.0              # equality-constraint penalty weight
+    rho_ineq: 10.0            # inequality-constraint penalty weight
+    # -- Adam optimizer --
+    max_iter: 2000            # Adam iteration cap
+    lr: 0.01                  # Adam learning rate
+    beta1: 0.9                # Adam beta1
+    beta2: 0.999              # Adam beta2
+    weight_decay: 0.0         # Adam weight decay
+    tol_feas: 0.0001          # feasibility tolerance for SAT reporting
+    # -- Large-N overrides (kick in above large_n_threshold variables) --
+    large_n_threshold: 20000  # variable-count threshold for large-N mode
+    large_n_max_iter: 800     # large-N iteration cap
+    large_n_tol: 0.001        # large-N feasibility tolerance
+    # -- Stagnation early-stop --
+    stagnation_patience: 300  # stop after this many stagnant feasibility checks
+    stagnation_tol: 0.00001   # min feasibility improvement to reset stagnation
+    feas_check_stride: 5      # iteration stride between feasibility checks
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Gurobi solver tuning  (gurobi)
+  # ─────────────────────────────────────────────────────────────────────────
+  gurobi:
+    time_limit: null           # per-solve wall-clock cap; null = caller timeout
+    mip_gap: 0.0001            # relative MIP optimality gap
+    threads: 0                 # 0 = Gurobi automatic thread selection
+    output_flag: 0             # 0 = silent Gurobi output
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # HybridZ  (hybridz)
+  # ─────────────────────────────────────────────────────────────────────────
+  hybridz:
+    # Per-call wall-clock budget in seconds; null = no HybridZ-specific limit.
+    timeout: null
+    # MILP feasibility/spec tolerance for HybridZ verdict decisions.
+    tolerance: 0.0000001
+    # HybridZ generator/input dimension fallback limit (used by the HybridZ TF).
+    max_input_dim: 1024
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Dual 
+  # ─────────────────────────────────────────────────────────────────────────
+  dual:
+    n_iters: 50
+    lr_alpha: 0.1
+    per_class_alpha: true
+    incremental_start_enabled: true
+
+  # ═════════════════════════════════════════════════════════════════════════
+  # Branch-and-Bound refinement  (bab)
+  # ═════════════════════════════════════════════════════════════════════════
+  bab:
+
+    # -- General BaB --------------------------------------------------------
+    enabled: true
+    max_depth: 3
+    max_nodes: 10
+    frontier_cap: 0
+    input_split_fanout: 2
+    branching_method: "random"
+    bounding_method: "random"
+    bounding_order: "depth_lb"
+    sa_cooling_rate: 0.99
+    intermediate_refine: "none"
+    reuse_root_bounds: false
+    multi_split_levels: 1
+    provenance_enabled: false
+
+    # -- Dual-tier selector (solver_tier != lp) ----------------------------
+    solver_tier: "lp"
+
+    # -- LLM-probe controller ----------------------------------------------
+    llm_probe_enabled: false
+    llm_probe_backend: "mock"
+    llm_probe_cadence: 1
+    llm_probe_decisions: "split,frontier,refine"
+    llm_probe_log: false
+
+    # -- BERT/text method ---------------------------------------------------
+    method: null
+    p: 2.0
+    eps: 0.00001
+    max_eps: 0.01
+    k: 1

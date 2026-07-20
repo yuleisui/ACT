@@ -10,7 +10,7 @@ License: AGPLv3+
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Tuple, Any
+from typing import List, Dict, Optional, Tuple, Any, cast
 import os
 import time
 import json
@@ -28,6 +28,7 @@ from act.pipeline.fuzzing.corpus import SeedCorpus, FuzzingSeed
 from act.pipeline.fuzzing.checker import Counterexample, PropertyChecker
 from act.util.path_config import get_pipeline_log_dir, get_project_root
 from act.util.device_manager import get_default_device
+from act.util.format_utils import rule
 
 
 @dataclass
@@ -112,56 +113,25 @@ class FuzzingConfig:
     def from_yaml(
         cls, config_path: Optional[str | Path] = None, **overrides
     ) -> "FuzzingConfig":
+        """Load FuzzingConfig from the pipeline YAML with optional overrides.
+
+        The YAML file is read by act.config.config (the single reader of the
+        config YAML files); this only merges overrides and constructs.
         """
-        Load FuzzingConfig from YAML file with optional overrides.
+        from act.config.config import read_fuzzing_section
 
-        Args:
-            config_path: Path to config YAML file (default: act/pipeline/fuzzing/config.yaml)
-            **overrides: Keyword arguments to override YAML values
+        return cls.from_mapping(read_fuzzing_section(config_path), **overrides)
 
-        Returns:
-            FuzzingConfig instance with merged configuration
-
-        Example:
-            >>> # Load defaults from YAML
-            >>> config = FuzzingConfig.from_yaml()
-            >>>
-            >>> # Override specific values
-            >>> config = FuzzingConfig.from_yaml(
-            ...     timeout_seconds=60.0,
-            ...     max_iterations=1000
-            ... )
-        """
-        # Default config path
-        if config_path is None:
-            config_path = Path(get_project_root()) / "act/pipeline/fuzzing/config.yaml"
-        else:
-            config_path = Path(config_path)
-
-        # Verify config file exists
-        if not config_path.exists():
-            raise FileNotFoundError(
-                f"Configuration file not found: {config_path}\n"
-                f"Expected location: act/pipeline/fuzzing/config.yaml"
-            )
-
-        # Load YAML
-        with open(config_path) as f:
-            yaml_data = yaml.safe_load(f)
-            yaml_config = yaml_data["fuzzing"]
-
-        # Merge YAML config with overrides (overrides take precedence)
-        merged_config = {**yaml_config, **overrides}
-
-        # Convert output_dir string to Path if present
+    @classmethod
+    def from_mapping(cls, section: Dict[str, Any], **overrides) -> "FuzzingConfig":
+        """Build from an already-parsed ``fuzzing`` mapping (no file I/O)."""
+        merged_config = {**section, **overrides}
         if "output_dir" in merged_config and isinstance(
             merged_config["output_dir"], str
         ):
             merged_config["output_dir"] = (
                 Path(get_pipeline_log_dir()) / merged_config["output_dir"]
             )
-
-        # Create FuzzingConfig instance
         return cls(**merged_config)
 
 
@@ -277,8 +247,8 @@ class ACTFuzzer:
         self.model = wrapped_model.to(self.device)
 
         # Extract specs for MutationEngine (projection) and PropertyChecker (violation detection).
-        self.input_spec = self._extract_spec(InputSpecLayer)
-        self.output_spec = self._extract_spec(OutputSpecLayer)
+        self.input_spec = cast(Optional[InputSpec], self._extract_spec(InputSpecLayer))
+        self.output_spec = cast(Optional[OutputSpec], self._extract_spec(OutputSpecLayer))
 
         # Batch size is determined by model synthesis (number of VNNLib instances).
         self.batch_size = (
@@ -354,7 +324,7 @@ class ACTFuzzer:
         """Extract spec from wrapper layer by type."""
         for layer in self.model.children():
             if isinstance(layer, layer_type):
-                return layer.spec
+                return cast(InputSpec | OutputSpec, cast(object, layer.spec))
         return None
 
     def fuzz(self) -> FuzzingReport:
@@ -364,10 +334,10 @@ class ACTFuzzer:
         Returns:
             FuzzingReport with counterexamples and statistics
         """
-        print(f"{'=' * 80}")
+        print(f"{rule()}")
         print(f"ACT: Abstract Constraint Transformer")
         print(f"Inference-based whitebox fuzzing for neural network verification")
-        print(f"{'=' * 80}\n")
+        print(f"{rule()}\n")
 
         batch_size = self.batch_size
 
@@ -494,10 +464,10 @@ class ACTFuzzer:
                         coverage=coverage,
                         coverage_delta=global_delta / batch_size,
                         energy=float(energies[i]),
-                        seed_id=int(seeds.id[i].item()),
+                        seed_id=str(int(seeds.id[i].item())),
                         input_before=seeds.tensor[i : i + 1],
                         input_after=inputs[i : i + 1],
-                        parent_id=int(seeds.parent_id[i].item()),
+                        parent_id=str(int(seeds.parent_id[i].item())),
                         depth=int(seeds.depth[i].item()),
                         activations=activations,
                         gradients=gradients,
@@ -562,7 +532,7 @@ class ACTFuzzer:
         )
 
         # Print summary
-        print(f"\n{'=' * 80}")
+        print(f"\n{rule()}")
         print(f"🎉 ACTFuzzer completed in {total_time:.1f}s")
         print(f"   Iterations: {report.total_iterations}")
         print(f"   Counterexamples: {len(report.counterexamples)}")
@@ -575,7 +545,7 @@ class ACTFuzzer:
                 [f"{ln}[{i}]" for (ln, i) in report.never_activated_neurons[:10]]
             )
             print(f"   Never-activated sample: {sample_str}")
-        print(f"{'=' * 80}\n")
+        print(f"{rule()}\n")
 
         if self.config.save_counterexamples and report.counterexamples:
             report.save(self.config.output_dir)

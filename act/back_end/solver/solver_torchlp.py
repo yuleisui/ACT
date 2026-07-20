@@ -3,6 +3,7 @@ import math, time
 from typing import Optional
 import torch
 
+from act.config.config import TorchLPConfig
 from act.back_end.solver.solver_base import (
     Solver,
     SolveStatus,
@@ -19,25 +20,26 @@ class TorchLPSolver(Solver):
     - Supports GPU via device hint in begin(...).
     - LP-only: no integrality constraints (no binary vars, no SOS2).
     """
-    def __init__(self):
+    def __init__(self, config: Optional[TorchLPConfig] = None):
+        cfg = config or TorchLPConfig()
         self._device = get_default_device()
         self._dtype = get_default_dtype()
         # parameters
-        self.rho_eq = 10.0
-        self.rho_ineq = 10.0
-        self.max_iter = 2000  # lighter default; see large-n overrides below
-        self.tol_feas = 1e-4
-        self.lr = 1e-2
-        self.beta1 = 0.9
-        self.beta2 = 0.999
-        self.weight_decay = 0.0
-        self._large_n_threshold = 20000
-        self._large_n_max_iter = 800
-        self._large_n_tol = 1e-3
+        self.rho_eq = cfg.rho_eq
+        self.rho_ineq = cfg.rho_ineq
+        self.max_iter = cfg.max_iter  # lighter default; see large-n overrides below
+        self.tol_feas = cfg.tol_feas
+        self.lr = cfg.lr
+        self.beta1 = cfg.beta1
+        self.beta2 = cfg.beta2
+        self.weight_decay = cfg.weight_decay
+        self._large_n_threshold = cfg.large_n_threshold
+        self._large_n_max_iter = cfg.large_n_max_iter
+        self._large_n_tol = cfg.large_n_tol
         self._log_every = 200
-        self._stagnation_patience = 300
-        self._stagnation_tol = 1e-5
-        self._feas_check_stride = 5
+        self._stagnation_patience = cfg.stagnation_patience
+        self._stagnation_tol = cfg.stagnation_tol
+        self._feas_check_stride = cfg.feas_check_stride
 
     def capabilities(self) -> SolverCaps:
         return SolverCaps(supports_gpu=True)
@@ -104,9 +106,7 @@ class TorchLPSolver(Solver):
         )
 
         best_max_viol = math.inf
-        stagnation_steps = 0
-        cached_v_eq: Optional[torch.Tensor] = None
-        cached_v_le: Optional[torch.Tensor] = None
+        iters_since_improve = 0
 
         for it in range(eff_max_iter):
             if t_end is not None and time.time() >= t_end:
@@ -126,50 +126,49 @@ class TorchLPSolver(Solver):
                     Ax_eq = torch.sparse.mm(A_eq, x_flat).squeeze(1)
                     v_eq_mat = Ax_eq.view(N, m_eq) - b_eq
                     obj = obj + self.rho_eq * (v_eq_mat * v_eq_mat).sum()
-                    cached_v_eq = v_eq_mat.detach()
                 if has_le and A_le is not None:
                     Ax_le = torch.sparse.mm(A_le, x_flat).squeeze(1)
                     v_le_mat = Ax_le.view(N, m_le) - b_le
                     obj = obj + self.rho_ineq * (torch.relu(v_le_mat) ** 2).sum()
-                    cached_v_le = v_le_mat.detach()
                 obj.backward()
             opt.step()
 
             with torch.no_grad():
                 x.data.clamp_(lb, ub)
 
-            with torch.no_grad():
-                if it % self._feas_check_stride == 0:
-                    x_flat_no = x.reshape(N * nvars).unsqueeze(1)
-                    if has_eq and A_eq is not None:
-                        Ax_eq_no = torch.sparse.mm(A_eq, x_flat_no).squeeze(1)
-                        cached_v_eq = Ax_eq_no.view(N, m_eq) - b_eq
-                    if has_le and A_le is not None:
-                        Ax_le_no = torch.sparse.mm(A_le, x_flat_no).squeeze(1)
-                        cached_v_le = Ax_le_no.view(N, m_le) - b_le
+            if it % self._feas_check_stride != 0:
+                continue
 
+            with torch.no_grad():
+                x_flat_no = x.reshape(N * nvars).unsqueeze(1)
                 max_viol_per_n = torch.zeros(N, device=device, dtype=dtype)
-                if has_eq and cached_v_eq is not None:
-                    max_viol_per_n = torch.maximum(
-                        max_viol_per_n,
-                        cached_v_eq.abs().max(dim=1).values,
+                if has_eq and A_eq is not None:
+                    v_eq_no = (
+                        torch.sparse.mm(A_eq, x_flat_no).squeeze(1).view(N, m_eq)
+                        - b_eq
                     )
-                if has_le and cached_v_le is not None:
                     max_viol_per_n = torch.maximum(
-                        max_viol_per_n,
-                        torch.relu(cached_v_le).max(dim=1).values,
+                        max_viol_per_n, v_eq_no.abs().max(dim=1).values
+                    )
+                if has_le and A_le is not None:
+                    v_le_no = (
+                        torch.sparse.mm(A_le, x_flat_no).squeeze(1).view(N, m_le)
+                        - b_le
+                    )
+                    max_viol_per_n = torch.maximum(
+                        max_viol_per_n, torch.relu(v_le_no).max(dim=1).values
                     )
                 global_max_viol = float(max_viol_per_n.max().item())
 
             if global_max_viol < best_max_viol - self._stagnation_tol:
                 best_max_viol = global_max_viol
-                stagnation_steps = 0
+                iters_since_improve = 0
             else:
-                stagnation_steps += 1
+                iters_since_improve += self._feas_check_stride
 
             if (
                 global_max_viol <= eff_tol_feas
-                or stagnation_steps >= self._stagnation_patience
+                or iters_since_improve >= self._stagnation_patience
             ):
                 break
 

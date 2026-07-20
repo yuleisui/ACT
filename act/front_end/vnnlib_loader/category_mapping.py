@@ -11,6 +11,8 @@ License: AGPLv3+
 
 from typing import Dict, List, Optional
 
+from act.util.format_utils import rule
+
 # VNN-COMP 2026 benchmarks: https://github.com/VNN-COMP/vnncomp2026_benchmarks
 # Each registry key equals the repo folder name; the loader resolves instances
 # under the "<name>/2.0/" version subdirectory by default (override per entry
@@ -495,18 +497,18 @@ def get_summary_statistics() -> Dict:
 
 if __name__ == "__main__":
     # Quick demo
-    print("="*80)
+    print(rule())
     print("VNNLIB CATEGORY MAPPING")
-    print("="*80)
+    print(rule())
     
     stats = get_summary_statistics()
     print(f"\nTotal Categories: {stats['total_categories']}")
     print(f"Category Types: {stats['total_types']}")
     print(f"Year Range: {stats['oldest_year']}-{stats['newest_year']}")
     
-    print("\n" + "="*80)
+    print("\n" + rule())
     print("CATEGORIES BY TYPE")
-    print("="*80)
+    print(rule())
     
     for cat_type in sorted(get_all_types()):
         categories = list_categories_by_type(cat_type)
