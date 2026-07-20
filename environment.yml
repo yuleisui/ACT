@@ -23,8 +23,8 @@ dependencies:
       # conda 'pytorch' channel yields a CPU-only build when this env is created on a
       # machine with no NVIDIA driver (the VNN-COMP installer). Pinned to 2.5.1/cu124
       # (needs driver >= 525) so the GPU build works on standard AWS run instances.
-      - torch==2.5.1
-      - torchvision==0.20.1
+      - torch
+      - torchvision
       # ONNX ecosystem - for VNNLib benchmarks
       - onnx2torch
       - onnxconverter-common
