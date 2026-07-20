@@ -12,7 +12,7 @@ License: AGPLv3+
 """
 
 from __future__ import annotations
-from typing import List, Optional, Union
+from typing import Optional, Union
 import numpy as np
 import torch
 
@@ -107,7 +107,7 @@ class SeedCorpus:
     """
     
     def __init__(self, 
-                 initial_seeds: List[LabeledInputTensor],
+                 initial_seeds: list[LabeledInputTensor],
                  strategy: str = "energy"):
         """
         Initialize seed corpus from LabeledInputTensor list.
@@ -124,32 +124,37 @@ class SeedCorpus:
         
         # Build parallel lists from initial seeds, then stack to tensors
         tensors = []
+        indices = []
         labels = []
+
         for i, labeled_tensor in enumerate(initial_seeds):
             t = labeled_tensor.tensor.to(self._device)
             label_val = int(labeled_tensor.label.item()) if isinstance(labeled_tensor.label, torch.Tensor) else labeled_tensor.label
             
             # Dedup check
             tensor_hash = self._hash_tensor(t)
+
             if tensor_hash in self.seen_hashes:
                 continue
+
             self.seen_hashes.add(tensor_hash)
             
             tensors.append(t)
+            indices.append(i)
             labels.append(label_val if label_val is not None else -1)
         
         N = len(tensors)
         device = self._device
         # Stack into parallel tensors on device manager's device
-        self._tensors = torch.cat(tensors, dim=0)                                    # [N, ...]
-        self._original_tensors = self._tensors.clone()                               # [N, ...]
-        self._original_indices = torch.arange(N, dtype=torch.long, device=device)    # [N]
-        self._labels = torch.tensor(labels, dtype=torch.long, device=device)         # [N]
-        self._energies = torch.ones(N, device=device)                                # [N]
-        self._depths = torch.zeros(N, dtype=torch.long, device=device)               # [N]
-        self._ids = FuzzingSeed._next_ids(N)                                         # [N]
-        self._parent_ids = torch.full((N,), -1, dtype=torch.long, device=device)     # [N]
-        self._select_counts = torch.zeros(N, dtype=torch.long, device=device)         # [N]
+        self._tensors = torch.cat(tensors, dim=0)                                       # [N, ...]
+        self._original_tensors = self._tensors.clone()                                  # [N, ...]
+        self._original_indices = torch.tensor(indices, dtype=torch.long, device=device) # [N]
+        self._labels = torch.tensor(labels, dtype=torch.long, device=device)            # [N]
+        self._energies = torch.ones(N, device=device)                                   # [N]
+        self._depths = torch.zeros(N, dtype=torch.long, device=device)                  # [N]
+        self._ids = FuzzingSeed._next_ids(N)                                            # [N]
+        self._parent_ids = torch.full((N,), -1, dtype=torch.long, device=device)        # [N]
+        self._select_counts = torch.zeros(N, dtype=torch.long, device=device)           # [N]
     
     def _hash_tensor(self, tensor: torch.Tensor) -> int:
         """Compute hash of tensor for deduplication."""
